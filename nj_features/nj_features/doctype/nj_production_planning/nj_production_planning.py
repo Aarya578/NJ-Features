@@ -507,7 +507,7 @@ def _update_serial_reserved_sales_order(serial_no: str, sales_order_no: Optional
                   AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
                   AND status = 'Active'
                   AND is_replace = 0
-                  AND (return_reason IS NULL OR return_reason = '' OR return_reason != 'Repair')
+                  AND (return_reason IS NULL OR return_reason = '' OR return_reason NOT IN ('Repair', 'Replace'))
             """, (so_val, effective_source, serial_no))
             if getattr(frappe.db, "_cursor", None) and frappe.db._cursor.rowcount <= 0:
                 logger.warning("Could not reserve Serial No %s for %s: already reserved or ineligible", serial_no, so_val)
@@ -520,7 +520,7 @@ def _update_serial_reserved_sales_order(serial_no: str, sales_order_no: Optional
                     order_source = NULL,
                     modified = NOW()
                 WHERE name = %s
-                  AND (return_reason IS NULL OR return_reason = '' OR return_reason != 'Repair')
+                  AND (return_reason IS NULL OR return_reason = '' OR return_reason NOT IN ('Repair', 'Replace'))
             """, (serial_no,))
             return True
     except Exception as e:
@@ -2501,7 +2501,7 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
           AND (sn.reserved_sales_order IS NULL OR sn.reserved_sales_order = '')
           AND IFNULL(dp.department_sequence, 0) != 0
           AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
-          AND (sn.return_reason IS NULL OR sn.return_reason != 'Repair')
+          AND (sn.return_reason IS NULL OR sn.return_reason NOT IN ('Repair', 'Replace'))
           AND (sn.order_source IS NULL OR sn.order_source NOT LIKE '%%- Repair%%')
           -- Keep the SO candidate rule identical to assign_serials in
           -- overrides/sales_order.py. Returned/replacement stock is sellable only
@@ -2564,7 +2564,7 @@ def _get_return_excluded_serials_for_department(dept_doc, eligible_names) -> Lis
           AND (sn.reserved_sales_order IS NULL OR sn.reserved_sales_order = '')
           AND IFNULL(dp.department_sequence, 0) != 0
           AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
-          AND (sn.return_reason IS NULL OR sn.return_reason != 'Repair')
+          AND (sn.return_reason IS NULL OR sn.return_reason NOT IN ('Repair', 'Replace'))
           AND (sn.order_source IS NULL OR sn.order_source NOT LIKE '%%- Repair%%')
           AND NOT (
               (IFNULL(sn.is_replace, 0) = 0 AND (sn.return_reason IS NULL OR sn.return_reason = ''))

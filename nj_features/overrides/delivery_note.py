@@ -15,6 +15,9 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from frappe import _
 from frappe.utils import now
+# Single source of truth for order_source, shared with the Sales Order
+# allocator and the production planner so all three write the same value.
+from nj_features.services.reservation_service import get_effective_order_source
 from contextlib import contextmanager
 #from __future__ import unicode_literals
 from datetime import datetime, timedelta
@@ -891,12 +894,17 @@ class CustomDeliveryNote(DeliveryNote):
                             break
 
                 if against_sales_order and item_code:
+                    # order_source must be written alongside the reservation. It is
+                    # the only record of where a reservation came from, and on this
+                    # path it also carries the return cause (e.g.
+                    # "NJ-Website-B2C - Repair"), which downstream queries filter on.
                     frappe.db.set_value(
                         "Serial No",
                         sn,
                         {
                             "reserved_sales_order": against_sales_order,
                             "to_make": item_code,
+                            "order_source": get_effective_order_source(against_sales_order),
                             "remarks": f"Allocated to SO {against_sales_order} (Return) | to_make: {item_code}"
                         },
                         update_modified=True
@@ -1039,6 +1047,7 @@ class CustomDeliveryNote(DeliveryNote):
                                 {
                                     "reserved_sales_order": against_sales_order,
                                     "to_make": item_code,
+                                    "order_source": get_effective_order_source(against_sales_order),
                                     "remarks": f"Allocated to SO {against_sales_order} ({match_reason}) | to_make: {item_code}"
                                 },
                                 update_modified=True

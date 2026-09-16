@@ -423,7 +423,7 @@ def trim_over_allocated_serials():
                   IFNULL(dp.department_sequence, 0) = 0
                   OR IFNULL(w.warehouse_type, '') = 'Employee Personal Warehouse'
               )
-              AND (sn.return_reason IS NULL OR sn.return_reason NOT IN ('Repair', 'Replace', 'RTO Customer', 'RTO Delivery Partner'))
+              AND (sn.return_reason IS NULL OR sn.return_reason NOT IN ('Repair', 'Replace'))
         """)
         if invalid_serials:
             frappe.db.sql("""
@@ -552,7 +552,7 @@ def trim_over_allocated_serials():
                 FROM `tabSerial No`
                 WHERE reserved_sales_order = %s
                   AND (item_code = %s OR (to_make IS NOT NULL AND to_make != '' AND to_make = %s))
-                  AND (return_reason IS NULL OR return_reason NOT IN ('Repair', 'Replace', 'RTO Customer', 'RTO Delivery Partner'))
+                  AND (return_reason IS NULL OR return_reason NOT IN ('Repair', 'Replace'))
                   AND (order_source IS NULL OR (
                       order_source NOT LIKE '%%- Repair%%'
                       AND order_source NOT LIKE '%%- Replace%%'
@@ -808,7 +808,17 @@ def get_dept_available_serials(dept_name):
             WHERE
                 (sn.reserved_sales_order IS NULL OR sn.reserved_sales_order = '')
                 AND sn.status = 'Active'
-                AND (sn.return_reason IS NULL OR sn.return_reason = '' OR sn.return_reason NOT IN ('Repair', 'Replace', 'RTO Customer', 'RTO Delivery Partner'))
+                -- 'Repair' and 'Replace' are excluded; RTO Customer and RTO Delivery
+                -- Partner are NOT. Keep this list identical to the one in
+                -- so_quantity_check.py and shopify_inventory_targeted.py - those decide
+                -- what Shopify advertises, and any reason excluded here but counted
+                -- there becomes phantom stock: the listing sells it, then allocation
+                -- refuses it and the order lands on the fallback SLA.
+                --
+                -- Repair/Replace units are owed to the customer who returned them, so
+                -- no other order may take them. RTO units never reached a customer, so
+                -- they are ordinary sellable stock.
+                AND (sn.return_reason IS NULL OR sn.return_reason = '' OR sn.return_reason NOT IN ('Repair', 'Replace'))
                 AND IFNULL(dp.department_sequence, 0) != 0
                 AND dp.sla_item_groups IS NOT NULL AND dp.sla_item_groups != ''
                 AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
@@ -1317,7 +1327,7 @@ def assign_serials(so_name, item_code, to_allocate, departments):
                   AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
                   AND status = 'Active'
                   AND is_replace = 0
-                  AND (return_reason IS NULL OR return_reason = '' OR return_reason NOT IN ('Repair', 'Replace', 'RTO Customer', 'RTO Delivery Partner'))
+                  AND (return_reason IS NULL OR return_reason = '' OR return_reason NOT IN ('Repair', 'Replace'))
             """, (so_name, item_code, effective_source, remarks_text or None, sn_name))
 
             if getattr(frappe.db, "_cursor", None) and frappe.db._cursor.rowcount <= 0:
@@ -1506,7 +1516,7 @@ def unassign_serials(so_name, item_code, excess_qty):
                 item_code = %s
                 OR (to_make IS NOT NULL AND to_make != '' AND to_make = %s)
             )
-            AND (return_reason IS NULL OR return_reason NOT IN ('Repair', 'Replace', 'RTO Customer', 'RTO Delivery Partner'))
+            AND (return_reason IS NULL OR return_reason NOT IN ('Repair', 'Replace'))
             AND (order_source IS NULL OR (
                 order_source NOT LIKE '%%- Repair%%'
                 AND order_source NOT LIKE '%%- Replace%%'

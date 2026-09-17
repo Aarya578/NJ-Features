@@ -2503,8 +2503,37 @@ def update_sales_order_etas(so_eta_map, so_breakdown_map=None, do_commit=True, a
         frappe.db.commit()
 
 
+# Shopify's REST API allows 2 calls/second per app. This job is enqueued once per
+# order whose estimated date changed, so anything that moves a lot of dates at once
+# - a department SLA edit, a fix to the ETA ladder - drains the queue faster than
+# that and Shopify starts refusing with "Exceeded 2 calls per second".
+_SHOPIFY_MIN_CALL_INTERVAL = 0.6
+_SHOPIFY_MAX_ATTEMPTS = 4
+_last_shopify_call_at = [0.0]
+
+
+def _shopify_throttle():
+    """Space this worker's Shopify calls under the published rate limit.
+
+    Per-process, so it is not a global guarantee across the six short workers -
+    the Retry-After handling in the caller is what actually makes a burst safe.
+    This just stops a single worker being the one that trips the limit.
+    """
+    wait = _SHOPIFY_MIN_CALL_INTERVAL - (time.monotonic() - _last_shopify_call_at[0])
+    if wait > 0:
+        time.sleep(wait)
+    _last_shopify_call_at[0] = time.monotonic()
+
+
 def push_delivery_date_to_shopify_order(so_name, delivery_date):
-    """Push confirmed Estimated Delivery Date back to Shopify Order note attributes."""
+    """Push confirmed Estimated Delivery Date back to Shopify Order note attributes.
+
+    Retries on rate limiting. Before this, a refused push was logged once and
+    dropped: the ERP held the new date and Shopify kept the old one, with no second
+    attempt until that order's estimate happened to change again. On 2026-09-17 a
+    single batch lost 109 of them that way, and the same thing had been happening
+    at a trickle long before that.
+    """
     try:
         shopify_order_number = frappe.db.get_value("Sales Order", so_name, "shopify_order_number")
         if not shopify_order_number:
@@ -2536,13 +2565,41 @@ def push_delivery_date_to_shopify_order(so_name, delivery_date):
                 ]
             }
         }
-        resp = requests.put(url, headers=headers, json=payload, timeout=10)
-        if resp.status_code != 200:
-            logger.warning(
-                "Could not push delivery date to Shopify order %s: %s",
-                shopify_order_number,
-                resp.text
+        for attempt in range(_SHOPIFY_MAX_ATTEMPTS):
+            _shopify_throttle()
+            resp = requests.put(url, headers=headers, json=payload, timeout=10)
+
+            if resp.status_code == 200:
+                return
+
+            body = resp.text or ""
+            rate_limited = (
+                resp.status_code == 429
+                or "Exceeded" in body and "calls per second" in body
             )
+            if not rate_limited:
+                # A 404, a bad token, a malformed order - retrying changes nothing.
+                logger.warning(
+                    "Could not push delivery date to Shopify order %s: %s",
+                    shopify_order_number, body
+                )
+                return
+
+            if attempt == _SHOPIFY_MAX_ATTEMPTS - 1:
+                break
+
+            # Shopify says exactly how long to wait; fall back to exponential.
+            try:
+                delay = float(resp.headers.get("Retry-After") or 0)
+            except (TypeError, ValueError):
+                delay = 0
+            time.sleep(min(delay or (2 ** attempt), 10))
+
+        logger.warning(
+            "[SHOPIFY_DATE_UNPUSHED] Gave up pushing delivery date to Shopify order %s "
+            "for %s after %d attempts (rate limited). ERP holds %s; Shopify does not.",
+            shopify_order_number, so_name, _SHOPIFY_MAX_ATTEMPTS, delivery_date
+        )
     except Exception as e:
         frappe.log_error(
             title=f"push_delivery_date_to_shopify_order failed for {so_name}",

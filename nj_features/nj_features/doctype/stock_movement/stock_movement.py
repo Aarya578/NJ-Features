@@ -841,6 +841,14 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
         error_messages.append(f"Serial No <b>{serial_no}</b> does not exist.")
         return False
 
+    if s_warehouse and t_warehouse and s_warehouse != t_warehouse and department != s_department:
+        from nj_features.overrides.stock_entry import get_department_restriction_violation
+
+        restriction_violation = get_department_restriction_violation(serial_no, department)
+        if restriction_violation:
+            error_messages.append(restriction_violation)
+            return False
+
     current_doctype = (
         doc.get("doctype")
         if isinstance(doc, dict)

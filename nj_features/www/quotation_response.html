@@ -18,10 +18,7 @@
 
 	<form class="d-none" id="response-form">
 		<section class="response-section">
-			<div class="section-heading-row">
-				<h2>{{ _("Items") }}</h2>
-				<div class="section-total"><span>{{ _("Total") }}</span><strong id="response-total"></strong></div>
-			</div>
+			<h2>{{ _("Items") }}</h2>
 			<div class="table-responsive">
 				<table class="table table-bordered response-table">
 					<thead><tr>
@@ -34,7 +31,7 @@
 					<tbody id="response-items"></tbody>
 				</table>
 			</div>
-			<div class="table-total"><span>{{ _("Grand Total") }}</span><strong id="response-grand-total"></strong></div>
+			<div class="table-total"><span>{{ _("Total") }}</span><strong id="response-items-total"></strong></div>
 		</section>
 
 		<section class="response-section" id="taxes-section">
@@ -52,6 +49,7 @@
 				</table>
 			</div>
 			<div class="table-total"><span>{{ _("Total Tax") }}</span><strong id="response-total-taxes"></strong></div>
+			<div class="table-total"><span>{{ _("Grand Total") }}</span><strong id="response-grand-total"></strong></div>
 		</section>
 
 		<section class="response-section" id="payment-section">

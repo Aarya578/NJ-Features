@@ -57,7 +57,7 @@
 	const render = (data) => {
 		document.getElementById("response-quotation").textContent = data.quotation || "";
 		document.getElementById("response-customer").textContent = data.customer || "";
-		document.getElementById("response-total").textContent = formatCurrency(
+		document.getElementById("response-items-total").textContent = formatCurrency(
 			data.total,
 			data.currency
 		);

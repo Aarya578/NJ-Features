@@ -159,7 +159,7 @@ def submit_quotation_response(token, customer_replay):
     access = _get_access(token)
     quotation = _validate_quotation(access)
     if customer_replay not in CUSTOMER_RESPONSES:
-        frappe.throw(_("Please select Agree or Dis Agree."))
+        frappe.throw(_("Please select Agree or Disagree."))
 
     frappe.db.set_value(
         "Quotation",

@@ -7,21 +7,39 @@
  "engine": "InnoDB",
  "field_order": [
   "departmant",
-  "count"
+  "count",
+  "restrict",
+  "limit_count"
  ],
  "fields": [
   {
    "fieldname": "departmant",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Departmant",
-   "options": "Department"
+   "label": "Department",
+   "options": "Department",
+   "read_only": 1
   },
   {
    "fieldname": "count",
    "fieldtype": "Int",
    "in_list_view": 1,
-   "label": "Count"
+   "label": "Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "restrict",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Restrict",
+   "description": "When checked, blocks any further movement of this serial into this department once Count reaches Limit Count."
+  },
+  {
+   "fieldname": "limit_count",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Limit Count",
+   "depends_on": "eval:doc.restrict"
   }
  ],
  "index_web_pages_for_search": 1,

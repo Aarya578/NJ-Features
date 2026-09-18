@@ -816,6 +816,11 @@ class CustomDeliveryNote(DeliveryNote):
                     # Delete all Department History rows
                     if serial_doc.get("department_history"):
                         serial_doc.department_history = []
+                        # Without this, prevent_manual_department_history_edits
+                        # (Serial No validate hook) would reject this as a
+                        # manual row deletion -- this specific clear-on-return
+                        # is legitimate, pre-existing business logic.
+                        serial_doc.flags.ignore_validate = True
                         serial_doc.save(ignore_permissions=True)
                         # frappe.db.commit()
     def _process_serial_numbers(self):

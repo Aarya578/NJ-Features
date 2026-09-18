@@ -82,15 +82,14 @@
 		</section>
 
 		<div class="response-action-card">
-			<div>
-				<label for="customer-replay">{{ _("Customer Reply") }}</label>
-				<select class="form-control" id="customer-replay" required>
-					<option value="">{{ _("Select Response") }}</option>
-					<option value="Agree">{{ _("Agree") }}</option>
-					<option value="Dis Agree">{{ _("Disagree") }}</option>
-				</select>
+			<label class="response-choice-label">{{ _("Customer Reply") }}</label>
+			<input type="hidden" id="customer-replay">
+			<div class="response-choice-buttons">
+				<button type="button" class="response-choice-btn response-choice-agree" data-value="Agree">{{ _("Agree") }}</button>
+				<button type="button" class="response-choice-btn response-choice-disagree" data-value="Dis Agree">{{ _("Disagree") }}</button>
 			</div>
-			<button class="btn btn-primary" id="submit-response" type="submit">{{ _("Submit Response") }}</button>
+			<p class="response-choice-text d-none" id="response-choice-text"></p>
+			<button class="btn btn-primary" id="submit-response" type="submit" disabled>{{ _("Submit Response") }}</button>
 		</div>
 	</form>
 </div>

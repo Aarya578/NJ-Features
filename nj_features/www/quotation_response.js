@@ -7,6 +7,32 @@
 	const form = document.getElementById("response-form");
 	const responseField = document.getElementById("customer-replay");
 	const submitButton = document.getElementById("submit-response");
+	const choiceButtons = document.querySelectorAll(".response-choice-btn");
+	const choiceText = document.getElementById("response-choice-text");
+
+	const CHOICE_TEXT = {
+		Agree: "You have agreed to this quotation.",
+		"Dis Agree": "You have disagreed with this quotation."
+	};
+
+	const applyChoice = (value) => {
+		responseField.value = value || "";
+		choiceButtons.forEach((btn) => btn.classList.toggle("active", btn.dataset.value === value));
+		if (value && CHOICE_TEXT[value]) {
+			choiceText.textContent = CHOICE_TEXT[value];
+			choiceText.classList.remove("d-none");
+			choiceText.classList.toggle("text-success", value === "Agree");
+			choiceText.classList.toggle("text-danger", value === "Dis Agree");
+		} else {
+			choiceText.classList.add("d-none");
+			choiceText.classList.remove("text-success", "text-danger");
+		}
+		submitButton.disabled = !value;
+	};
+
+	choiceButtons.forEach((btn) => {
+		btn.addEventListener("click", () => applyChoice(btn.dataset.value));
+	});
 
 	const escapeHtml = (value) => {
 		const element = document.createElement("div");
@@ -71,7 +97,7 @@
 		);
 		document.getElementById("response-terms-name").textContent = data.tc_name || "-";
 		document.getElementById("response-terms-details").innerHTML = data.terms || "-";
-		responseField.value = data.customer_replay || "";
+		applyChoice(data.customer_replay || "");
 
 		document.getElementById("response-items").innerHTML = (data.items || [])
 			.map(
@@ -128,6 +154,10 @@
 
 	form.addEventListener("submit", async (event) => {
 		event.preventDefault();
+		if (!responseField.value) {
+			showMessage("Please choose Agree or Disagree before submitting.", "error");
+			return;
+		}
 		submitButton.disabled = true;
 		try {
 			const data = await apiCall(

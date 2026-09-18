@@ -138,6 +138,9 @@ doc_events = {
         "before_save": "nj_features.nj_features.doctype.laptop_box.laptop_box.printing_barcode"
     },
     "Delivery Note": {
+        "validate": [
+            "nj_features.overrides.delivery_note.set_linked_sales_order_flags",
+        ],
         "before_save": [
             "nj_features.overrides.delivery_note.deviding_tax_chargese_dn",
             "nj_features.overrides.delivery_note.deviding_tax_chargese_return_dn",

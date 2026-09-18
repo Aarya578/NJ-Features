@@ -13,22 +13,26 @@
  ],
  "fields": [
   {
+   "allow_on_submit": 1,
    "fieldname": "execution_parameter",
    "fieldtype": "Data",
    "label": "Execution Parameter"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
    "options": "Completed"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "completed_on",
    "fieldtype": "Datetime",
    "label": "Completed On"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "completed_by",
    "fieldtype": "Link",
    "label": "Completed By",
@@ -38,7 +42,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-29 13:16:24.184758",
+ "modified": "2026-09-17 18:36:16.884072",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA Execution Check Status",

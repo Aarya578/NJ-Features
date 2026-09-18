@@ -145,7 +145,7 @@ def validate_mandatory_links(doc, method=None):
         if not email_id and doc.get("supplier"):
             email_id = (frappe.db.get_value("Supplier", doc.supplier, "email_id") or "").strip()
 
-        if not email_id:
+        if not email_id:    
             frappe.throw("Email ID is mandatory for invoicing.")
 
         
@@ -159,7 +159,7 @@ def validate_mandatory_links(doc, method=None):
                 break 
         
         if requires_links:
-            if not doc.qc_link or not doc.pricing_link or not doc.npd_approval_:
+            if not doc.qc_link or not doc.pricing_link:
                 frappe.throw("QC Link,Pricing Link and NPD Approval is mandatory when core products are included in the Purchase Order.")
     finally:
         log_po_time("validate_mandatory_links", doc.name, start)

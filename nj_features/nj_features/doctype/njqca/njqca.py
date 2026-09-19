@@ -457,7 +457,10 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
 
         # MODIFIED BLOCK — LOOP OVER ALL item_group_idx matches
         # PARAMETER + SCORE BASED NJQCA → QI SYNC
-        # This does NOT depend on NJQCA item_group or QI reading item_group.
+        # PARAMETER + SCORE BASED NJQCA → QI SYNC
+        # Normal parameters use Parameter + Score.
+        # If the same parameter exists under multiple NJQCA Item Groups,
+        # Item Group is also used for mapping.
         # It only uses:
         #   1. inspection_type
         #   2. NJQCA Result Parameter.parameter
@@ -478,9 +481,25 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
             for child in new_qi.get("nj_quality_checks", [])
             if child.check_name
         }
+        # Find parameters that exist under more than one NJQCA Item Group.
+        # Only those parameters will use Item Group matching.
+        parameter_item_groups = {}
+
+        for row in self.njqca_result_parameters:
+            row_parameter = (row.get("parameter") or "").strip().lower()
+            row_item_group = (row.get("item_group") or "").strip().lower()
+
+            if not row_parameter or not row_item_group:
+                continue
+
+            parameter_item_groups.setdefault(
+                row_parameter,
+                set()
+            ).add(row_item_group)
 
         for data in self.njqca_result_parameters:
             parameter = (data.get("parameter") or "").strip()
+            source_item_group = (data.get("item_group") or "").strip()
             score = data.get("score")
             value = data.get("value")
 
@@ -512,7 +531,25 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
 
             if not mapped_checks:
                 continue
+            # Only if this parameter exists under multiple NJQCA Item Groups,
+            # also compare the Item Group.
+            parameter_key = parameter.lower()
 
+            if len(parameter_item_groups.get(parameter_key, set())) > 1:
+                source_item_group_key = source_item_group.lower()
+
+                if not source_item_group_key:
+                    continue
+
+                mapped_checks = [
+                    row
+                    for row in mapped_checks
+                    if (row.get("target_item_group") or "").strip().lower()
+                    == source_item_group_key
+                ]
+
+                if not mapped_checks:
+                    continue
             for mapped in mapped_checks:
                 check_name = mapped.get("quality_check")
                 target_item_group = mapped.get("target_item_group")

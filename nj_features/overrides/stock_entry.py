@@ -223,25 +223,25 @@ def run_department_count_history_backfill_batch(batch_size=1500):
     """
     RECENT_ACTIVITY_BUFFER_MINUTES = 10
 
-    serial_names = frappe.get_all(
-        "Serial No",
-        filters={
-            "warehouse": ["is", "set"],
-            "department_history_backfilled": 0,
-            "name": [
-                "not in",
-                frappe.db.sql_list(
-                    """
-                    SELECT DISTINCT serial_no FROM `tabStock Ledger Entry`
-                    WHERE serial_no IS NOT NULL AND serial_no != ''
-                      AND creation > DATE_SUB(NOW(), INTERVAL %s MINUTE)
-                    """,
-                    RECENT_ACTIVITY_BUFFER_MINUTES,
-                ) or [""],
-            ],
-        },
-        pluck="name",
-        limit_page_length=batch_size,
+    # Plain SQL rather than frappe.get_all(filters=...) -- the "is"/"set"
+    # filter operator was found to silently match ZERO rows against a
+    # real, non-empty warehouse column on one site's Frappe version (while
+    # correctly matching on another), with no error raised either way.
+    # Explicit IS NOT NULL / != '' has no such version-dependent ambiguity.
+    serial_names = frappe.db.sql_list(
+        """
+        SELECT sn.name
+        FROM `tabSerial No` sn
+        WHERE sn.warehouse IS NOT NULL AND sn.warehouse != ''
+          AND sn.department_history_backfilled = 0
+          AND sn.name NOT IN (
+              SELECT DISTINCT serial_no FROM `tabStock Ledger Entry`
+              WHERE serial_no IS NOT NULL AND serial_no != ''
+                AND creation > DATE_SUB(NOW(), INTERVAL %s MINUTE)
+          )
+        LIMIT %s
+        """,
+        (RECENT_ACTIVITY_BUFFER_MINUTES, batch_size),
     )
 
     if not serial_names:

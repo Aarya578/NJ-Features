@@ -210,7 +210,10 @@ def run_department_count_history_backfill_batch(batch_size=1500):
     Any Restrict / Limit Count already set manually on an existing row
     is preserved across the rebuild by department name -- this only
     replaces the reconstructed shape (departmant, count, ordering),
-    never a row's restriction configuration.
+    never a row's restriction configuration. This includes a department
+    manually pre-added with Restrict/Limit Count that this serial hasn't
+    actually visited yet per its ledger -- it's kept at Count = 0 rather
+    than being dropped just because it's absent from the real history.
 
     Skips (defers to a later run, does NOT mark done) any serial with a
     Stock Ledger Entry in the last RECENT_ACTIVITY_BUFFER_MINUTES -- a
@@ -291,6 +294,15 @@ def run_department_count_history_backfill_batch(batch_size=1500):
                     history.insert(0, existing)
                 else:
                     history.insert(0, {"departmant": department, "count": 1})
+
+            # A department manually pre-configured with Restrict/Limit Count
+            # before this serial ever actually visited it (see
+            # nj_features.overrides.serial_no.prevent_manual_department_
+            # history_edits) won't be in `sequence` -- append it at Count = 0
+            # rather than letting the DELETE below silently drop it.
+            for department in preserved:
+                if not any(h["departmant"] == department for h in history):
+                    history.append({"departmant": department, "count": 0})
 
             frappe.db.sql(
                 """

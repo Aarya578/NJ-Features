@@ -18,9 +18,10 @@
    "in_list_view": 1,
    "label": "Department",
    "options": "Department",
-   "read_only": 1
+   "read_only_depends_on": "eval:!doc.__islocal"
   },
   {
+   "default": "0",
    "fieldname": "count",
    "fieldtype": "Int",
    "in_list_view": 1,

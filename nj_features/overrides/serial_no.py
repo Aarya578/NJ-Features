@@ -74,8 +74,14 @@ def seed_department_count_history(doc, method=None):
     departments. Warehouse -> Department is the only reliable "current
     department" signal.
 
-    Only fires while department_history is still empty, so it never
-    re-runs once seeded -- every later department change is counted by
+    Checks for an existing row matching the CURRENT department by name,
+    rather than whether the table is empty -- a user can now pre-add a
+    row for a department the serial hasn't visited yet (to set Restrict/
+    Limit Count in advance; see prevent_manual_department_history_edits),
+    which would otherwise make an already-non-empty table look "already
+    seeded" and skip seeding the serial's actual starting department
+    entirely. Once a row for the current department exists, this never
+    touches it again -- every later department change is counted by
     nj_features.overrides.stock_entry.update_department_count_history
     on the Stock Entry that actually moves the serial.
 
@@ -86,21 +92,28 @@ def seed_department_count_history(doc, method=None):
     stock_entry.run_department_count_history_backfill_batch) to ever
     reconstruct for it; marking it done immediately keeps that job's
     queue scoped to genuinely pre-existing serials only. An EXISTING
-    serial that happens to hit this same empty-table condition (e.g.
-    it's mid-way through the backfill queue and got saved for an
-    unrelated reason first) is deliberately left unflagged -- this only
-    seeds a shallow one-row placeholder for it, and the backfill job
-    still needs to replace that with the real reconstructed history
-    once it reaches this serial.
+    serial that happens to hit this same condition (e.g. it's mid-way
+    through the backfill queue and got saved for an unrelated reason
+    first) is deliberately left unflagged -- this only seeds a shallow
+    one-row placeholder for it, and the backfill job still needs to
+    replace that with the real reconstructed history once it reaches
+    this serial.
     """
-    if doc.get("department_history"):
-        return
-
     if not doc.warehouse:
         return
 
     department = frappe.db.get_value("Warehouse", doc.warehouse, "department")
     if not department:
+        return
+
+    existing = next(
+        (
+            row for row in (doc.get("department_history") or [])
+            if (row.departmant or "").strip() == department
+        ),
+        None,
+    )
+    if existing:
         return
 
     row = doc.append("department_history", {})
@@ -116,23 +129,28 @@ def prevent_manual_department_history_edits(doc, method=None):
     Serial No "validate" hook. Department Count History (department_
     history) is entirely server-managed -- seeded on creation, bumped on
     real stock movement, reconstructed by the hourly backfill for
-    pre-existing serials. A normal user-initiated save must never be
-    able to add a row, delete a row, or hand-edit an existing row's
-    Count/Department -- only Restrict and Limit Count are meant to be
-    editable (enforced here at the row-set/count level; read_only on
-    those two fields in the Department History doctype plus the grid's
-    cannot_add_rows/cannot_delete_rows in public/js/serial_no.js cover
-    the UI side, but neither of those actually stops a save submitted
-    directly against the API, which is why this check exists).
+    pre-existing serials. A normal user-initiated save may only:
+
+      - add a brand-new row (a Department not already tracked) with
+        Count left at 0, to pre-configure Restrict / Limit Count before
+        the serial has ever actually visited that department, or
+      - edit Restrict / Limit Count on any row, existing or new.
+
+    It may never delete a row, rename an existing row's Department, add
+    two rows for the same Department, or set/change a Count by hand --
+    Count is only ever written by seed_department_count_history,
+    _bump_department_count, or the backfill batch, all of which bypass
+    this check entirely (see below), so any Count difference reaching
+    here is necessarily a manual edit.
 
     MUST run before seed_department_count_history in hooks.py's Serial
     No validate list: this compares the doc as the client submitted it
     against what was in the DB before this save, so it needs to run
     before any of our OWN hooks mutate department_history in this same
     validate cycle -- otherwise seed_department_count_history's own
-    legitimate first-row seed (for an existing serial whose history was
-    empty before its turn in the backfill queue) would look identical
-    to a user having manually added a row, and get wrongly blocked.
+    legitimate row seed (for a department not yet tracked) would look
+    identical to a user having manually added a row, and get wrongly
+    blocked.
 
     Our OTHER code that legitimately rewrites this table --
     _bump_department_count and run_department_count_history_backfill_
@@ -148,19 +166,47 @@ def prevent_manual_department_history_edits(doc, method=None):
     if not before:
         return
 
-    old_rows = {
-        (row.departmant or "").strip(): row.count
+    old_by_dept = {
+        (row.departmant or "").strip(): row
         for row in (before.get("department_history") or [])
     }
-    new_rows = {
-        (row.departmant or "").strip(): row.count
-        for row in (doc.get("department_history") or [])
-    }
 
-    if new_rows != old_rows:
+    seen_depts = set()
+    matched_old_depts = set()
+
+    for row in doc.get("department_history") or []:
+        dept = (row.departmant or "").strip()
+        if not dept:
+            frappe.throw("Every Department Count History row must have a Department set.")
+
+        if dept in seen_depts:
+            frappe.throw(
+                f"Department Count History already has a row for <b>{dept}</b> -- "
+                f"duplicate rows for the same Department are not allowed."
+            )
+        seen_depts.add(dept)
+
+        old_row = old_by_dept.get(dept)
+        if old_row:
+            matched_old_depts.add(dept)
+            if (row.count or 0) != (old_row.count or 0):
+                frappe.throw(
+                    "Count cannot be added, removed, or edited manually on "
+                    "Department Count History -- only Restrict and Limit Count "
+                    "can be changed. This table is maintained automatically as "
+                    "the serial moves between departments."
+                )
+        elif (row.count or 0) != 0:
+            frappe.throw(
+                f"A new Department Count History row for <b>{dept}</b> must "
+                f"start with Count = 0 -- Count is maintained automatically as "
+                f"the serial moves between departments."
+            )
+
+    if set(old_by_dept.keys()) - matched_old_depts:
         frappe.throw(
-            "Department Count History rows and their Count cannot be added, "
-            "removed, or edited manually -- only Restrict and Limit Count can "
-            "be changed. This table is maintained automatically as the "
-            "serial moves between departments."
+            "Department Count History rows cannot be deleted, and an existing "
+            "row's Department cannot be changed -- only Restrict and Limit "
+            "Count can be edited, and a new row can be added for a Department "
+            "not yet tracked."
         )

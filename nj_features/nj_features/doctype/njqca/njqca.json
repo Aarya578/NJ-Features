@@ -527,6 +527,7 @@
    "label": "Execution Check Status"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "execution_check_status",
    "fieldtype": "Table",
    "label": "Execution Check Status",
@@ -538,6 +539,7 @@
    "label": "Change Model"
   },
   {
+   "default": "0",
    "fieldname": "model_changed_using_change_model",
    "fieldtype": "Check",
    "hidden": 1,
@@ -548,7 +550,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-08-01 15:31:53.369750",
+ "modified": "2026-09-17 18:31:21.289315",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

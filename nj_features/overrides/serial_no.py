@@ -56,3 +56,111 @@ def validate_rfq_qty(doc, method=None):
             f"Testing this machine again is fine -- a second Serial No "
             f"for the same machine against the same RFQ is not."
         )
+
+
+def seed_department_count_history(doc, method=None):
+    """
+    Serial No "validate" hook. Seeds the first Department Count History
+    row (child table field department_history) the moment this Serial
+    No first has a resolvable department -- i.e. as soon as its
+    `warehouse` points at a Warehouse with a Department set.
+
+    Deliberately does NOT read the `department` field on Serial No:
+    that field is only ever set once, at creation time (from the QC
+    operator's own department at that moment), and is never updated
+    again by any later stock movement -- confirmed against real UAT
+    data, where a serial's `department` still read its original value
+    days after the serial had physically moved through two more
+    departments. Warehouse -> Department is the only reliable "current
+    department" signal.
+
+    Only fires while department_history is still empty, so it never
+    re-runs once seeded -- every later department change is counted by
+    nj_features.overrides.stock_entry.update_department_count_history
+    on the Stock Entry that actually moves the serial.
+
+    Also flags department_history_backfilled for a brand-new serial
+    (is_new()) -- a serial that's never been saved before has no real
+    Stock Ledger Entry history predating this feature, so there's
+    nothing for the hourly backfill job (nj_features.overrides.
+    stock_entry.run_department_count_history_backfill_batch) to ever
+    reconstruct for it; marking it done immediately keeps that job's
+    queue scoped to genuinely pre-existing serials only. An EXISTING
+    serial that happens to hit this same empty-table condition (e.g.
+    it's mid-way through the backfill queue and got saved for an
+    unrelated reason first) is deliberately left unflagged -- this only
+    seeds a shallow one-row placeholder for it, and the backfill job
+    still needs to replace that with the real reconstructed history
+    once it reaches this serial.
+    """
+    if doc.get("department_history"):
+        return
+
+    if not doc.warehouse:
+        return
+
+    department = frappe.db.get_value("Warehouse", doc.warehouse, "department")
+    if not department:
+        return
+
+    row = doc.append("department_history", {})
+    row.departmant = department
+    row.count = 1
+
+    if doc.is_new():
+        doc.department_history_backfilled = 1
+
+
+def prevent_manual_department_history_edits(doc, method=None):
+    """
+    Serial No "validate" hook. Department Count History (department_
+    history) is entirely server-managed -- seeded on creation, bumped on
+    real stock movement, reconstructed by the hourly backfill for
+    pre-existing serials. A normal user-initiated save must never be
+    able to add a row, delete a row, or hand-edit an existing row's
+    Count/Department -- only Restrict and Limit Count are meant to be
+    editable (enforced here at the row-set/count level; read_only on
+    those two fields in the Department History doctype plus the grid's
+    cannot_add_rows/cannot_delete_rows in public/js/serial_no.js cover
+    the UI side, but neither of those actually stops a save submitted
+    directly against the API, which is why this check exists).
+
+    MUST run before seed_department_count_history in hooks.py's Serial
+    No validate list: this compares the doc as the client submitted it
+    against what was in the DB before this save, so it needs to run
+    before any of our OWN hooks mutate department_history in this same
+    validate cycle -- otherwise seed_department_count_history's own
+    legitimate first-row seed (for an existing serial whose history was
+    empty before its turn in the backfill queue) would look identical
+    to a user having manually added a row, and get wrongly blocked.
+
+    Our OTHER code that legitimately rewrites this table --
+    _bump_department_count and run_department_count_history_backfill_
+    batch in nj_features.overrides.stock_entry -- never reaches this
+    check at all: the former sets flags.ignore_validate before saving,
+    and the latter writes via raw SQL, bypassing Document validation
+    entirely.
+    """
+    if doc.is_new():
+        return
+
+    before = doc.get_doc_before_save()
+    if not before:
+        return
+
+    old_rows = {
+        (row.departmant or "").strip(): row.count
+        for row in (before.get("department_history") or [])
+    }
+    new_rows = {
+        (row.departmant or "").strip(): row.count
+        for row in (doc.get("department_history") or [])
+    }
+
+    if new_rows != old_rows:
+        frappe.throw(
+            "Department Count History rows and their Count cannot be added, "
+            "removed, or edited manually -- only Restrict and Limit Count can "
+            "be changed. This table is maintained automatically as the "
+            "serial moves between departments."
+        )

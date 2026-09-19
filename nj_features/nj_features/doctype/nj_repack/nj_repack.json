@@ -20,6 +20,7 @@
  ],
  "fields": [
   {
+   "allow_on_submit": 1,
    "fieldname": "serial_no",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -33,6 +34,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "current_item_code",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -42,6 +44,7 @@
    "reqd": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "repack_item_code",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -56,6 +59,7 @@
    "label": "Current Item Attributes"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "current_attributes",
    "fieldtype": "Table",
    "label": "Current Attributes",
@@ -68,12 +72,14 @@
    "label": "Repack Item Attributes"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "repack_attributes",
    "fieldtype": "Table",
    "label": "Repack Attributes",
    "options": "NJ Repack Attribute"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "amended_from",
    "fieldtype": "Link",
    "label": "Amended From",
@@ -83,6 +89,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "scan_barcode",
    "fieldtype": "Data",
    "label": "Scan Barcode"
@@ -91,7 +98,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-09-14 17:01:10.549047",
+ "modified": "2026-09-15 10:44:25.895655",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Repack",

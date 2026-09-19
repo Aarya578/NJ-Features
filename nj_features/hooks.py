@@ -107,7 +107,31 @@ doc_events = {
     # exclusive, so this doesn't touch or conflict with that app's own
     # BIOS-uniqueness checks there.
     "Serial No": {
-        "validate": "nj_features.overrides.serial_no.validate_rfq_qty",
+        # Order matters: prevent_manual_department_history_edits must run
+        # BEFORE seed_department_count_history -- see the former's
+        # docstring for why (it needs to see the client-submitted state
+        # before our own seeding hook mutates department_history in this
+        # same validate cycle).
+        "validate": [
+            "nj_features.overrides.serial_no.validate_rfq_qty",
+            "nj_features.overrides.serial_no.prevent_manual_department_history_edits",
+            "nj_features.overrides.serial_no.seed_department_count_history",
+        ],
+    },
+    # Every department-crossing stock transfer (Stock Movement, NJ Audit,
+    # or a direct manual transfer) ends up submitting a real Stock Entry,
+    # so this is the one point that catches all of them exactly once --
+    # see nj_features.overrides.stock_entry.update_department_count_history.
+    # block_restricted_department_moves is a backstop for a Stock Entry
+    # created and submitted directly, bypassing validate_serial_no_and_
+    # department (which already runs this same check earlier for every
+    # other flow -- Stock Movement / NJ Audit / Auto Stock Entry / MPC /
+    # NJQCA all route through nj_lib.utils.stock_entry.stock_entry_using_
+    # nj_lib(), which calls that validator before the Stock Entry even
+    # exists).
+    "Stock Entry": {
+        "before_submit": "nj_features.overrides.stock_entry.block_restricted_department_moves",
+        "on_submit": "nj_features.overrides.stock_entry.update_department_count_history",
     },
     "NJ Repack": {
         "validate":
@@ -138,6 +162,9 @@ doc_events = {
         "before_save": "nj_features.nj_features.doctype.laptop_box.laptop_box.printing_barcode"
     },
     "Delivery Note": {
+        "validate": [
+            "nj_features.overrides.delivery_note.set_linked_sales_order_flags",
+        ],
         "before_save": [
             "nj_features.overrides.delivery_note.deviding_tax_chargese_dn",
             "nj_features.overrides.delivery_note.deviding_tax_chargese_return_dn",
@@ -149,6 +176,9 @@ doc_events = {
             "nj_features.overrides.delivery_note.set_cod_details_critical"
         ],
         "on_submit": "nj_features.nj_features.api.zoho_status_sync.on_delivery_note_submit",
+    },
+    "Quotation": {
+        "on_submit": "nj_features.nj_features.api.zoho_status_sync.on_quotation_submit",
     },
     "Employee": {
         "on_update": "nj_features.overrides.employee.update_item_group_and_max_qty_in_warehouse",
@@ -206,6 +236,23 @@ override_whitelisted_methods = {
 
 scheduler_events = {
     "cron": {
+        # Backfills Department Count History for a bounded batch of
+        # in-stock serials that predate this feature -- self-completing
+        # over many short hourly runs instead of one long operation, so
+        # it's safe to run anytime including business hours. See
+        # nj_features.overrides.stock_entry.run_department_count_history_backfill_batch.
+        "0 * * * *": [
+            "nj_features.overrides.stock_entry.run_department_count_history_backfill_batch",
+        ],
+
+        "0 0 * * *": [
+            "nj_features.overrides.sales_order.run_daily_eta_drift_reallocation",
+            # Releases serials whose Repair/Replace cycle is finished. Without it
+            # the flag is never cleared, and a repaired machine back in stock
+            # stays permanently invisible to the allocator.
+            "nj_features.services.return_flag_cleanup.clear_completed_return_flags",
+        ],
+
         "0 22 * * *": [
             "nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data",
             "njcompliance.nj_compliance.doctype.nj_non_compliance.nj_non_compliance.raise_nc_undone_daily_individual_report",
@@ -224,9 +271,12 @@ scheduler_events = {
             "nj_features.overrides.product_bundle.update_product_bundle_quantities",
         ],
 
-        "2 * * * *": [
-            "nj_features.overrides.product_bundle.update_zero_quantity_product_bundles",
-        ],
+        # update_zero_quantity_product_bundles removed - it overwrote the same
+        # Product Bundle.quantity field one minute after update_product_bundle_quantities
+        # with a different, family-wide (parent+CPU) total instead of this exact
+        # SKU's own stock, causing the Shopify-visible quantity to flap between
+        # the two every hour and letting many sibling SKUs claim the same unit
+        # as available simultaneously.
 
         "45 9 * * *": [
             "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
@@ -254,6 +304,7 @@ scheduler_events = {
         # Runs every minute
         "*/1 * * * *": [
             "nj_features.nj_features.api.zoho_quotation_sync.poll_zoho_deals_and_create_quotations",
+            "nj_features.nj_features.api.zoho_quote_sync.poll_zoho_quotes_and_create_quotations",
         ],
 
         # Runs every 12 hours: 12 AM and 12 PM server time

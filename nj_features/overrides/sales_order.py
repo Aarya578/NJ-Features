@@ -11,8 +11,98 @@ from frappe.utils import getdate, nowdate, add_days, flt
 from erpnext.selling.doctype.sales_order.sales_order import SalesOrder
 from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 from nj_features.nj_features.api.shiprocket_api import get_auth_token, generate_awb, generate_label
+from nj_features.services.model_compatibility import is_screen_type_compatible
 
 logger = frappe.logger('SOLogger', allow_site=True, file_count=1)
+
+# Extra days a unit needs when it has to be reconfigured (to_make != item_code)
+# before it can ship. Production's route for a reconfig is Grade A -> Reliability
+# -> FQC, so a rebuild is never ready as fast as a unit that already matches the
+# order. Applied to estimated_delivery_date only - it must never be added to
+# committed_delivery_date or delivery_date, which are human-owned.
+# Change it here and it changes everywhere.
+RECONFIG_SLA_DAYS = 4
+
+# When an order is submitted and allocation cannot find a machine for every unit
+# on it, the missing units have to come through procurement. This is how long that
+# takes, in WORKING days - the same basis every other date in this file uses, and
+# the same figure compute_sales_order_delivery_date() already applies to the
+# estimate, so the promise and the estimate agree from the moment the order is
+# created instead of drifting apart on day one.
+UNALLOCATED_PROCUREMENT_DAYS = 45
+
+# How far ahead of its delivery date an order is allowed to hold serial
+# reservations. Beyond this the hourly allocator releases them and skips the
+# order, on the reasoning that stock should not be tied up for something that is
+# not close to shipping.
+#
+# This MUST stay comfortably above UNALLOCATED_PROCUREMENT_DAYS. When it did not
+# (it was 50, against a 45-working-day procurement SLA that lands ~60+ calendar
+# days out) an order with no stock behind it was quoted a date past the horizon,
+# and quoting that date was enough to push the order out of the allocator for
+# good - see the skip branch in calculate_dispatch_eta_for_sales_order().
+ALLOCATION_HORIZON_DAYS = 80
+
+# Once a serial is reserved to a Sales Order it stays on that order.
+#
+# The nightly job used to "upgrade" reservations: if any free machine sat in a
+# department even one step closer to dispatch, it swapped. That was the only test
+# - it never asked whether the order would have made its date anyway, never
+# required the gain to be worth anything, and never checked whether production had
+# already started rebuilding the unit it was taking away. Between 2026-09-09 and
+# 2026-09-16 it swapped 498 times across 12-89 orders a day; SO-2026-09-00088 went
+# through ten machines and SAL-ORD-2026-08447 through eight. A released unit keeps
+# its to_make, so the work is not lost, but the shop floor is left building for an
+# order that no longer owns the machine and no one downstream can plan.
+#
+# Reservations are still RELEASED when a machine genuinely cannot ship - it moved
+# to a department that is not sellable, into a personal warehouse, or the order is
+# over-allocated. That is trim_over_allocated_serials() / unassign_serials() and it
+# is cleanup, not reallocation. What stops here is trading a working reservation
+# for a marginally better one.
+#
+# Set True to restore the old behaviour; upgrade_order_reservations() is unchanged
+# and can still be called by hand for a single order.
+AUTO_UPGRADE_RESERVATIONS = False
+
+# Departments a unit only enters when something has gone wrong: a part is
+# missing, a QC step failed, a consumable ran out. They are holding states, not
+# steps every machine walks through.
+#
+# compute_sales_order_delivery_date() prices a unit by summing the SLA of every
+# applicable department between where it stands and dispatch. That charged each
+# of these to every unit upstream of them, whether or not it would ever go near
+# one. `Part waiting - NJ` alone carries the maximum 15-day SLA and sits at
+# sequence 10, so every laptop below it was billed 15 days for a queue it may
+# never join - a third of the whole ladder.
+#
+# That is why a Dell 3410 sitting in Chip Tech priced out at the 45-day cap, the
+# same number used for "we have no machine at all", and why SO-2026-09-00002 read
+# as 11-Nov against a 10-Sep promise while 19 of its 20 machines were nearly
+# ready. The 62-day gap it produced is what kept triggering reallocation.
+#
+# A unit ACTUALLY sitting in one of these still gets that department's own SLA
+# charged as its starting point - this only removes them from the forward ladder
+# of units that are somewhere else.
+#
+# Matched on the department name, lower-cased. Production should review this list;
+# it is a judgement about which steps are routine and which are exceptions.
+_CONTINGENT_DEPT_MARKERS = (
+    "part waiting",
+    "partwating",
+    "partwaiting",
+    "consumable hold",
+    "qc reject",
+    "rejection",
+    "screen repair",
+    "technician repair",
+)
+
+
+def _is_contingent_dept(dept_name):
+    """True for a holding/exception department (see _CONTINGENT_DEPT_MARKERS)."""
+    name = (dept_name or "").lower()
+    return any(marker in name for marker in _CONTINGENT_DEPT_MARKERS)
 SHOPIFY_URL = "https://newjaisa.myshopify.com/admin/api/2025-01/orders.json?name="
 TOKEN = "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"
 FULLFILMENT_ORDER_ID = "https://newjaisa.myshopify.com/admin/api/2025-01/orders/{shopify_order_id}/fulfillment_orders.json"
@@ -146,51 +236,62 @@ class CustomSalesOrder(SalesOrder):
                 else:
                     target_committed = std_sla_date
 
+                # committed_delivery_date is ESTABLISHED here, once, because it was
+                # empty - and is never written again by any code path.
+                #
+                # delivery_date is deliberately NOT touched. It belongs to the user:
+                # whatever the customer / Shopify / the sales team put there stays
+                # there. If a date has to move, a human moves it by hand. The system
+                # expresses its own opinion only through estimated_delivery_date.
                 self.committed_delivery_date = target_committed
-                self.delivery_date = target_committed
-                frappe.db.set_value("Sales Order", self.name, {
-                    "committed_delivery_date": target_committed,
-                    "delivery_date": target_committed
-                }, update_modified=False)
-                frappe.db.sql("""
-                    UPDATE `tabSales Order Item`
-                    SET delivery_date = %s
-                    WHERE parent = %s
-                """, (target_committed, self.name))
+                frappe.db.set_value(
+                    "Sales Order", self.name,
+                    {"committed_delivery_date": target_committed},
+                    update_modified=False,
+                )
             else:
                 target_committed = committed_val
-                if str(self.delivery_date) != str(target_committed):
-                    self.delivery_date = target_committed
-                    frappe.db.set_value("Sales Order", self.name, "delivery_date", target_committed, update_modified=False)
-                    frappe.db.sql("""
-                        UPDATE `tabSales Order Item`
-                        SET delivery_date = %s
-                        WHERE parent = %s
-                    """, (target_committed, self.name))
 
         calculate_dispatch_eta_for_sales_order(self.name, do_commit=False)
 
-        # If the unit matched during allocation above needs reconfiguring, bake the same
-        # +2-day reconfig SLA (used by compute_sales_order_delivery_date's estimated-date
-        # math) into the initial committed_delivery_date too. Otherwise the customer
-        # promise is structurally guaranteed to fall short as soon as the reconfig-aware
-        # estimated date is computed below, which was driving orders into a repeating
-        # reallocation loop.
-        if is_first_commit and target_committed and _sales_order_has_reconfig_match(self.name):
-            reconfig_committed = add_working_days(getdate(target_committed), 2)
-            if getdate(reconfig_committed) != getdate(target_committed):
-                target_committed = reconfig_committed
+        # The promise has to be honest at the moment it is made. If allocation above
+        # could not find a machine for every hardware unit on this order, the missing
+        # ones come through procurement, so the date the customer is given reflects
+        # that now - once, while the promise is still being created.
+        #
+        # This is the ONLY circumstance in which the system writes delivery_date or
+        # moves committed_delivery_date, and it happens only on the first submit,
+        # when committed_delivery_date was empty. Afterwards neither field is ever
+        # written again: quoting four days for stock we do not have and then walking
+        # the date forward later is what the customer experiences as "the committed
+        # date changed again".
+        #
+        # A reconfig unit's extra days are NOT added here - that cost stays in
+        # compute_sales_order_delivery_date(), which feeds estimated_delivery_date,
+        # so a rebuild shows up as the estimate pulling away from a fixed promise.
+        if is_first_commit and target_committed:
+            unallocated_qty = _unallocated_hardware_qty(self.name)
+            if unallocated_qty > 0:
+                target_committed = add_working_days(
+                    target_committed, UNALLOCATED_PROCUREMENT_DAYS
+                )
                 self.committed_delivery_date = target_committed
                 self.delivery_date = target_committed
                 frappe.db.set_value("Sales Order", self.name, {
                     "committed_delivery_date": target_committed,
-                    "delivery_date": target_committed
+                    "delivery_date": target_committed,
                 }, update_modified=False)
                 frappe.db.sql("""
                     UPDATE `tabSales Order Item`
                     SET delivery_date = %s
                     WHERE parent = %s
                 """, (target_committed, self.name))
+                logger.info(
+                    "[UNALLOCATED_PROMISE] %s: %d hardware unit(s) unallocated at submit "
+                    "-> committed_delivery_date and delivery_date set to %s (+%d working days)",
+                    self.name, unallocated_qty, target_committed, UNALLOCATED_PROCUREMENT_DAYS
+                )
+
 
         calc_res = compute_sales_order_delivery_date(self.name, return_reason=True)
         if isinstance(calc_res, (list, tuple)):
@@ -299,6 +400,10 @@ class CustomSalesOrder(SalesOrder):
         if status in ("Closed", "Cancelled", "Completed"):
             _release_serial_reservations(self.name)
 
+    def on_cancel(self):
+        super().on_cancel()
+        _release_serial_reservations(self.name)
+
     def on_update_after_submit(self):
         if self.status in ("Closed", "Cancelled", "Completed"):
             _release_serial_reservations(self.name)
@@ -309,15 +414,17 @@ def _release_serial_reservations(so_name):
     reserved_serials = frappe.db.sql_list("""
         SELECT name
         FROM `tabSerial No`
-        WHERE reserved_sales_order = %s
-    """, so_name)
+        WHERE reserved_sales_order = %s OR sales_order = %s
+    """, (so_name, so_name))
 
     if not reserved_serials:
         return
 
     frappe.db.sql("""
         UPDATE `tabSerial No`
-        SET reserved_sales_order = NULL,
+        SET sales_order = NULL,
+            reserved_sales_order = NULL,
+            to_make = NULL,
             remarks = NULL,
             order_source = NULL
         WHERE name IN %(serials)s
@@ -408,33 +515,32 @@ def trim_over_allocated_serials():
     hourly allocation cycle. Runs very fast by targeting only active reserved Sales Orders.
     """
     try:
-        # CLEANUP: Release reservations for any serials in sequence 0 departments
-        # or Employee Personal Warehouses
-        invalid_serials = frappe.db.sql_list("""
-            SELECT sn.name
-            FROM `tabSerial No` sn
-            INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
-            INNER JOIN `tabDepartment` dp ON w.department = dp.name
-            WHERE sn.reserved_sales_order IS NOT NULL
-              AND sn.reserved_sales_order != ''
-              AND sn.status = 'Active'
-              AND (
-                  IFNULL(dp.department_sequence, 0) = 0
-                  OR IFNULL(w.warehouse_type, '') = 'Employee Personal Warehouse'
-              )
-              AND (sn.return_reason IS NULL OR sn.return_reason NOT IN ('Repair', 'Replace', 'RTO Customer', 'RTO Delivery Partner'))
-        """)
-        if invalid_serials:
-            frappe.db.sql("""
-                UPDATE `tabSerial No`
-                SET reserved_sales_order = NULL,
-                    to_make = NULL,
-                    remarks = NULL,
-                    order_source = NULL
-                WHERE name IN %s
-            """, (tuple(invalid_serials),))
-            frappe.db.commit()
-            logger.info("Released %s invalid serials in sequence 0 departments or Employee Personal Warehouses", len(invalid_serials))
+        # A reserved serial is NOT released just because of where it is standing.
+        #
+        # This used to strip the reservation off any reserved serial sitting in a
+        # department with department_sequence = 0, or in an Employee Personal
+        # Warehouse, and it wiped to_make / remarks / order_source with it.
+        #
+        # department_sequence = 0 does not mean "not stock". It means "not on the
+        # sales pipeline", and that covers two completely different things:
+        # departments where a unit genuinely stops being sellable (Asset,
+        # Procurement, Admin, IT), and departments where a unit is actively being
+        # WORKED ON for the very order that reserved it - Reconfiguration - NJ,
+        # To Re-config - NJ, WIP - NJ, Stock Movement - NJ, Chip QC, BG - DR - a
+        # technician's own warehouse. This could not tell them apart, so sending a
+        # machine to be reconfigured destroyed its reservation within the hour, and
+        # wiping to_make deleted the instruction saying what to rebuild it into
+        # while it sat on the reconfig bench.
+        #
+        # The order then came up short and was given a different machine, while the
+        # original became invisible (allocation only searches department_sequence > 0)
+        # and came back later as untargeted free stock - to be allocated elsewhere and
+        # reconfigured a second time. That is the rework SO-2026-09-00002 was hit with:
+        # 20 units loaded with the 2M config, six re-allocated, the config work lost.
+        #
+        # Once a serial is reserved to an order it stays reserved to that order.
+        # Genuine over-allocation (more serials than the order still needs) is still
+        # trimmed below - that is counting, not a judgement about location.
 
         # Get active reserved Sales Orders to avoid querying the whole system history
         active_reserved_sos = frappe.db.sql_list("""
@@ -550,8 +656,12 @@ def trim_over_allocated_serials():
                 SELECT name
                 FROM `tabSerial No`
                 WHERE reserved_sales_order = %s
-                  AND (item_code = %s OR (to_make IS NOT NULL AND to_make != '' AND to_make = %s))
-                  AND (return_reason IS NULL OR return_reason NOT IN ('Repair', 'Replace', 'RTO Customer', 'RTO Delivery Partner'))
+                  -- Destination-only, matching the reserved_count subquery above,
+                  -- which groups by COALESCE(NULLIF(to_make,''), item_code). Counting
+                  -- on one key and releasing on a wider one let this trim take serials
+                  -- belonging to a different line of the same order.
+                  AND COALESCE(NULLIF(to_make, ''), item_code) = %s
+                  AND (return_reason IS NULL OR return_reason NOT IN ('Repair', 'Replace'))
                   AND (order_source IS NULL OR (
                       order_source NOT LIKE '%%- Repair%%'
                       AND order_source NOT LIKE '%%- Replace%%'
@@ -567,7 +677,7 @@ def trim_over_allocated_serials():
                     END ASC,
                     creation DESC
                 LIMIT %s
-            """, (row["so_name"], row["item_code"], row["item_code"], excess))
+            """, (row["so_name"], row["item_code"], excess))
 
             if excess_serials:
                 frappe.db.sql("""
@@ -616,8 +726,18 @@ def _is_dept_applicable(dept_row, item_grp):
     return item_grp.strip().lower() in allowed
 
 
+def run_daily_eta_drift_reallocation():
+    """Once-a-day entry point (scheduled at midnight) for the ETA-drift
+    reallocation check. This is the ONLY path that may reallocate an
+    already-allocated serial - every other run of calculate_dispatch_eta_for_sales_order
+    (hourly cron, on_submit, manual triggers) must only recompute displayed
+    ETAs and must never touch an existing reservation or to_make.
+    """
+    return calculate_dispatch_eta_for_sales_order(so_name=None, do_commit=True, allow_reallocation=True)
+
+
 @frappe.whitelist(allow_guest=True)
-def calculate_dispatch_eta_for_sales_order(so_name=None, do_commit=True):
+def calculate_dispatch_eta_for_sales_order(so_name=None, do_commit=True, allow_reallocation=False):
     """Calculate dispatch ETA.
 
     - If so_name is passed: calculate only for that Sales Order
@@ -626,6 +746,12 @@ def calculate_dispatch_eta_for_sales_order(so_name=None, do_commit=True):
     Display ETA is based on the theoretical prediction from calculate_item_eta()
     using full pending quantity, not on whether the order is already reserved /
     allocated. Allocation is still executed for reservation side effects.
+
+    allow_reallocation: passed through to update_sales_order_etas(). Only the
+    once-a-day midnight job (run_daily_eta_drift_reallocation) sets this True -
+    every other caller (hourly cron, on_submit, etc.) must leave it False so an
+    already-allocated serial's reservation/to_make is never touched outside
+    that one daily check.
     """
     job = None
     try:
@@ -643,22 +769,27 @@ def calculate_dispatch_eta_for_sales_order(so_name=None, do_commit=True):
             timeout=1800,
             job_name="calculate_dispatch_eta_for_all_sales_orders",
             do_commit=do_commit,
+            allow_reallocation=allow_reallocation,
         )
         logger.info("Delegated full dispatch ETA calculation to 'long' queue worker (timeout=1800s)")
         return {}
 
-    global _DEPT_WAREHOUSES_CACHE, _DEPT_AVAILABLE_SERIALS_CACHE
+    global _DEPT_WAREHOUSES_CACHE, _DEPT_AVAILABLE_SERIALS_CACHE, _POOL_CFG_CACHE
     _DEPT_WAREHOUSES_CACHE = None
     _DEPT_AVAILABLE_SERIALS_CACHE = None
+    # Derived from the serial pool, so it must die with it - otherwise a later
+    # run would match against item codes from a stale pool.
+    _POOL_CFG_CACHE = None
+    _ALLOCATION_MATCHER_CACHE.clear()
 
     # Safety net: trim any over-allocated serials before processing
     if not so_name:
         trim_over_allocated_serials()
-        try:
-            from nj_features.services.reservation_service import upgrade_order_reservations
-            upgrade_order_reservations()
-        except Exception as e:
-            logger.warning(f"upgrade_order_reservations failed during ETA run: {e}")
+        # Reallocation must only happen via the ETA-drift check (see ETA_DRIFT
+        # below) - never as a blanket opportunistic sweep here. An already
+        # allocated serial should not be swapped out just because a
+        # closer-department candidate exists; doing so invalidates any
+        # physical kitting/rework already committed against it.
 
     departments = get_departments()
     open_orders = get_open_sales_orders(so_name=so_name)
@@ -691,10 +822,54 @@ def calculate_dispatch_eta_for_sales_order(so_name=None, do_commit=True):
 
             days_to_deliver = (getdate(delivery_date) - getdate(nowdate())).days
 
-            if days_to_deliver > 50:
-                # Orders exceeding 50 days should NOT hold or allocate serial reservations
+            # The horizon is judged against the CUSTOMER PROMISE, never against
+            # delivery_date.
+            #
+            # delivery_date is user-editable, and the value users most naturally
+            # edit it to is the estimate this system just showed them - which is
+            # ~45 working days out for an order with no stock behind it. That fed
+            # the system's own output back in as a reason to stop allocating, and
+            # the order could never recover: released serials -> no allocation ->
+            # estimate stays far out -> still past the horizon. Nine orders were
+            # stuck this way on 2026-09-18.
+            #
+            # committed_delivery_date is established once, on first submit, and is
+            # never written again by any code path (see on_submit), so it cannot be
+            # moved by the estimate. An order with no promise recorded (pre-dating
+            # that field) falls back to delivery_date, as before.
+            #
+            # days_to_deliver above is untouched and still drives the department
+            # ladder - this changes only whether the order is dropped entirely.
+            promise_date = order.get("promise_date") or delivery_date
+            horizon_days = (getdate(promise_date) - getdate(nowdate())).days
+
+            if horizon_days > ALLOCATION_HORIZON_DAYS:
+                # Orders beyond the allocation horizon should NOT hold or allocate
+                # serial reservations.
+                #
+                # The horizon was 50 days, which sat right on top of the 45-working-day
+                # procurement SLA that compute_sales_order_delivery_date() quotes for an
+                # order with no stock behind it. That produced a deadlock: an unstocked
+                # order was estimated ~45 working days out, someone moved delivery_date
+                # onto that estimate, days_to_deliver crossed 50, this branch released
+                # every serial on the line, and the order was then skipped entirely - so
+                # it could never be re-allocated and the estimate never came back down.
+                # Nine orders were stuck this way on 2026-09-18 (SO-2026-09-00061 and
+                # friends), all reading 56-61 days. 80 clears the procurement SLA with
+                # room to spare, so a legitimately unstocked order stays in the
+                # allocator instead of falling out of it.
                 unassign_serials(so_name_local, item_code, 999999)
-                logger.info(f"[SKIP_ALLOCATION_50D] {so_name_local} item {item_code}: days_to_deliver={days_to_deliver} > 50")
+                # Releasing the serials without also clearing the ETA breakdown left the
+                # Sales Order showing a grid of allocations that no longer existed - the
+                # `continue` below skips update_sales_order_etas(), which is the only
+                # thing that rewrites this table. Clear it here so the screen matches
+                # the reservations.
+                if frappe.db.table_exists("Estimated Delivery Date Details"):
+                    frappe.db.sql(
+                        "DELETE FROM `tabEstimated Delivery Date Details` WHERE parent = %s",
+                        so_name_local,
+                    )
+                logger.info(f"[SKIP_ALLOCATION_HORIZON] {so_name_local} item {item_code}: horizon_days={horizon_days} (promise={promise_date}, days_to_deliver={days_to_deliver}) > {ALLOCATION_HORIZON_DAYS}")
                 continue
 
             eligible_depts, remaining_depts = get_eligible_departments(
@@ -740,7 +915,7 @@ def calculate_dispatch_eta_for_sales_order(so_name=None, do_commit=True):
             continue
 
     if so_eta_map:
-        update_sales_order_etas(so_eta_map, so_breakdown_map, do_commit=do_commit)
+        update_sales_order_etas(so_eta_map, so_breakdown_map, do_commit=do_commit, allow_reallocation=allow_reallocation)
 
     if item_errors:
         frappe.log_error(
@@ -786,7 +961,17 @@ def get_dept_available_serials(dept_name):
             WHERE
                 (sn.reserved_sales_order IS NULL OR sn.reserved_sales_order = '')
                 AND sn.status = 'Active'
-                AND (sn.return_reason IS NULL OR sn.return_reason = '' OR sn.return_reason NOT IN ('Repair', 'Replace', 'RTO Customer', 'RTO Delivery Partner'))
+                -- 'Repair' and 'Replace' are excluded; RTO Customer and RTO Delivery
+                -- Partner are NOT. Keep this list identical to the one in
+                -- so_quantity_check.py and shopify_inventory_targeted.py - those decide
+                -- what Shopify advertises, and any reason excluded here but counted
+                -- there becomes phantom stock: the listing sells it, then allocation
+                -- refuses it and the order lands on the fallback SLA.
+                --
+                -- Repair/Replace units are owed to the customer who returned them, so
+                -- no other order may take them. RTO units never reached a customer, so
+                -- they are ordinary sellable stock.
+                AND (sn.return_reason IS NULL OR sn.return_reason = '' OR sn.return_reason NOT IN ('Repair', 'Replace'))
                 AND IFNULL(dp.department_sequence, 0) != 0
                 AND dp.sla_item_groups IS NOT NULL AND dp.sla_item_groups != ''
                 AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
@@ -797,9 +982,74 @@ def get_dept_available_serials(dept_name):
                 )
             ORDER BY COALESCE(sn.purchase_date, sn.creation) ASC, sn.name ASC
         """, as_dict=True)
+
         for r in rows:
             _DEPT_AVAILABLE_SERIALS_CACHE[r["department"]].append(r)
     return _DEPT_AVAILABLE_SERIALS_CACHE[dept_name]
+
+
+def is_serial_already_delivered(serial_no):
+    """True when this serial has shipped on a submitted Delivery Note that was not
+    later returned - i.e. it is physically with a customer.
+
+    Checked per candidate at the moment of allocation rather than as a filter on
+    the whole pool: the pool holds ~24k serials of which only a handful are in
+    this state, and filtering them all up front cost 4-8s (and 82s as a correlated
+    NOT EXISTS) on a path Sales Order.on_submit() runs synchronously. One indexed
+    lookup on the few serials we actually try to reserve is far cheaper.
+    """
+    if not serial_no:
+        return False
+    try:
+        return bool(frappe.db.sql("""
+            SELECT 1
+            FROM `tabDelivery Note Item` dni
+            JOIN `tabDelivery Note` dn ON dn.name = dni.parent
+            WHERE dni.serial_no = %s
+              AND dni.docstatus = 1
+              AND dn.is_return = 0
+              AND dn.status NOT IN ('Return Issued', 'Closed')
+              AND NOT EXISTS (
+                  SELECT 1 FROM `tabDelivery Note` ret
+                  WHERE ret.return_against = dn.name
+                    AND ret.is_return = 1 AND ret.docstatus = 1
+              )
+            LIMIT 1
+        """, (serial_no,)))
+    except Exception as e:
+        logger.warning("Delivered-check failed for serial %s: %s", serial_no, e)
+        return False
+
+
+def _unallocated_hardware_qty(so_name):
+    """Hardware units on this order that allocation could not find a machine for.
+
+    Uses the same definition as compute_sales_order_delivery_date(): pending
+    serialised hardware quantity, less the serials actually reserved to the order.
+
+    Returns 0 if it cannot be determined. Failing closed matters here - the caller
+    pushes the customer promise out by UNALLOCATED_PROCUREMENT_DAYS on a non-zero
+    answer, and that date can never be corrected automatically afterwards.
+    """
+    try:
+        placeholders = ", ".join(["%s"] * len(HARDWARE_ITEM_GROUPS))
+        pending = frappe.db.sql(f"""
+            SELECT SUM(GREATEST(0, soi.qty - COALESCE(soi.delivered_qty, 0)))
+            FROM `tabSales Order Item` soi
+            INNER JOIN `tabItem` i ON i.item_code = soi.item_code
+            WHERE soi.parent = %s
+              AND i.has_serial_no = 1
+              AND i.item_group IN ({placeholders})
+        """, tuple([so_name] + list(HARDWARE_ITEM_GROUPS)))[0][0] or 0
+
+        reserved = frappe.db.sql("""
+            SELECT COUNT(*) FROM `tabSerial No` WHERE reserved_sales_order = %s
+        """, (so_name,))[0][0] or 0
+
+        return max(0, int(pending) - int(reserved))
+    except Exception as e:
+        logger.warning("Could not determine unallocated qty for %s: %s", so_name, e)
+        return 0
 
 
 def _get_dept_effective_sla(dept):
@@ -914,6 +1164,7 @@ def get_open_sales_orders(so_name=None):
     query_direct = f"""
         SELECT
             so.name AS sales_order,
+            so.committed_delivery_date AS promise_date,
             soi.item_code,
             SUM(soi.qty) AS ordered_qty,
             CASE
@@ -937,7 +1188,7 @@ def get_open_sales_orders(so_name=None):
             AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes', 'AIO', 'Full Set Desktops', 'MacBooks', 'Full Set Desktops(Bundle)', 'AIO(Bundle)', 'MacBooks(Bundle)', 'Desktops(Bundle)', 'Chromebooks(Bundle)', 'Laptops(Bundle)', 'Chromeboxes(Bundle)')
             {condition_direct}
         GROUP BY
-            so.name, soi.item_code,
+            so.name, soi.item_code, so.committed_delivery_date,
             CASE
                 WHEN so.committed_delivery_date IS NOT NULL
                      AND so.committed_delivery_date != ''
@@ -952,6 +1203,7 @@ def get_open_sales_orders(so_name=None):
     query_bundle_name = f"""
         SELECT
             so.name AS sales_order,
+            so.committed_delivery_date AS promise_date,
             pbi.item_code,
             SUM(pbi.qty * soi.qty) AS ordered_qty,
             CASE
@@ -980,7 +1232,7 @@ def get_open_sales_orders(so_name=None):
             AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes', 'AIO', 'Full Set Desktops', 'MacBooks', 'Full Set Desktops(Bundle)', 'AIO(Bundle)', 'MacBooks(Bundle)', 'Desktops(Bundle)', 'Chromebooks(Bundle)', 'Laptops(Bundle)', 'Chromeboxes(Bundle)')
             {condition_bundle}
         GROUP BY
-            so.name, pbi.item_code,
+            so.name, pbi.item_code, so.committed_delivery_date,
             CASE
                 WHEN so.committed_delivery_date IS NOT NULL
                      AND so.committed_delivery_date != ''
@@ -996,6 +1248,7 @@ def get_open_sales_orders(so_name=None):
     query_bundle_new = f"""
         SELECT
             so.name AS sales_order,
+            so.committed_delivery_date AS promise_date,
             pbi.item_code,
             SUM(pbi.qty * soi.qty) AS ordered_qty,
             CASE
@@ -1026,7 +1279,7 @@ def get_open_sales_orders(so_name=None):
             AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes', 'AIO', 'Full Set Desktops', 'MacBooks', 'Full Set Desktops(Bundle)', 'AIO(Bundle)', 'MacBooks(Bundle)', 'Desktops(Bundle)', 'Chromebooks(Bundle)', 'Laptops(Bundle)', 'Chromeboxes(Bundle)')
             {condition_bundle}
         GROUP BY
-            so.name, pbi.item_code,
+            so.name, pbi.item_code, so.committed_delivery_date,
             CASE
                 WHEN so.committed_delivery_date IS NOT NULL
                      AND so.committed_delivery_date != ''
@@ -1117,10 +1370,18 @@ def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, r
     if not item_group or item_group not in HARDWARE_ITEM_GROUPS:
         return 0
 
-    # Count serials where either the current item_code matches OR the
-    # serial is being reconfigured into this item (to_make = item_code).
-    # This prevents over-allocation when the production planner has already
-    # reserved reconfig serials for this Sales Order.
+    # Count serials already committed to THIS line, keyed on where each serial is
+    # going - to_make when set, otherwise its current item_code. This is the same
+    # key the production planner and the Shopify quantity query use.
+    #
+    # It must not be "item_code = X OR to_make = X". A serial mid-rebuild satisfies
+    # both halves of that OR and is then counted against two different lines of the
+    # same order: the line it is actually becoming, and the line it happens to be
+    # sitting in today. On an order with several lines of one base model the counts
+    # add up to more serials than are reserved, each line looks full, and the
+    # allocator stops - leaving dispatch-ready machines untouched while the order
+    # runs late. Observed on SO-2026-04-00203-1 (GMIT): 9 machines double-counted,
+    # the 16-unit line read as full with only 7 serials behind it.
     allocated_count = frappe.db.sql("""
         SELECT COUNT(*)
         FROM `tabSerial No` sn
@@ -1128,14 +1389,11 @@ def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, r
         INNER JOIN `tabDepartment` dp ON w.department = dp.name
         WHERE
             sn.reserved_sales_order = %s
-            AND (
-                sn.item_code = %s
-                OR (sn.to_make IS NOT NULL AND sn.to_make != '' AND sn.to_make = %s)
-            )
+            AND COALESCE(NULLIF(sn.to_make, ''), sn.item_code) = %s
             AND sn.status = 'Active'
             AND (IFNULL(dp.department_sequence, 0) != 0 OR sn.return_reason IN ('Repair', 'Replace', 'RTO Customer', 'RTO Delivery Partner'))
             AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
-    """, (so_name, item_code, item_code))[0][0] or 0
+    """, (so_name, item_code))[0][0] or 0
 
     to_allocate = int(net_pending - allocated_count)
     unallocated_qty = 0
@@ -1232,6 +1490,22 @@ def assign_serials(so_name, item_code, to_allocate, departments):
     def _do_assign(sn_name, remarks_text=None, sn_dict=None, dept_name=None):
         nonlocal allocated_count, needed_qty
         try:
+            # Never reserve a machine that has already shipped to a customer. The
+            # Shopify quantity query excludes these, but the allocation pool did
+            # not - so an order could be "allocated" to a unit that was physically
+            # gone and then simply never dispatch.
+            if is_serial_already_delivered(sn_name):
+                return False
+
+            # A Non-Touch panel cannot be rebuilt into a Touch one. Checked here
+            # rather than inside each condition because C1b matches on to_make and
+            # C2/C4 match on Shopify variant grouping - none of them look at the
+            # screen, so all three can pair a Touch order with an NT machine.
+            if not is_screen_type_compatible(
+                (sn_dict or {}).get("item_code"), item_code
+            ):
+                return False
+
             effective_source = get_effective_order_source(so_name)
             frappe.db.sql("""
                 UPDATE `tabSerial No`
@@ -1245,7 +1519,7 @@ def assign_serials(so_name, item_code, to_allocate, departments):
                   AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
                   AND status = 'Active'
                   AND is_replace = 0
-                  AND (return_reason IS NULL OR return_reason = '' OR return_reason NOT IN ('Repair', 'Replace', 'RTO Customer', 'RTO Delivery Partner'))
+                  AND (return_reason IS NULL OR return_reason = '' OR return_reason NOT IN ('Repair', 'Replace'))
             """, (so_name, item_code, effective_source, remarks_text or None, sn_name))
 
             if getattr(frappe.db, "_cursor", None) and frappe.db._cursor.rowcount <= 0:
@@ -1430,11 +1704,14 @@ def unassign_serials(so_name, item_code, excess_qty):
         FROM `tabSerial No`
         WHERE
             reserved_sales_order = %s
-            AND (
-                item_code = %s
-                OR (to_make IS NOT NULL AND to_make != '' AND to_make = %s)
-            )
-            AND (return_reason IS NULL OR return_reason NOT IN ('Repair', 'Replace', 'RTO Customer', 'RTO Delivery Partner'))
+            -- Match on DESTINATION only - the same key adjust_serial_allocations()
+            -- counts with. It must not be "item_code = X OR to_make = X": a serial
+            -- mid-rebuild (item_code = X, to_make = Y) belongs to line Y, but the OR
+            -- let line X release it, so two lines of the same base model traded units
+            -- every hour. The counting query was narrowed for this reason after
+            -- SO-2026-04-00203-1; this one was missed.
+            AND COALESCE(NULLIF(to_make, ''), item_code) = %s
+            AND (return_reason IS NULL OR return_reason NOT IN ('Repair', 'Replace'))
             AND (order_source IS NULL OR (
                 order_source NOT LIKE '%%- Repair%%'
                 AND order_source NOT LIKE '%%- Replace%%'
@@ -1455,7 +1732,7 @@ def unassign_serials(so_name, item_code, excess_qty):
             END ASC,
             creation ASC
         LIMIT %s
-    """, (so_name, item_code, item_code, int(excess_qty)))
+    """, (so_name, item_code, int(excess_qty)))
 
     if excess_serials:
         frappe.db.sql("""
@@ -1480,33 +1757,172 @@ def create_unallocated_log(sales_order, item_code, pending_qty, reason):
     doc.insert(ignore_permissions=True)
 
 
+_POOL_CFG_CACHE = None
+_ALLOCATION_MATCHER_CACHE = {}
+
+
+def _get_pool_cfg_map():
+    """{item_code: (template, processor)} for every code present in the serial pool.
+
+    Built with ONE bulk _prime_item_cache() pass. Calling _cfg_tuple_from_item()
+    per candidate serial instead costs a DB round-trip for every uncached item
+    code - measured at 141s for a single ETA call, which is fatal because
+    Sales Order.on_submit() calls calculate_dispatch_eta_for_sales_order()
+    synchronously.
+    """
+    global _POOL_CFG_CACHE
+    if _POOL_CFG_CACHE is not None:
+        return _POOL_CFG_CACHE
+
+    from nj_features.nj_features.doctype.nj_production_planning.nj_production_planning import (
+        _cfg_tuple_from_item,
+        _prime_item_cache,
+    )
+
+    if _DEPT_AVAILABLE_SERIALS_CACHE is None:
+        get_dept_available_serials("")
+
+    codes = set()
+    for rows in (_DEPT_AVAILABLE_SERIALS_CACHE or {}).values():
+        for r in rows:
+            if r.get("item_code"):
+                codes.add(r["item_code"])
+            if r.get("to_make"):
+                codes.add(r["to_make"])
+
+    codes = list(codes)
+    for start in range(0, len(codes), 2000):
+        try:
+            _prime_item_cache(codes[start:start + 2000])
+        except Exception as e:
+            logger.warning("Could not prime item cache chunk for ETA matching: %s", e)
+
+    cfg_map = {}
+    for c in codes:
+        try:
+            cfg = _cfg_tuple_from_item(c)
+            cfg_map[c] = (cfg[0], cfg[1]) if cfg else (None, None)
+        except Exception:
+            cfg_map[c] = (None, None)
+
+    _POOL_CFG_CACHE = cfg_map
+    return _POOL_CFG_CACHE
+
+
+def _build_allocation_matcher(item_code):
+    """Pre-compute the lookups assign_serials() uses for conditions C2/C3/C4.
+
+    The ETA prediction must judge "is there stock for this order" using the SAME
+    rules the allocator uses, otherwise the two disagree: a plain item_code count
+    is blind to every reconfig candidate the allocator would happily take (too
+    pessimistic) while also counting Repair/Replace/RTO, is_replace, personal
+    warehouse and already-delivered units the allocator can never touch (too
+    optimistic).
+    """
+    cached = _ALLOCATION_MATCHER_CACHE.get(item_code)
+    if cached is not None:
+        return cached
+
+    from nj_features.nj_features.doctype.nj_production_planning.nj_production_planning import (
+        _get_shopify_variant_id,
+        _get_variant_bundle_item_codes,
+        _cfg_tuple_from_item,
+        _get_equivalent_parent_models,
+    )
+
+    variant_id = _get_shopify_variant_id(item_code)
+    p2_codes = set(_get_variant_bundle_item_codes(variant_id)) - {item_code} if variant_id else set()
+
+    target_tmpl, target_proc = None, None
+    try:
+        cfg = _cfg_tuple_from_item(item_code)
+        if cfg:
+            target_tmpl, target_proc = cfg[0], cfg[1]
+    except Exception:
+        pass
+
+    equiv_templates = _get_equivalent_parent_models(target_tmpl) if target_tmpl else set()
+
+    p4_codes = set()
+    if variant_id:
+        p4_codes = set(_get_variant_bundle_item_codes(variant_id)) - {item_code} - p2_codes
+
+    matcher = {
+        "item_code": item_code,
+        "p2_codes": p2_codes,
+        "p4_codes": p4_codes,
+        "target_proc": target_proc,
+        "equiv_templates": equiv_templates or set(),
+    }
+    _ALLOCATION_MATCHER_CACHE[item_code] = matcher
+    return matcher
+
+
+def _serial_matches_allocation(serial_row, matcher):
+    """True when assign_serials() could allocate this serial to matcher's item_code.
+
+    Mirrors conditions C1, C1b, C2, C3 and C4 in assign_serials(), in that order.
+    """
+    item_code = matcher["item_code"]
+    curr_ic = serial_row.get("item_code")
+    to_make = serial_row.get("to_make")
+
+    # C1: exact physical item_code — C1b: active WIP reconfig already aimed at it
+    if curr_ic == item_code or to_make == item_code:
+        return True
+
+    # C2: same Shopify variant
+    if matcher["p2_codes"] and (curr_ic in matcher["p2_codes"] or to_make in matcher["p2_codes"]):
+        return True
+
+    # C3: same parent model + CPU (reconfig match). Pure dict lookup against the
+    # bulk-primed map - never a per-serial DB call.
+    if matcher["target_proc"] and matcher["equiv_templates"]:
+        scfg = _get_pool_cfg_map().get(curr_ic)
+        if scfg and scfg[1] == matcher["target_proc"] and scfg[0] in matcher["equiv_templates"]:
+            return True
+
+    # C4: parent's Shopify variant
+    if matcher["p4_codes"] and (curr_ic in matcher["p4_codes"] or to_make in matcher["p4_codes"]):
+        return True
+
+    return False
+
+
+def _count_allocatable_in_dept(dept_name, matcher):
+    """How many serials in this department the allocator could actually take.
+
+    Uses get_dept_available_serials(), the allocator's own pool, so every
+    exclusion it applies (reserved, status, return_reason, is_replace, personal
+    warehouse, already-delivered, department sequence) applies here too.
+    """
+    try:
+        pool = get_dept_available_serials(dept_name) or []
+    except Exception:
+        return 0
+    return sum(1 for s in pool if _serial_matches_allocation(s, matcher))
+
+
 def calculate_item_eta(item_code, required_qty, departments):
     """Calculate ETA in days for a specific item quantity."""
     accumulated_days = 0
     remaining_qty = required_qty
     total_available = 0
+    matcher = _build_allocation_matcher(item_code)
 
     for dept in departments:
-        sla_val = _get_dept_effective_sla(dept)
-        accumulated_days += sla_val
         dept_name = dept.get("name") if isinstance(dept, dict) else getattr(dept, "name", str(dept))
 
-        warehouses = get_dept_warehouses(dept_name)
-        if not warehouses:
+        if not get_dept_warehouses(dept_name):
+            # No warehouses means no unit can be sitting here, so this department
+            # cannot contribute to the wait. Skip BEFORE adding its SLA - charging
+            # its days anyway inflated every ETA that fell through to a later
+            # department.
             continue
 
-        placeholders = ', '.join(['%s'] * len(warehouses))
-        query = f"""
-            SELECT COUNT(*)
-            FROM `tabSerial No`
-            WHERE
-                item_code = %s
-                AND warehouse IN ({placeholders})
-                AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
-                AND status = 'Active'
-        """
-        params = [item_code] + warehouses
-        available_count = frappe.db.sql(query, params)[0][0] or 0
+        accumulated_days += _get_dept_effective_sla(dept)
+
+        available_count = _count_allocatable_in_dept(dept_name, matcher)
         total_available += available_count
 
         if available_count >= remaining_qty:
@@ -1518,32 +1934,27 @@ def calculate_item_eta(item_code, required_qty, departments):
 
 
 def get_item_eta_breakdown(item_code, required_qty, departments):
-    """Return department-wise ETA ladder for one item."""
+    """Return department-wise ETA ladder for one item.
+
+    Counts candidates exactly as calculate_item_eta() does (and therefore exactly
+    as assign_serials() would), so the displayed explanation matches the predicted
+    ETA instead of telling a different story.
+    """
     breakdown = []
     accumulated_days = 0
     remaining_qty = required_qty
+    matcher = _build_allocation_matcher(item_code)
 
     for dept in departments:
-        sla_val = _get_dept_effective_sla(dept)
-        accumulated_days += sla_val
         dept_name = dept.get("name") if isinstance(dept, dict) else getattr(dept, "name", str(dept))
 
-        warehouses = get_dept_warehouses(dept_name)
-        available_count = 0
+        if not get_dept_warehouses(dept_name):
+            continue
 
-        if warehouses:
-            placeholders = ', '.join(['%s'] * len(warehouses))
-            query = f"""
-                SELECT COUNT(*)
-                FROM `tabSerial No`
-                WHERE
-                    item_code = %s
-                    AND warehouse IN ({placeholders})
-                    AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
-                    AND status = 'Active'
-            """
-            params = [item_code] + warehouses
-            available_count = frappe.db.sql(query, params)[0][0] or 0
+        sla_val = _get_dept_effective_sla(dept)
+        accumulated_days += sla_val
+
+        available_count = _count_allocatable_in_dept(dept_name, matcher)
 
         before_remaining = remaining_qty
 
@@ -1717,10 +2128,11 @@ def _get_so_all_target_items(so_name):
 def _sales_order_has_reconfig_match(so_name):
     """True if any serial currently reserved for so_name needs reconfiguring.
 
-    Used by CustomSalesOrder.on_submit() to bake the +2-day reconfig SLA into
-    the initial committed_delivery_date, so the promise pushed to Shopify isn't
-    structurally guaranteed to fall short of the reconfig-aware estimated date
-    computed by compute_sales_order_delivery_date().
+    NOTE: this no longer feeds committed_delivery_date. The system does not move
+    the customer promise or delivery_date under any circumstance - those are
+    human-owned. The RECONFIG_SLA_DAYS cost is applied only inside
+    compute_sales_order_delivery_date(), i.e. to estimated_delivery_date.
+    Kept as a reporting/diagnostic helper.
     """
     reserved = frappe.db.sql("""
         SELECT sn.item_code, sn.to_make, sn.remarks
@@ -1747,7 +2159,7 @@ def compute_sales_order_delivery_date(so_name, return_reason=False):
     - Packing & Dispatch (Seq 20) -> SLA = 1 (curdate + 1).
     - Upstream department -> cumulative SLA from that department to Packing & Dispatch.
     - 10% buffer applied to cumulative SLA (rounded up).
-    - If reconfigured item (Priority 2, 3, 4) -> adds +2 days extra.
+    - If reconfigured item (Priority 2, 3, 4) -> adds RECONFIG_SLA_DAYS extra.
     - Updates individual Serial No.estimated_delivery_date for each reserved serial.
     - Multiple units -> takes the MAX SLA across units (bottleneck logic).
     - Returns target delivery date (and formatted explanatory reason if return_reason=True).
@@ -1777,10 +2189,10 @@ def compute_sales_order_delivery_date(so_name, return_reason=False):
 
         def _dept_sla(cand_dept_name, cand_dept_seq, item_grp=None, is_reconfig=False):
             if not cand_dept_name:
-                return 3 if is_reconfig else 1
+                return (1 + RECONFIG_SLA_DAYS) if is_reconfig else 1
             d_name_lower = (cand_dept_name or "").lower()
             if "packing & dispatch" in d_name_lower or "sales" in d_name_lower:
-                return 3 if is_reconfig else 1
+                return (1 + RECONFIG_SLA_DAYS) if is_reconfig else 1
             if "inward" in d_name_lower:
                 return 45
             if not cand_dept_seq:
@@ -1802,6 +2214,11 @@ def compute_sales_order_delivery_date(so_name, return_reason=False):
             for d in app_depts:
                 if "inward" in (d.get("name") or "").lower():
                     continue
+                # Exception/holding departments are not part of every unit's route -
+                # see _CONTINGENT_DEPT_MARKERS. The unit standing in one is still
+                # charged that department's SLA below, via cand_sla.
+                if _is_contingent_dept(d.get("name")):
+                    continue
                 seq = d.get("department_sequence")
                 sla = d.get("department_sla") or 0
                 if seq not in seq_max_sla or sla > seq_max_sla[seq]:
@@ -1815,7 +2232,7 @@ def compute_sales_order_delivery_date(so_name, return_reason=False):
                     total += seq_max_sla[s]
             sla_with_buffer = min(math.ceil(total * 1.10), 45)
             if is_reconfig:
-                sla_with_buffer = min(sla_with_buffer + 2, 45)
+                sla_with_buffer = min(sla_with_buffer + RECONFIG_SLA_DAYS, 45)
             return sla_with_buffer
 
         # Check reserved serials for this Sales Order
@@ -1876,15 +2293,27 @@ def compute_sales_order_delivery_date(so_name, return_reason=False):
         has_serial_eta_col = frappe.db.has_column("Serial No", "estimated_delivery_date")
         has_child_table = frappe.db.table_exists("Estimated Delivery Date Details")
 
-        # Determine total pending serialized units for this Sales Order
+        # Determine total pending serialized units for this Sales Order.
+        #
+        # "Needs a serial allocated" must mean the SAME thing here as it does in
+        # assign_serials(), which only ever allocates item groups in
+        # HARDWARE_ITEM_GROUPS. Counting every has_serial_no=1 item instead meant
+        # serialised spare parts (Laptop RAM, BATTERY, KEYBOARD, Display,
+        # MOTHERBOARD, ...) were counted as pending forever - allocation can never
+        # satisfy them - so missing_units stayed > 0 and pinned the order's ETA to
+        # the 45-day shortage SLA permanently.
+        hardware_group_placeholders = ', '.join(['%s'] * len(HARDWARE_ITEM_GROUPS))
+        hardware_groups = list(HARDWARE_ITEM_GROUPS)
+
         total_pending_serialized_qty = 0
         try:
-            direct_pending = frappe.db.sql("""
+            direct_pending = frappe.db.sql(f"""
                 SELECT SUM(GREATEST(0, soi.qty - COALESCE(soi.delivered_qty, 0)))
                 FROM `tabSales Order Item` soi
                 INNER JOIN `tabItem` i ON i.item_code = soi.item_code
                 WHERE soi.parent = %s AND i.has_serial_no = 1
-            """, (so_name,))[0][0] or 0
+                  AND i.item_group IN ({hardware_group_placeholders})
+            """, tuple([so_name] + hardware_groups))[0][0] or 0
             total_pending_serialized_qty += direct_pending
 
             bundle_parents = frappe.db.sql("""
@@ -1897,12 +2326,13 @@ def compute_sales_order_delivery_date(so_name, return_reason=False):
             """, (so_name,), as_dict=True)
 
             for bp in bundle_parents:
-                b_items = frappe.db.sql("""
+                b_items = frappe.db.sql(f"""
                     SELECT SUM(pbi.qty * %s)
                     FROM `tabProduct Bundle Item` pbi
                     INNER JOIN `tabItem` i ON i.item_code = pbi.item_code
                     WHERE pbi.parent = %s AND i.has_serial_no = 1
-                """, (bp.pending_qty, bp.item_code))[0][0] or 0
+                      AND i.item_group IN ({hardware_group_placeholders})
+                """, tuple([bp.pending_qty, bp.item_code] + hardware_groups))[0][0] or 0
                 total_pending_serialized_qty += b_items
             total_pending_serialized_qty = int(total_pending_serialized_qty)
         except Exception:
@@ -1942,7 +2372,7 @@ def compute_sales_order_delivery_date(so_name, return_reason=False):
                 sn_est_date = add_working_days(nowdate(), sn_sla)
                 sla_list.append(sn_sla)
 
-                reconfig_tag = " [Reconfig +2d]" if is_reconfig else ""
+                reconfig_tag = f" [Reconfig +{RECONFIG_SLA_DAYS}d]" if is_reconfig else ""
                 day_unit = "day" if sn_sla == 1 else "days"
                 aging_note = f", present {dwell_days}d of {sn_sla_full}d SLA" if dwell_days > 0 else ""
 
@@ -1963,12 +2393,12 @@ def compute_sales_order_delivery_date(so_name, return_reason=False):
 
                 if "packing & dispatch" in dept_name.lower():
                     if is_reconfig:
-                        detail_remarks = f"Stock in Packing & Dispatch [Reconfiguration: +2 days, Total SLA: {sn_sla} {day_unit}; {match_desc}{aging_detail}]"
+                        detail_remarks = f"Stock in Packing & Dispatch [Reconfiguration: +{RECONFIG_SLA_DAYS} days, Total SLA: {sn_sla} {day_unit}; {match_desc}{aging_detail}]"
                     else:
                         detail_remarks = f"Ready stock in Packing & Dispatch (Exact item match, SLA: {sn_sla} {day_unit}{aging_detail})"
                 else:
                     if is_reconfig:
-                        detail_remarks = f"Allocated from {dept_name} [Reconfiguration: +2 days, Total SLA: {sn_sla} {day_unit}; {match_desc}{aging_detail}]"
+                        detail_remarks = f"Allocated from {dept_name} [Reconfiguration: +{RECONFIG_SLA_DAYS} days, Total SLA: {sn_sla} {day_unit}; {match_desc}{aging_detail}]"
                     else:
                         detail_remarks = f"Allocated from {dept_name} [Exact item match, Total SLA: {sn_sla} {day_unit}{aging_detail}]"
 
@@ -2016,6 +2446,19 @@ def compute_sales_order_delivery_date(so_name, return_reason=False):
         if has_child_table:
             frappe.db.sql("DELETE FROM `tabEstimated Delivery Date Details` WHERE parent = %s", so_name)
 
+        # No reserved serials AND nothing on this order that allocation would ever
+        # reserve one for (services, accessories, non-hardware item groups) means
+        # there is no stock shortage to price in - the 45-day procurement SLA below
+        # is about waiting for a machine to come through the pipeline, and this
+        # order isn't waiting for one. Quoting ~45 working days on a pure service
+        # order is simply wrong, so use the standard dispatch turnaround instead.
+        if not total_pending_serialized_qty:
+            no_stock_dependency_date = add_working_days(nowdate(), 1)
+            return (
+                (no_stock_dependency_date, str(no_stock_dependency_date))
+                if return_reason else no_stock_dependency_date
+            )
+
         # Fallback: check tabSO Quantity Check SLA for items in this SO, default 45 working days
         max_sla = 45
         if so_all_target_items:
@@ -2034,9 +2477,14 @@ def compute_sales_order_delivery_date(so_name, return_reason=False):
         return (fallback_date, str(fallback_date)) if return_reason else fallback_date
 
 
-def update_sales_order_etas(so_eta_map, so_breakdown_map=None, do_commit=True):
+def update_sales_order_etas(so_eta_map, so_breakdown_map=None, do_commit=True, allow_reallocation=False):
     """Update eta_for_dispatch, estimated_delivery_date and breakdown text on Sales Orders.
     delivery_date and committed_delivery_date remain locked to the initial customer promise date.
+
+    allow_reallocation: only True for the once-a-day midnight reallocation run
+    (see run_daily_eta_drift_reallocation). The hourly ETA-refresh pass must
+    never trigger a reallocation itself - an already-allocated serial's
+    reservation/to_make must not change outside that one daily check.
     """
     breakdown_fieldname = get_eta_breakdown_fieldname()
     has_eta_date_col = frappe.db.has_column("Sales Order", "estimated_delivery_date")
@@ -2050,10 +2498,11 @@ def update_sales_order_etas(so_eta_map, so_breakdown_map=None, do_commit=True):
             calc_delivery_date, reason_text = calc_res, str(calc_res)
 
         old_est_dd = frappe.db.get_value("Sales Order", so_name, "estimated_delivery_date")
-        old_dd = frappe.db.get_value("Sales Order", so_name, "delivery_date")
 
-        # delivery_date and committed_delivery_date stay locked to the initial customer promise date.
-        # Only estimated_delivery_date (and dispatch ETA / breakdown) is updated dynamically.
+        # This job updates the ESTIMATE and nothing else. The only fields it writes are
+        # estimated_delivery_date, eta_for_dispatch and the ETA breakdown text.
+        # delivery_date and committed_delivery_date are never written here - not to
+        # change them, and not to fill them in.
 
         if eta is None:
             update_values["eta_for_dispatch"] = "45"
@@ -2075,63 +2524,65 @@ def update_sales_order_etas(so_eta_map, so_breakdown_map=None, do_commit=True):
             )
 
         if frappe.db.has_column("Sales Order", "committed_delivery_date"):
-            committed_val = frappe.db.get_value("Sales Order", so_name, "committed_delivery_date")
-            if not committed_val:
-                # If committed_delivery_date was never initialized, initialize strictly from
-                # standard SLA (transaction_date + 4 working days) or original delivery date if future.
-                # NEVER set to calc_delivery_date or curdate!
-                txn_date = frappe.db.get_value("Sales Order", so_name, "transaction_date") or nowdate()
-                std_sla_date = add_working_days(txn_date, 4)
-                if old_dd and getdate(old_dd) > getdate(std_sla_date):
-                    # This already-set incoming date never passed through
-                    # add_working_days(), so it can land on a Sunday or holiday -
-                    # nudge it forward before locking it in as the promise.
-                    target_committed = _snap_to_working_day(old_dd)
-                else:
-                    target_committed = std_sla_date
-                update_values["committed_delivery_date"] = target_committed
-                if str(old_dd) != str(target_committed):
-                    update_values["delivery_date"] = target_committed
-                    frappe.db.sql("""
-                        UPDATE `tabSales Order Item`
-                        SET delivery_date = %s
-                        WHERE parent = %s
-                    """, (target_committed, so_name))
-            else:
-                target_committed = committed_val
-                # Keep delivery_date equal to the immutable committed_delivery_date
-                if str(old_dd) != str(committed_val):
-                    update_values["delivery_date"] = committed_val
-                    frappe.db.sql("""
-                        UPDATE `tabSales Order Item`
-                        SET delivery_date = %s
-                        WHERE parent = %s
-                    """, (committed_val, so_name))
+            # Read only - used for the drift check below. This job no longer stamps a
+            # promise onto an order that never had one: reconstructing a customer
+            # promise after the fact (transaction_date + 4d) invents history, and once
+            # written nothing could ever correct it. An order with no committed date
+            # falls back to its delivery_date wherever that value is read
+            # (see get_open_sales_orders), and orders submitted from now on get their
+            # promise recorded once, in CustomSalesOrder.on_submit().
+            target_committed = frappe.db.get_value(
+                "Sales Order", so_name, "committed_delivery_date"
+            )
 
-            # Drift check: if the estimated delivery date has pulled away from the
-            # committed customer promise by more than 2 days, actively trigger a
-            # targeted reallocation attempt for this order instead of letting the
-            # gap sit silently until the next full hourly pass picks it up.
-            if calc_delivery_date and target_committed:
+            # Drift check. An order whose estimate has pulled more than 2 days away
+            # from the promise is at risk, and that is worth recording - but it is
+            # NOT a reason to take its machine away. Drift is reported; the
+            # reservation is left alone (see AUTO_UPGRADE_RESERVATIONS).
+            if allow_reallocation and calc_delivery_date and target_committed:
                 drift_days = abs((getdate(calc_delivery_date) - getdate(target_committed)).days)
                 if drift_days > 2:
-                    frappe.enqueue(
-                        "nj_features.services.reservation_service.upgrade_order_reservations",
-                        queue="short",
-                        enqueue_after_commit=True,
-                        so_name=so_name,
-                    )
+                    if AUTO_UPGRADE_RESERVATIONS:
+                        frappe.enqueue(
+                            "nj_features.services.reservation_service.upgrade_order_reservations",
+                            queue="short",
+                            enqueue_after_commit=True,
+                            so_name=so_name,
+                        )
                     logger.info(
                         f"[ETA_DRIFT] {so_name}: estimated={calc_delivery_date} "
-                        f"committed={target_committed} drift={drift_days}d -> triggered reallocation"
+                        f"committed={target_committed} drift={drift_days}d "
+                        f"(reservation kept; swap={'on' if AUTO_UPGRADE_RESERVATIONS else 'off'})"
                     )
-
-        frappe.db.set_value(
-            "Sales Order",
-            so_name,
-            update_values,
-            update_modified=False
+        # Trigger document lifecycle (doc.db_set) when estimated_delivery_date changes
+        # so that Frappe's Value Change notification evaluates with doc.get_doc_before_save()
+        # and queues the delay delivery email naturally.
+        date_changed = (
+            has_eta_date_col
+            and str(old_est_dd or "") != str(update_values.get("estimated_delivery_date") or "")
         )
+
+        if date_changed:
+            try:
+                so_doc = frappe.get_doc("Sales Order", so_name)
+                so_doc.db_set(update_values, update_modified=False)
+            except Exception:
+                logger.exception(
+                    f"Failed to update Sales Order {so_name} via doc.db_set, falling back to frappe.db.set_value"
+                )
+                frappe.db.set_value(
+                    "Sales Order",
+                    so_name,
+                    update_values,
+                    update_modified=False
+                )
+        else:
+            frappe.db.set_value(
+                "Sales Order",
+                so_name,
+                update_values,
+                update_modified=False
+            )
 
         if reason_text and reason_text != "No Stock" and str(old_est_dd) != str(reason_text):
             frappe.enqueue(
@@ -2146,8 +2597,37 @@ def update_sales_order_etas(so_eta_map, so_breakdown_map=None, do_commit=True):
         frappe.db.commit()
 
 
+# Shopify's REST API allows 2 calls/second per app. This job is enqueued once per
+# order whose estimated date changed, so anything that moves a lot of dates at once
+# - a department SLA edit, a fix to the ETA ladder - drains the queue faster than
+# that and Shopify starts refusing with "Exceeded 2 calls per second".
+_SHOPIFY_MIN_CALL_INTERVAL = 0.6
+_SHOPIFY_MAX_ATTEMPTS = 4
+_last_shopify_call_at = [0.0]
+
+
+def _shopify_throttle():
+    """Space this worker's Shopify calls under the published rate limit.
+
+    Per-process, so it is not a global guarantee across the six short workers -
+    the Retry-After handling in the caller is what actually makes a burst safe.
+    This just stops a single worker being the one that trips the limit.
+    """
+    wait = _SHOPIFY_MIN_CALL_INTERVAL - (time.monotonic() - _last_shopify_call_at[0])
+    if wait > 0:
+        time.sleep(wait)
+    _last_shopify_call_at[0] = time.monotonic()
+
+
 def push_delivery_date_to_shopify_order(so_name, delivery_date):
-    """Push confirmed Estimated Delivery Date back to Shopify Order note attributes."""
+    """Push confirmed Estimated Delivery Date back to Shopify Order note attributes.
+
+    Retries on rate limiting. Before this, a refused push was logged once and
+    dropped: the ERP held the new date and Shopify kept the old one, with no second
+    attempt until that order's estimate happened to change again. On 2026-09-17 a
+    single batch lost 109 of them that way, and the same thing had been happening
+    at a trickle long before that.
+    """
     try:
         shopify_order_number = frappe.db.get_value("Sales Order", so_name, "shopify_order_number")
         if not shopify_order_number:
@@ -2179,13 +2659,41 @@ def push_delivery_date_to_shopify_order(so_name, delivery_date):
                 ]
             }
         }
-        resp = requests.put(url, headers=headers, json=payload, timeout=10)
-        if resp.status_code != 200:
-            logger.warning(
-                "Could not push delivery date to Shopify order %s: %s",
-                shopify_order_number,
-                resp.text
+        for attempt in range(_SHOPIFY_MAX_ATTEMPTS):
+            _shopify_throttle()
+            resp = requests.put(url, headers=headers, json=payload, timeout=10)
+
+            if resp.status_code == 200:
+                return
+
+            body = resp.text or ""
+            rate_limited = (
+                resp.status_code == 429
+                or "Exceeded" in body and "calls per second" in body
             )
+            if not rate_limited:
+                # A 404, a bad token, a malformed order - retrying changes nothing.
+                logger.warning(
+                    "Could not push delivery date to Shopify order %s: %s",
+                    shopify_order_number, body
+                )
+                return
+
+            if attempt == _SHOPIFY_MAX_ATTEMPTS - 1:
+                break
+
+            # Shopify says exactly how long to wait; fall back to exponential.
+            try:
+                delay = float(resp.headers.get("Retry-After") or 0)
+            except (TypeError, ValueError):
+                delay = 0
+            time.sleep(min(delay or (2 ** attempt), 10))
+
+        logger.warning(
+            "[SHOPIFY_DATE_UNPUSHED] Gave up pushing delivery date to Shopify order %s "
+            "for %s after %d attempts (rate limited). ERP holds %s; Shopify does not.",
+            shopify_order_number, so_name, _SHOPIFY_MAX_ATTEMPTS, delivery_date
+        )
     except Exception as e:
         frappe.log_error(
             title=f"push_delivery_date_to_shopify_order failed for {so_name}",

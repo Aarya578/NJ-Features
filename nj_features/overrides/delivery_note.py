@@ -15,6 +15,9 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from frappe import _
 from frappe.utils import now
+# Single source of truth for order_source, shared with the Sales Order
+# allocator and the production planner so all three write the same value.
+from nj_features.services.reservation_service import get_effective_order_source
 from contextlib import contextmanager
 #from __future__ import unicode_literals
 from datetime import datetime, timedelta
@@ -813,6 +816,11 @@ class CustomDeliveryNote(DeliveryNote):
                     # Delete all Department History rows
                     if serial_doc.get("department_history"):
                         serial_doc.department_history = []
+                        # Without this, prevent_manual_department_history_edits
+                        # (Serial No validate hook) would reject this as a
+                        # manual row deletion -- this specific clear-on-return
+                        # is legitimate, pre-existing business logic.
+                        serial_doc.flags.ignore_validate = True
                         serial_doc.save(ignore_permissions=True)
                         # frappe.db.commit()
     def _process_serial_numbers(self):
@@ -891,12 +899,17 @@ class CustomDeliveryNote(DeliveryNote):
                             break
 
                 if against_sales_order and item_code:
+                    # order_source must be written alongside the reservation. It is
+                    # the only record of where a reservation came from, and on this
+                    # path it also carries the return cause (e.g.
+                    # "NJ-Website-B2C - Repair"), which downstream queries filter on.
                     frappe.db.set_value(
                         "Serial No",
                         sn,
                         {
                             "reserved_sales_order": against_sales_order,
                             "to_make": item_code,
+                            "order_source": get_effective_order_source(against_sales_order),
                             "remarks": f"Allocated to SO {against_sales_order} (Return) | to_make: {item_code}"
                         },
                         update_modified=True
@@ -1039,6 +1052,7 @@ class CustomDeliveryNote(DeliveryNote):
                                 {
                                     "reserved_sales_order": against_sales_order,
                                     "to_make": item_code,
+                                    "order_source": get_effective_order_source(against_sales_order),
                                     "remarks": f"Allocated to SO {against_sales_order} ({match_reason}) | to_make: {item_code}"
                                 },
                                 update_modified=True
@@ -4397,3 +4411,30 @@ def deviding_tax_chargese_return_dn(doc, method=None):
             tax_amount = -abs(flt(allocated_tax_by_account[tax.account_head]))
             tax.tax_amount = tax_amount
             tax.base_tax_amount = round(tax_amount * conversion_rate, 2)
+
+
+def set_linked_sales_order_flags(doc, method=None):
+    """
+    Mirror sale_type/pre_order from the linked Sales Order onto this Delivery Note.
+
+    The "B2B Delivery Confirmation" notification fires on Delivery Note Submit
+    and needs to know whether the underlying order was a non-pre-order B2B sale.
+    Notification conditions can only see fields already present on `doc` (no
+    frappe.db access in that sandbox), so we copy these over here instead of
+    trying to look up the Sales Order from the condition itself.
+    """
+    if not doc.items:
+        return
+
+    against_sales_order = doc.items[0].against_sales_order
+    if not against_sales_order:
+        return
+
+    so = frappe.db.get_value(
+        "Sales Order", against_sales_order, ["sale_type", "pre_order"], as_dict=True
+    )
+    if not so:
+        return
+
+    doc.sale_type = so.sale_type
+    doc.pre_order = so.pre_order

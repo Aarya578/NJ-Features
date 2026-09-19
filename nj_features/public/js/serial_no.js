@@ -114,6 +114,18 @@ frappe.ui.form.on('Serial No', {
         frm.get_field('bag_list').grid.cannot_add_rows = true;
         frm.refresh_field('bag_list');
 
+        // Department Count History is entirely managed by server-side hooks
+        // (seed on creation, increment on real stock movement, hourly backfill
+        // for pre-existing serials) -- only Restrict / Limit Count are meant
+        // to be hand-edited. Hiding Add/Delete Row here is just the UI half;
+        // nj_features.overrides.serial_no.prevent_manual_department_history_edits
+        // (Serial No validate hook) is what actually enforces it server-side.
+        frm.get_field('department_history').grid.cannot_add_rows = true;
+        frm.get_field('department_history').grid.cannot_delete_rows = true;
+        frm.get_field('department_history').grid.update_docfield_property('departmant', 'read_only', 1);
+        frm.get_field('department_history').grid.update_docfield_property('count', 'read_only', 1);
+        frm.refresh_field('department_history');
+
         // frappe.db.get_value('User', frappe.session.user, 'role_profile_name', (r) => {
         //     let role_profile = r ? r.role_profile_name : '';
         //     let is_admin_profile = (role_profile === 'Administrator')

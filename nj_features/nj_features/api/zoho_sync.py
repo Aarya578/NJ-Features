@@ -89,7 +89,7 @@ def sync_customers_to_zoho():
     ]
     _upsert("Accounts", records, "ERP_Customer_ID", "Customer mirror")
 
-    items = frappe.get_all(
+    candidate_items = frappe.get_all(
         "Item",
         filters=[
             ["modified", ">", since],
@@ -100,6 +100,39 @@ def sync_customers_to_zoho():
         fields=["name", "item_name", "disabled"],
         order_by="modified asc",
     )
+
+    # Only mirror items a rep could actually quote right now: real stock and
+    # a real Standard Selling price. Most of this catalog has neither (only
+    # ~7% of the 4 item groups had a Standard Selling price when this was
+    # added), so without this filter reps would see thousands of products
+    # that produce a Rs 0 quote -- confirmed by testing, not a guess.
+    if not candidate_items:
+        items = []
+    else:
+        candidate_codes = [i.name for i in candidate_items]
+        priced_codes = set(
+            frappe.get_all(
+                "Item Price",
+                filters={"price_list": "Standard Selling", "selling": 1, "item_code": ["in", candidate_codes]},
+                pluck="item_code",
+            )
+        )
+        stocked_codes = {
+            row.item_code
+            for row in frappe.db.sql(
+                """
+                SELECT item_code, SUM(actual_qty) AS qty
+                FROM `tabBin`
+                WHERE item_code IN %(codes)s
+                GROUP BY item_code
+                HAVING qty > 0
+                """,
+                {"codes": candidate_codes},
+                as_dict=True,
+            )
+        }
+        items = [i for i in candidate_items if i.name in priced_codes and i.name in stocked_codes]
+
     records = [
         {
             "Product_Name": i.item_name,

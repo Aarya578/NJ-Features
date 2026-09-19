@@ -203,7 +203,7 @@ def _is_same_model_family(tmpl_a: str, tmpl_b: str) -> bool:
         return False
     
     ignore_words = {
-        'win', 'kbd', 'wtb', 'sml', 'big', 'pir', 'ir', 'fba',
+        'win', 'kbd', 'wtb', 'sml', 'big', 'ir', 'fba',
         'refurbished', 'sff', 'tiny', 'tower', 'fullset', 'full', 'set', 'pro',
         'elitebook', 'thinkpad', 'latitude', 'optiplex', 'workstation', 'eb', 'pb', 'thinkcentre'
     }
@@ -219,6 +219,13 @@ def _is_same_model_family(tmpl_a: str, tmpl_b: str) -> bool:
     touch_markers_a = {t for t in tokens_a if t in _TOUCH_SCREEN_MARKER_WORDS}
     touch_markers_b = {t for t in tokens_b if t in _TOUCH_SCREEN_MARKER_WORDS}
     if touch_markers_a != touch_markers_b:
+        return False
+
+    # PIR models have a physically different chassis (body, motherboard) and
+    # cannot be rebuilt into non-PIR units or vice-versa.
+    pir_a = 'pir' in tokens_a
+    pir_b = 'pir' in tokens_b
+    if pir_a != pir_b:
         return False
 
     if tokens_a[0] != tokens_b[0]:
@@ -338,7 +345,7 @@ def _is_dept_applicable(dept_row, item_grp):
     return item_grp.strip().lower() in allowed
 
 
-def _get_sla_department_search_order(depts: List[Dict], delivery_date, current_date, item_grp: str = None) -> List[Dict]:
+def _get_sla_department_search_order(depts: List[Dict], delivery_date, current_date, item_grp: str = None, promise_date=None) -> List[Dict]:
     """
     Given active departments sorted by (department_sequence DESC, name ASC),
     compute Remaining Delivery Days and determine SLA-based department search order.
@@ -361,7 +368,21 @@ def _get_sla_department_search_order(depts: List[Dict], delivery_date, current_d
     else:
         rem_days = 0
 
-    if rem_days > 50:
+    # Same allocation horizon the hourly allocator uses - the two must agree, or
+    # an order falls out of one and not the other and the reservations flap.
+    # Imported inside the function: overrides.sales_order pulls from this module.
+    from nj_features.overrides.sales_order import ALLOCATION_HORIZON_DAYS
+
+    # Judged against the customer promise, never against soi.delivery_date - that
+    # is the exact field the "Update Items" dialog writes, so gating on it let a
+    # user moving the date onto the system's own estimate drop the order out of
+    # production planning for good. See the matching note in overrides/sales_order.py.
+    # rem_days above is untouched and still drives the department ladder below.
+    horizon_src = promise_date or delivery_date
+    horizon_days = (
+        (frappe.utils.getdate(horizon_src) - current_date).days if horizon_src else 0
+    )
+    if horizon_days > ALLOCATION_HORIZON_DAYS:
         return []
 
     starting_dept_idx = len(sorted_depts) - 1  # Default to last (lowest sequence)
@@ -931,7 +952,10 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
 
         original_needed_qty = needed_qty
         item_grp = frappe.db.get_value("Item", target_ic, "item_group")
-        search_order = _get_sla_department_search_order(all_eligible_depts, deliv_date, today, item_grp=item_grp)
+        search_order = _get_sla_department_search_order(
+            all_eligible_depts, deliv_date, today, item_grp=item_grp,
+            promise_date=order_row.get("promise_date"),
+        )
 
         variant_id = _get_shopify_variant_id(target_ic)
         p2_codes = set(_get_variant_bundle_item_codes(variant_id)) - {target_ic} if variant_id else set()
@@ -1385,6 +1409,22 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
     total_rows = len(plan_doc.get("lines") or [])
     frappe.db.commit()
 
+    # Every plan row is written with part_allocation = 0, so the checkboxes stay
+    # blank until the allocation run recalculates them. The scheduler only fires
+    # that job once a day (15 0 * * *) while plans are rebuilt twice a day, which
+    # left the midday plan showing no ticks at all. Enqueue it here so it always
+    # follows the plan that was just built, whatever triggered the plan.
+    try:
+        frappe.enqueue(
+            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.run_latest_production_plan_part_allocation",
+            queue="long",
+            timeout=1800,
+            plan_name=plan_doc.name,
+            now=frappe.flags.in_test,
+        )
+    except Exception as part_alloc_err:
+        logger.warning("Part allocation recalculation after production plan failed: %s", part_alloc_err)
+
     # Safely refresh dispatch ETAs for all newly allocated serials and sales orders in background
     try:
         frappe.enqueue(
@@ -1398,7 +1438,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
 
     return {
         "allocation_audit": None,
-        "audit_storage": "Deferred: run_latest_production_plan_part_allocation",
+        "audit_storage": "Enqueued: run_latest_production_plan_part_allocation",
         "total_departments": 1,
         "total_rows": total_rows,
         "plans": [
@@ -1449,6 +1489,7 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
             so_data.customer                                      AS customer,
             so_data.transaction_date                              AS transaction_date,
             so_data.delivery_date                                 AS delivery_date,
+            so_data.promise_date                                  AS promise_date,
 
             so_data.item_code                                     AS item_code,
             so_data.pb_code                                       AS pb_code,
@@ -1481,6 +1522,7 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
                 so.transaction_date            AS transaction_date,
                 so.creation                    AS so_creation,
                 soi.delivery_date              AS delivery_date,
+                so.committed_delivery_date     AS promise_date,
 
                 soi.item_code                  AS pb_code,
 
@@ -1692,6 +1734,7 @@ def _allocate_orders_to_sequences_multi(
         base_ref = {
             "so_name": row["so_name"],
             "delivery_date": row.get("delivery_date"),
+            "promise_date": row.get("promise_date"),
             "order_item_code": ic,
             "pb_code": row.get("pb_code"),
         }
@@ -2984,16 +3027,29 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str, pl
 
 @frappe.whitelist()
 @log_io
-def run_latest_production_plan_part_allocation() -> Dict:
+def run_latest_production_plan_part_allocation(plan_name: Optional[str] = None) -> Dict:
     """
-    Recalculate Part Allocation checkboxes for the latest NJ Production Planning.
+    Recalculate Part Allocation checkboxes for an NJ Production Planning document.
 
     This runs after the production plan is already created. It only touches child
     rows whose current Department has Allocate Parts enabled, and it processes
     them by numeric Priority Rank so the virtual deductions follow the same
     order visible in the plan.
+
+    When plan_name is given the allocation is pinned to that plan. The production
+    plan run passes the plan it just built so the recalculation cannot drift onto
+    a different document if another plan is created while this job is queued.
+    Called with no argument (the scheduler) it falls back to the newest plan.
     """
-    latest_plan = frappe.db.get_value(
+    # This rewrites plan checkboxes and consumes virtual Stores stock, so restrict
+    # direct HTTP callers to System Manager. Background callers (the scheduler and
+    # the production plan run) have no request and are unaffected -- important
+    # because an enqueued job inherits the session user of whoever triggered the
+    # plan, which is not necessarily a System Manager.
+    if frappe.request:
+        frappe.only_for("System Manager")
+
+    latest_plan = plan_name or frappe.db.get_value(
         "NJ Production Planning",
         filters={},
         fieldname="name",

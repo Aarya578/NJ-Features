@@ -85,19 +85,11 @@ def seed_department_count_history(doc, method=None):
     nj_features.overrides.stock_entry.update_department_count_history
     on the Stock Entry that actually moves the serial.
 
-    Also flags department_history_backfilled for a brand-new serial
-    (is_new()) -- a serial that's never been saved before has no real
-    Stock Ledger Entry history predating this feature, so there's
-    nothing for the hourly backfill job (nj_features.overrides.
-    stock_entry.run_department_count_history_backfill_batch) to ever
-    reconstruct for it; marking it done immediately keeps that job's
-    queue scoped to genuinely pre-existing serials only. An EXISTING
-    serial that happens to hit this same condition (e.g. it's mid-way
-    through the backfill queue and got saved for an unrelated reason
-    first) is deliberately left unflagged -- this only seeds a shallow
-    one-row placeholder for it, and the backfill job still needs to
-    replace that with the real reconstructed history once it reaches
-    this serial.
+    A pre-existing serial with real history predating this feature only
+    ever gets a single row seeded here, for whatever department it
+    currently happens to be in -- there is no reconstruction of the
+    departments it passed through earlier (no backfill job exists for
+    that). Count tracking is accurate from this point forward only.
     """
     if not doc.warehouse:
         return
@@ -119,9 +111,6 @@ def seed_department_count_history(doc, method=None):
     row = doc.append("department_history", {})
     row.departmant = department
     row.count = 1
-
-    if doc.is_new():
-        doc.department_history_backfilled = 1
 
 
 def prevent_manual_department_history_edits(doc, method=None):

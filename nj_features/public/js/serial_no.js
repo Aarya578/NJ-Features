@@ -115,9 +115,9 @@ frappe.ui.form.on('Serial No', {
         frm.refresh_field('bag_list');
 
         // Department Count History is entirely managed by server-side hooks
-        // (seed on creation, increment on real stock movement, hourly backfill
-        // for pre-existing serials) -- only Restrict / Limit Count are meant
-        // to be hand-edited, PLUS adding a brand-new row (Department read_only_
+        // (seeded on creation/first save, incremented on real stock movement)
+        // -- only Restrict / Limit Count are meant to be hand-edited, PLUS
+        // adding a brand-new row (Department read_only_
         // depends_on __islocal in the child doctype's own json lets it be set
         // only while the row is new/unsaved) to pre-configure a Restrict/Limit
         // Count before the serial has ever visited that department. Deleting a

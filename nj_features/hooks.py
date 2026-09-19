@@ -236,15 +236,6 @@ override_whitelisted_methods = {
 
 scheduler_events = {
     "cron": {
-        # Backfills Department Count History for a bounded batch of
-        # in-stock serials that predate this feature -- self-completing
-        # over many short hourly runs instead of one long operation, so
-        # it's safe to run anytime including business hours. See
-        # nj_features.overrides.stock_entry.run_department_count_history_backfill_batch.
-        "0 * * * *": [
-            "nj_features.overrides.stock_entry.run_department_count_history_backfill_batch",
-        ],
-
         "0 0 * * *": [
             "nj_features.overrides.sales_order.run_daily_eta_drift_reallocation",
             # Releases serials whose Repair/Replace cycle is finished. Without it

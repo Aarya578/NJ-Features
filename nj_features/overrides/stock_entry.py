@@ -2,7 +2,6 @@
 # For license information, please see license.txt
 
 import frappe
-from frappe.utils import now, generate_hash
 
 
 def _iter_department_crossings(doc):
@@ -55,19 +54,32 @@ def _iter_department_crossings(doc):
 def get_department_restriction_violation(serial_no, department):
     """
     Returns an error message string if moving `serial_no` into `department`
-    would violate that row's Restrict/Limit Count, else None.
+    would violate that Department's Restrict Department Count / Department
+    Count Limit, else None.
 
-    Reads the serial's EXISTING department_history row for `department` --
-    first-time entry into a department is never blocked, since no row (and
-    therefore no limit) can exist yet for a department this serial hasn't
-    been counted into before. Restrict/Limit Count are per (serial,
-    department) overrides, not a department-wide setting -- someone has to
-    have deliberately flagged that specific row after an earlier visit.
+    Restrict Department Count and Department Count Limit are now
+    department-wide settings (fields on the Department doctype itself, after
+    Company) rather than per (serial, department) overrides on Serial No's
+    department_history row -- every serial moving into a given department is
+    subject to the same limit. The serial's own department_history row is
+    only consulted for its Count, which is still tracked per (serial,
+    department); a serial with no row yet for this department has a count of
+    0 and is never blocked on first entry.
 
-    Threshold: count is allowed to REACH limit_count; the move that would
-    push it past that (count already >= limit_count) is what gets blocked.
+    Threshold: count is allowed to REACH the limit; the move that would push
+    it past that (count already >= limit) is what gets blocked.
     """
-    row = frappe.db.get_value(
+    dept = frappe.db.get_value(
+        "Department",
+        department,
+        ["restrict_department_count", "department_count_limit"],
+        as_dict=True,
+    )
+
+    if not dept or not dept.restrict_department_count or not dept.department_count_limit:
+        return None
+
+    count = frappe.db.get_value(
         "Department History",
         {
             "parent": serial_no,
@@ -75,18 +87,14 @@ def get_department_restriction_violation(serial_no, department):
             "parentfield": "department_history",
             "departmant": department,
         },
-        ["restrict", "limit_count", "count"],
-        as_dict=True,
-    )
+        "count",
+    ) or 0
 
-    if not row or not row.restrict or not row.limit_count:
-        return None
-
-    if (row.count or 0) >= row.limit_count:
+    if count >= dept.department_count_limit:
         return (
-            f"Serial No <b>{serial_no}</b> has reached its movement limit "
-            f"(<b>{row.limit_count}</b>) for department <b>{department}</b> "
-            f"and is restricted from moving there again."
+            f"Serial No <b>{serial_no}</b> has reached the movement limit "
+            f"(<b>{dept.department_count_limit}</b>) for department "
+            f"<b>{department}</b> and is restricted from moving there again."
         )
 
     return None
@@ -177,149 +185,3 @@ def _bump_department_count(serial_no, department):
     serial_doc.flags.ignore_validate = True
     serial_doc.flags.ignore_on_update = True
     serial_doc.save(ignore_permissions=True, ignore_version=True)
-
-
-def run_department_count_history_backfill_batch(batch_size=1500):
-    """
-    Scheduled "hourly" job. Reconstructs Department Count History for a
-    bounded batch of in-stock serials that predate this feature, then
-    marks each one department_history_backfilled so the next hourly run
-    picks up where this one left off -- self-completing over many short
-    runs instead of one long operation. Safe to run anytime, including
-    business hours: touches at most `batch_size` serials per run, each
-    write scoped to exactly (parent=<that serial>, parenttype='Serial
-    No', parentfield='department_history') -- never any other doctype,
-    field, or serial's rows. Once the queue (in-stock AND not yet
-    flagged) is empty, each run is a fast no-op.
-
-    A brand-new serial never enters this queue -- seed_department_count_
-    history (Serial No.validate, in nj_features.overrides.serial_no)
-    flags it done immediately on creation, since it has no real history
-    predating this feature to reconstruct in the first place. This job
-    exists only for serials that were already moving through the
-    warehouse before this feature shipped.
-
-    Reconstruction logic matches update_department_count_history exactly
-    (see its docstring for why department is always resolved fresh from
-    the warehouse, never from the stale Serial No.department field):
-    replays the serial's real Stock Ledger Entry history, using each
-    transfer's positive-qty (entering) leg joined against Warehouse.
-    department, collapsing consecutive entries into the same department
-    into one stay so only genuine crossings count as a "pass through".
-
-    Any Restrict / Limit Count already set manually on an existing row
-    is preserved across the rebuild by department name -- this only
-    replaces the reconstructed shape (departmant, count, ordering),
-    never a row's restriction configuration.
-
-    Skips (defers to a later run, does NOT mark done) any serial with a
-    Stock Ledger Entry in the last RECENT_ACTIVITY_BUFFER_MINUTES -- a
-    real live transfer for that exact serial could be committing its
-    ledger entry in between this job's read and its write, and since
-    this job marks a serial done as soon as it processes it, a
-    collision here would never get a chance to self-correct. There's no
-    urgency to this job, so deferring a serial that's mid-movement by
-    one more hourly cycle costs nothing and closes that window.
-    """
-    RECENT_ACTIVITY_BUFFER_MINUTES = 10
-
-    serial_names = frappe.get_all(
-        "Serial No",
-        filters={
-            "warehouse": ["is", "set"],
-            "department_history_backfilled": 0,
-            "name": [
-                "not in",
-                frappe.db.sql_list(
-                    """
-                    SELECT DISTINCT serial_no FROM `tabStock Ledger Entry`
-                    WHERE serial_no IS NOT NULL AND serial_no != ''
-                      AND creation > DATE_SUB(NOW(), INTERVAL %s MINUTE)
-                    """,
-                    RECENT_ACTIVITY_BUFFER_MINUTES,
-                ) or [""],
-            ],
-        },
-        pluck="name",
-        limit_page_length=batch_size,
-    )
-
-    if not serial_names:
-        return
-
-    current_time = now()
-    processed = 0
-
-    for serial_no in serial_names:
-        ledger_rows = frappe.db.sql(
-            """
-            SELECT w.department
-            FROM `tabStock Ledger Entry` sle
-            LEFT JOIN `tabWarehouse` w ON w.name = sle.warehouse
-            WHERE sle.serial_no = %s AND sle.is_cancelled = 0 AND sle.actual_qty > 0
-            ORDER BY sle.posting_date, sle.posting_time, sle.creation
-            """,
-            serial_no,
-        )
-
-        sequence = []
-        for (department,) in ledger_rows:
-            department = (department or "").strip()
-            if department and (not sequence or sequence[-1] != department):
-                sequence.append(department)
-
-        if sequence:
-            preserved = {
-                r.departmant: (r.restrict, r.limit_count)
-                for r in frappe.db.sql(
-                    """
-                    SELECT departmant, `restrict`, limit_count FROM `tabDepartment History`
-                    WHERE parent = %s AND parenttype = 'Serial No' AND parentfield = 'department_history'
-                      AND (`restrict` = 1 OR limit_count > 0)
-                    """,
-                    serial_no,
-                    as_dict=True,
-                )
-            }
-
-            history = []
-            for department in sequence:
-                existing = next((h for h in history if h["departmant"] == department), None)
-                if existing:
-                    existing["count"] += 1
-                    history.remove(existing)
-                    history.insert(0, existing)
-                else:
-                    history.insert(0, {"departmant": department, "count": 1})
-
-            frappe.db.sql(
-                """
-                DELETE FROM `tabDepartment History`
-                WHERE parent = %s AND parenttype = 'Serial No' AND parentfield = 'department_history'
-                """,
-                serial_no,
-            )
-
-            for idx, h in enumerate(history, start=1):
-                restrict, limit_count = preserved.get(h["departmant"], (0, 0))
-                frappe.db.sql(
-                    """
-                    INSERT INTO `tabDepartment History`
-                        (name, parent, parenttype, parentfield, idx, departmant, count,
-                         `restrict`, limit_count, docstatus, owner, creation, modified, modified_by)
-                    VALUES (%s, %s, 'Serial No', 'department_history', %s, %s, %s,
-                            %s, %s, 0, 'Administrator', %s, %s, 'Administrator')
-                    """,
-                    (
-                        generate_hash(length=10), serial_no, idx, h["departmant"], h["count"],
-                        restrict, limit_count, current_time, current_time,
-                    ),
-                )
-
-        frappe.db.set_value("Serial No", serial_no, "department_history_backfilled", 1, update_modified=False)
-        processed += 1
-
-    frappe.db.commit()
-    frappe.logger().info(
-        f"[department_count_history backfill] processed {processed} serials this run"
-    )

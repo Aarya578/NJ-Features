@@ -457,7 +457,9 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
 
         # MODIFIED BLOCK — LOOP OVER ALL item_group_idx matches
         # PARAMETER + SCORE BASED NJQCA → QI SYNC
-        # This does NOT depend on NJQCA item_group or QI reading item_group.
+        # Normal parameters use Parameter + Score.
+        # If the same parameter exists under multiple NJQCA Item Groups,
+        # Item Group is also used for mapping.
         # It only uses:
         #   1. inspection_type
         #   2. NJQCA Result Parameter.parameter
@@ -493,6 +495,7 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
                 row_parameter,
                 set()
             ).add(row_item_group)
+
         for data in self.njqca_result_parameters:
             parameter = (data.get("parameter") or "").strip()
             source_item_group = (data.get("item_group") or "").strip()
@@ -527,7 +530,6 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
 
             if not mapped_checks:
                 continue
-
             # Only if this parameter exists under multiple NJQCA Item Groups,
             # also compare the Item Group.
             parameter_key = parameter.lower()
@@ -547,7 +549,6 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
 
                 if not mapped_checks:
                     continue
-
             for mapped in mapped_checks:
                 check_name = mapped.get("quality_check")
                 target_item_group = mapped.get("target_item_group")

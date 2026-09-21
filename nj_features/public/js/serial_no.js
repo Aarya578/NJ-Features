@@ -116,13 +116,13 @@ frappe.ui.form.on('Serial No', {
 
         // Department Count History is entirely managed by server-side hooks
         // (seeded on creation/first save, incremented on real stock movement)
-        // -- only Restrict / Limit Count are meant to be hand-edited, PLUS
-        // adding a brand-new row (Department read_only_
-        // depends_on __islocal in the child doctype's own json lets it be set
-        // only while the row is new/unsaved) to pre-configure a Restrict/Limit
-        // Count before the serial has ever visited that department. Deleting a
-        // row, or editing Department/Count on an existing one, stays blocked.
-        // Hiding Delete Row here is just the UI half;
+        // -- the only manual edit allowed is adding a brand-new row (Department
+        // read_only_depends_on __islocal in the child doctype's own json lets
+        // it be set only while the row is new/unsaved) to pre-track a
+        // department the serial hasn't visited yet. Restrict Department Count
+        // / Department Count Limit now live on the Department doctype itself,
+        // not here. Deleting a row, or editing Department/Count on an existing
+        // one, stays blocked. Hiding Delete Row here is just the UI half;
         // nj_features.overrides.serial_no.prevent_manual_department_history_edits
         // (Serial No validate hook) is what actually enforces it server-side.
         frm.get_field('department_history').grid.cannot_delete_rows = true;

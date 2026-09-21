@@ -75,15 +75,19 @@ def seed_department_count_history(doc, method=None):
     department" signal.
 
     Checks for an existing row matching the CURRENT department by name,
-    rather than whether the table is empty -- a user can now pre-add a
-    row for a department the serial hasn't visited yet (to set Restrict/
-    Limit Count in advance; see prevent_manual_department_history_edits),
-    which would otherwise make an already-non-empty table look "already
-    seeded" and skip seeding the serial's actual starting department
-    entirely. Once a row for the current department exists, this never
-    touches it again -- every later department change is counted by
+    rather than whether the table is empty -- a user can pre-add a row
+    for a department the serial hasn't visited yet (see
+    prevent_manual_department_history_edits), which would otherwise make
+    an already-non-empty table look "already seeded" and skip seeding
+    the serial's actual starting department entirely. Once a row for the
+    current department exists, this never touches it again -- every
+    later department change is counted by
     nj_features.overrides.stock_entry.update_department_count_history
     on the Stock Entry that actually moves the serial.
+
+    Restrict/Limit Count no longer live on this row -- they are
+    department-wide settings on the Department doctype itself (see
+    nj_features.overrides.stock_entry.get_department_restriction_violation).
 
     A pre-existing serial with real history predating this feature only
     ever gets a single row seeded here, for whatever department it
@@ -117,13 +121,11 @@ def prevent_manual_department_history_edits(doc, method=None):
     """
     Serial No "validate" hook. Department Count History (department_
     history) is entirely server-managed -- seeded on creation, bumped on
-    real stock movement, reconstructed by the hourly backfill for
-    pre-existing serials. A normal user-initiated save may only:
+    real stock movement. A normal user-initiated save may only:
 
       - add a brand-new row (a Department not already tracked) with
-        Count left at 0, to pre-configure Restrict / Limit Count before
-        the serial has ever actually visited that department, or
-      - edit Restrict / Limit Count on any row, existing or new.
+        Count left at 0, to pre-track a department the serial hasn't
+        actually visited yet.
 
     It may never delete a row, rename an existing row's Department, add
     two rows for the same Department, or set/change a Count by hand --
@@ -181,9 +183,8 @@ def prevent_manual_department_history_edits(doc, method=None):
             if (row.count or 0) != (old_row.count or 0):
                 frappe.throw(
                     "Count cannot be added, removed, or edited manually on "
-                    "Department Count History -- only Restrict and Limit Count "
-                    "can be changed. This table is maintained automatically as "
-                    "the serial moves between departments."
+                    "Department Count History. This table is maintained "
+                    "automatically as the serial moves between departments."
                 )
         elif (row.count or 0) != 0:
             frappe.throw(
@@ -195,7 +196,6 @@ def prevent_manual_department_history_edits(doc, method=None):
     if set(old_by_dept.keys()) - matched_old_depts:
         frappe.throw(
             "Department Count History rows cannot be deleted, and an existing "
-            "row's Department cannot be changed -- only Restrict and Limit "
-            "Count can be edited, and a new row can be added for a Department "
-            "not yet tracked."
+            "row's Department cannot be changed -- a new row can only be "
+            "added for a Department not yet tracked."
         )

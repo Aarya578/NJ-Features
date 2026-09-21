@@ -54,19 +54,32 @@ def _iter_department_crossings(doc):
 def get_department_restriction_violation(serial_no, department):
     """
     Returns an error message string if moving `serial_no` into `department`
-    would violate that row's Restrict/Limit Count, else None.
+    would violate that Department's Restrict Department Count / Department
+    Count Limit, else None.
 
-    Reads the serial's EXISTING department_history row for `department` --
-    first-time entry into a department is never blocked, since no row (and
-    therefore no limit) can exist yet for a department this serial hasn't
-    been counted into before. Restrict/Limit Count are per (serial,
-    department) overrides, not a department-wide setting -- someone has to
-    have deliberately flagged that specific row after an earlier visit.
+    Restrict Department Count and Department Count Limit are now
+    department-wide settings (fields on the Department doctype itself, after
+    Company) rather than per (serial, department) overrides on Serial No's
+    department_history row -- every serial moving into a given department is
+    subject to the same limit. The serial's own department_history row is
+    only consulted for its Count, which is still tracked per (serial,
+    department); a serial with no row yet for this department has a count of
+    0 and is never blocked on first entry.
 
-    Threshold: count is allowed to REACH limit_count; the move that would
-    push it past that (count already >= limit_count) is what gets blocked.
+    Threshold: count is allowed to REACH the limit; the move that would push
+    it past that (count already >= limit) is what gets blocked.
     """
-    row = frappe.db.get_value(
+    dept = frappe.db.get_value(
+        "Department",
+        department,
+        ["restrict_department_count", "department_count_limit"],
+        as_dict=True,
+    )
+
+    if not dept or not dept.restrict_department_count or not dept.department_count_limit:
+        return None
+
+    count = frappe.db.get_value(
         "Department History",
         {
             "parent": serial_no,
@@ -74,18 +87,14 @@ def get_department_restriction_violation(serial_no, department):
             "parentfield": "department_history",
             "departmant": department,
         },
-        ["restrict", "limit_count", "count"],
-        as_dict=True,
-    )
+        "count",
+    ) or 0
 
-    if not row or not row.restrict or not row.limit_count:
-        return None
-
-    if (row.count or 0) >= row.limit_count:
+    if count >= dept.department_count_limit:
         return (
-            f"Serial No <b>{serial_no}</b> has reached its movement limit "
-            f"(<b>{row.limit_count}</b>) for department <b>{department}</b> "
-            f"and is restricted from moving there again."
+            f"Serial No <b>{serial_no}</b> has reached the movement limit "
+            f"(<b>{dept.department_count_limit}</b>) for department "
+            f"<b>{department}</b> and is restricted from moving there again."
         )
 
     return None

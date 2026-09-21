@@ -570,12 +570,11 @@ def trim_over_allocated_serials():
                     COALESCE(NULLIF(sn.to_make, ''), sn.item_code) AS item_code,
                     COUNT(*) AS reserved_count
                 FROM `tabSerial No` sn
-                INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
-                INNER JOIN `tabDepartment` dp ON w.department = dp.name
+                -- Location-blind: see adjust_serial_allocations(). This count and
+                -- that one must always agree, or the allocator creates duplicates
+                -- that this trim cannot see.
                 WHERE sn.reserved_sales_order IN ({so_list_str})
                   AND sn.status = 'Active'
-                  AND (IFNULL(dp.department_sequence, 0) != 0 OR sn.return_reason IN ('Repair', 'Replace', 'RTO Customer', 'RTO Delivery Partner'))
-                  AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
                 GROUP BY sn.reserved_sales_order, COALESCE(NULLIF(sn.to_make, ''), sn.item_code)
             ) res
             LEFT JOIN `tabSales Order` so ON so.name = res.reserved_sales_order
@@ -1382,18 +1381,16 @@ def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, r
     # allocator stops - leaving dispatch-ready machines untouched while the order
     # runs late. Observed on SO-2026-04-00203-1 (GMIT): 9 machines double-counted,
     # the 16-unit line read as full with only 7 serials behind it.
-    allocated_count = frappe.db.sql("""
-        SELECT COUNT(*)
-        FROM `tabSerial No` sn
-        INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
-        INNER JOIN `tabDepartment` dp ON w.department = dp.name
-        WHERE
-            sn.reserved_sales_order = %s
-            AND COALESCE(NULLIF(sn.to_make, ''), sn.item_code) = %s
-            AND sn.status = 'Active'
-            AND (IFNULL(dp.department_sequence, 0) != 0 OR sn.return_reason IN ('Repair', 'Replace', 'RTO Customer', 'RTO Delivery Partner'))
-            AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
-    """, (so_name, item_code))[0][0] or 0
+    #
+    # Counted via the shared helper, not a hand-written query. This count is
+    # LOCATION-BLIND: filtering it by department_sequence or warehouse_type made
+    # a reserved machine that walked into Asset - NJ or a technician's own
+    # warehouse read as zero, so this function handed the order a SECOND machine
+    # while the first stayed reserved and invisible. See the rule at
+    # reservation_service.RESERVED_SERIAL_COUNT_SQL.
+    from nj_features.services.reservation_service import get_reserved_serial_count
+
+    allocated_count = get_reserved_serial_count(so_name, item_code)
 
     to_allocate = int(net_pending - allocated_count)
     unallocated_qty = 0

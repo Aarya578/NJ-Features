@@ -239,6 +239,60 @@ def _is_same_model_family(tmpl_a: str, tmpl_b: str) -> bool:
     return True
 
 
+def _is_rebuild_compatible(physical_item_code: str, target_item_code: str) -> bool:
+    """Can a unit physically be rebuilt from its current item into the target?
+
+    RAM and storage are swapped on the bench every day, so those may differ
+    freely. The screen and the chassis cannot: a Touch panel is not an NT
+    panel, and a PIR body/motherboard is not a non-PIR one.
+
+    `_is_same_model_family` and `is_screen_type_compatible` already enforce
+    this when a donor unit is *chosen*, but the pre-reserved path honours a
+    stored `to_make` without consulting either, so a value written before
+    those gates existed - or by hand - is planned unchecked. This is that
+    check, usable from any path.
+
+    Conservative on purpose: when either template is unknown the pair is
+    allowed, so a naming gap strands no real stock.
+    """
+    if not physical_item_code or not target_item_code:
+        return False
+    if str(physical_item_code).strip() == str(target_item_code).strip():
+        return True
+
+    if not is_screen_type_compatible(physical_item_code, target_item_code):
+        return False
+
+    tmpl_a = frappe.db.get_value("Item", physical_item_code, "variant_of")
+    tmpl_b = frappe.db.get_value("Item", target_item_code, "variant_of")
+    if not tmpl_a or not tmpl_b:
+        return True
+
+    return _is_same_model_family(tmpl_a, tmpl_b)
+
+
+def _clear_serial_to_make(serial_no: str, bad_to_make: str) -> None:
+    """Drop a to_make the unit cannot physically be rebuilt into.
+
+    `_append_plan_row` writes to_make back on every run, so without clearing
+    it the planner re-reads the same impossible value each night and the unit
+    never recovers on its own.
+    """
+    if not serial_no or not bad_to_make:
+        return
+    try:
+        frappe.db.sql(
+            """
+            UPDATE `tabSerial No`
+            SET to_make = NULL
+            WHERE name = %s AND to_make = %s
+            """,
+            (serial_no, bad_to_make),
+        )
+    except Exception as e:
+        logger.warning("Could not clear Serial No.to_make for %s: %s", serial_no, e)
+
+
 _EQUIVALENT_PARENT_MODELS_CACHE: Dict[str, Set[str]] = {}
 
 
@@ -467,6 +521,18 @@ def _update_serial_to_make(serial_no: str, item_code_to_make: str, expected_so: 
         return
 
     item_code_to_make = _resolve_stock_item_from_pb_or_item(item_code_to_make)
+
+    # Guard every writer, not just the allocation gates: a to_make the unit
+    # cannot physically become would otherwise be replayed by the pre-reserved
+    # path on every subsequent run.
+    sn_item_code = frappe.db.get_value("Serial No", serial_no, "item_code")
+    if sn_item_code and not _is_rebuild_compatible(sn_item_code, item_code_to_make):
+        logger.warning(
+            "Refusing to set to_make=%s on %s (physical item %s is not rebuild-compatible)",
+            item_code_to_make, serial_no, sn_item_code,
+        )
+        return
+
     so_val = (expected_so or "").strip()
     try:
         frappe.db.sql(
@@ -890,6 +956,26 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                 item_code_to_make = res_row.get("to_make") or _get_fallback_pb_item_code(res_row["item_code"])
                 if not item_code_to_make:
                     skip_reason = "Reserved for SO - Product Bundle not found"
+                    _update_serial_remarks(sn_id, f"Not Allocated: {skip_reason}")
+                    plan_doc.append("missing_serial_nos", {
+                        "serial_no": sn_id,
+                        "current_department": dept_name,
+                        "current_warehouse": wh,
+                        "reason": skip_reason
+                    })
+                    continue
+
+                # This path honours a stored to_make and never ran the screen
+                # and chassis gates the SO allocation phase applies, so a value
+                # written before those gates existed (or by hand) was planned
+                # unchecked - e.g. a (PIR) unit targeted at an (IR-KBD WTB)
+                # build, which cannot be done: different body and motherboard.
+                if not _is_rebuild_compatible(res_row["item_code"], item_code_to_make):
+                    skip_reason = (
+                        f"Reserved for SO - to_make '{item_code_to_make}' is not physically "
+                        f"buildable from '{res_row['item_code']}'"
+                    )
+                    _clear_serial_to_make(sn_id, item_code_to_make)
                     _update_serial_remarks(sn_id, f"Not Allocated: {skip_reason}")
                     plan_doc.append("missing_serial_nos", {
                         "serial_no": sn_id,
@@ -1654,14 +1740,11 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
                 )                          AS item_code,
                 COUNT(*)                   AS reserved_qty
             FROM `tabSerial No` sn
-            INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
-            INNER JOIN `tabDepartment` dp ON w.department = dp.name
             WHERE
+                -- Location-blind: see sales_order.adjust_serial_allocations().
                 sn.reserved_sales_order IS NOT NULL
                 AND sn.reserved_sales_order != ''
                 AND (sn.status IS NULL OR sn.status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
-                AND IFNULL(dp.department_sequence, 0) != 0
-                AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
             GROUP BY sn.reserved_sales_order, 
                 COALESCE(
                     (
@@ -8300,11 +8383,8 @@ def nj_check_over_allocations():
                 COALESCE(NULLIF(sn.to_make, ''), sn.item_code) AS item_code,
                 COUNT(*) AS reserved_count
             FROM `tabSerial No` sn
-            INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
-            INNER JOIN `tabDepartment` dp ON w.department = dp.name
+            -- Location-blind: see sales_order.adjust_serial_allocations().
             WHERE sn.reserved_sales_order IS NOT NULL AND sn.reserved_sales_order != '' AND sn.status = 'Active'
-              AND IFNULL(dp.department_sequence, 0) != 0
-              AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
             GROUP BY sn.reserved_sales_order, COALESCE(NULLIF(sn.to_make, ''), sn.item_code)
         ) res
         LEFT JOIN `tabSales Order` so ON so.name = res.reserved_sales_order
@@ -8392,11 +8472,8 @@ def nj_check_over_allocations_fast():
                 COALESCE(NULLIF(sn.to_make, ''), sn.item_code) AS item_code,
                 COUNT(*) AS reserved_count
             FROM `tabSerial No` sn
-            INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
-            INNER JOIN `tabDepartment` dp ON w.department = dp.name
+            -- Location-blind: see sales_order.adjust_serial_allocations().
             WHERE sn.reserved_sales_order IN ({so_list_str}) AND sn.status = 'Active'
-              AND IFNULL(dp.department_sequence, 0) != 0
-              AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
             GROUP BY sn.reserved_sales_order, COALESCE(NULLIF(sn.to_make, ''), sn.item_code)
         ) res
         LEFT JOIN `tabSales Order` so ON so.name = res.reserved_sales_order
@@ -8525,11 +8602,8 @@ def nj_detailed_allocation_audit():
             COALESCE(NULLIF(sn.to_make, ''), sn.item_code) AS item_code,
             COUNT(*) AS reserved_count
         FROM `tabSerial No` sn
-        INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
-        INNER JOIN `tabDepartment` dp ON w.department = dp.name
+        -- Location-blind: see sales_order.adjust_serial_allocations().
         WHERE sn.reserved_sales_order IN ({so_list_str}) AND sn.status = 'Active'
-          AND IFNULL(dp.department_sequence, 0) != 0
-          AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
         GROUP BY sn.reserved_sales_order, COALESCE(NULLIF(sn.to_make, ''), sn.item_code)
     """, as_dict=True)
 

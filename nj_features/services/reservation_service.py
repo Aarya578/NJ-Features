@@ -633,3 +633,54 @@ def upgrade_order_reservations(target_item_code=None, dry_run=False, so_name=Non
             logger.warning(f"Failed to auto-upgrade {so_name}: {e}")
 
     return upgrades_executed
+
+
+# ==============================================================================
+# 4. CANONICAL RESERVED-SERIAL COUNT (single source of truth)
+# ==============================================================================
+# THE RULE: a reservation is a reservation regardless of where the machine is
+# standing. Any query answering "how many machines does this order already
+# hold?" must be blind to location.
+#
+# This was written out by hand six times across sales_order.py and
+# nj_production_planning.py, and every copy filtered the count by
+# `department_sequence != 0` and `warehouse_type != 'Employee Personal
+# Warehouse'`, and reached `tabSerial No` through an INNER JOIN on Warehouse.
+# Those filters are correct in a SEARCH pool -- you should not grab new stock
+# out of Asset or a technician's bench. They are wrong in a COUNT. A machine
+# already reserved to an order that moved into Asset - NJ (department_sequence
+# = 0) or into an Employee Personal Warehouse counted as zero, so the allocator
+# issued the order a SECOND machine while the first stayed reserved and
+# invisible. `trim_over_allocated_serials` carried the same filters, so it never
+# saw the duplicate it exists to remove; all three audit tools carried them too,
+# so the reports used to hunt this reported clean.
+#
+# New code counting reservations calls this. It does not hand-write the query.
+# `tests/test_reservation_count_invariants.py` fails the build if a counting
+# query reintroduces a location filter -- it needs no site or database, so run
+# it before any restart shipping allocator changes:
+#     cd apps/nj_features && python3 -m unittest tests.test_reservation_count_invariants
+
+# The key a reserved serial is counted against: where it is GOING (to_make),
+# falling back to what it currently is. Must stay identical to the key the
+# production planner and the Shopify quantity query group by.
+RESERVED_COUNT_ITEM_KEY_SQL = "COALESCE(NULLIF(sn.to_make, ''), sn.item_code)"
+
+RESERVED_SERIAL_COUNT_SQL = f"""
+    SELECT COUNT(*)
+    FROM `tabSerial No` sn
+    WHERE sn.reserved_sales_order = %s
+      AND {RESERVED_COUNT_ITEM_KEY_SQL} = %s
+      AND sn.status = 'Active'
+"""
+
+
+def get_reserved_serial_count(so_name, item_code):
+    """How many Active serials are reserved to this order for this destination SKU.
+
+    Location-blind by design -- see the rule above. Never add a warehouse or
+    department condition here; put it in the search pool instead.
+    """
+    if not so_name or not item_code:
+        return 0
+    return frappe.db.sql(RESERVED_SERIAL_COUNT_SQL, (so_name, item_code))[0][0] or 0

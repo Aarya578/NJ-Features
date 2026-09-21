@@ -236,15 +236,11 @@ override_whitelisted_methods = {
 
 scheduler_events = {
     "cron": {
-        # Backfills Department Count History for a bounded batch of
-        # in-stock serials that predate this feature -- self-completing
-        # over many short hourly runs instead of one long operation, so
-        # it's safe to run anytime including business hours. See
-        # nj_features.overrides.stock_entry.run_department_count_history_backfill_batch.
-        "0 * * * *": [
-            "nj_features.overrides.stock_entry.run_department_count_history_backfill_batch",
-        ],
-
+        # NOTE: every cron expression must appear exactly ONCE in this dict.
+        # This is a plain Python dict literal, so a repeated key silently
+        # discards the earlier list -- no error, no warning, the jobs just
+        # never run. "0 * * * *" was declared twice and the backfill below
+        # was dead for that reason. Add to an existing list, never re-declare.
         "0 0 * * *": [
             "nj_features.overrides.sales_order.run_daily_eta_drift_reallocation",
             # Releases serials whose Repair/Replace cycle is finished. Without it
@@ -295,10 +291,16 @@ scheduler_events = {
             "nj_features.overrides.sales_order.calculate_dispatch_eta_for_sales_order",
         ],
 
-        # Runs every hour
+        # Runs every hour -- the ONLY "0 * * * *" entry in this dict.
         "0 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.fetch_and_stage_inventory_sync",
             "nj_features.nj_features.api.zoho_sync.sync_customers_to_zoho",
+            # Backfills Department Count History for a bounded batch of
+            # in-stock serials that predate this feature -- self-completing
+            # over many short hourly runs instead of one long operation, so
+            # it's safe to run anytime including business hours. Was declared
+            # under a duplicate "0 * * * *" key above and never ran.
+            "nj_features.overrides.stock_entry.run_department_count_history_backfill_batch",
         ],
 
         # Runs every minute

@@ -44,6 +44,56 @@ def restore_manual_conversion_on_po(doc, method=None):
         log_po_time("restore_manual_conversion_on_po", doc.name, start)
 
 
+def npd_core_item_group_validataion(doc, method=None):
+    """Require NPD validation and approval before submitting a core-item PO."""
+    configured_groups = frappe.db.get_value(
+        "NJ Settings",
+        {
+            "module": "NJ Features",
+            "doc_type": "Purchase Order",
+            "parameter": "npd_core_item_groups_validation",
+        },
+        "value",
+    )
+
+    core_item_groups = {
+        group.strip().casefold()
+        for group in (configured_groups or "").split(",")
+        if group.strip()
+    }
+    if not core_item_groups:
+        frappe.throw(
+            "<b>NJ Settings</b> parameter "
+            "<b>npd_core_item_groups_validation</b> is missing or empty."
+        )
+
+    matched_groups = sorted({
+        row.item_group.strip()
+        for row in (doc.items or [])
+        if row.item_group
+        and row.item_group.strip().casefold() in core_item_groups
+    })
+    if not matched_groups:
+        return
+
+    missing_approvals = []
+    if not doc.get("npd_validation"):
+        missing_approvals.append("NPD Validation")
+    if not doc.get("npd_approval"):
+        missing_approvals.append("NPD Approval")
+
+    if missing_approvals:
+        frappe.throw(
+            "For Core Item Group Purchase Orders, NPD approval is required.<br>"
+            "Matched Item Group(s): <b>{0}</b><br>"
+            "Required: <b>{1}</b>".format(
+                ", ".join(matched_groups),
+                ", ".join(missing_approvals),
+            ),
+            title="NPD Approval Required",
+        )
+
+
 @frappe.whitelist()
 def check_billed_and_closed_amount(purchase_order, po_grand_total):
     po_grand_total = float(po_grand_total)

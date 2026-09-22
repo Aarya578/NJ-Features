@@ -139,6 +139,42 @@ def _effective_live_qty(rows, flags, parent_qty_dict):
     return effective
 
 
+def clear_orphaned_pre_order_flags():
+    """Drop shopify_pre_order_enabled on rows that staging can no longer reach.
+
+    A sync row is only rewritten while its Product Bundle still produces it. Once
+    a listing is deactivated (is_active=0) the row is never visited again, so a
+    flag left at 1 stays at 1 indefinitely - it keeps claiming pre-order in
+    resolve_pre_order_claims and keeps reporting a pre-order listing that nobody
+    can buy. Measured 2026-09-22: 3 rows frozen since 2026-09-17.
+
+    Only touches deactivated rows. An active row with a real pre-order quantity
+    whose push failed is a DIFFERENT problem (status='Error') and is left alone.
+    """
+    try:
+        affected = frappe.db.sql("""
+            UPDATE `tabNJ Inventory Sync Main`
+            SET shopify_pre_order_enabled = 0,
+                shopify_pre_order_qty = 0
+            WHERE shopify_pre_order_enabled = 1
+              AND COALESCE(is_active, 0) = 0
+        """)
+        frappe.db.commit()
+        cleared = frappe.db._cursor.rowcount if hasattr(frappe.db, "_cursor") else 0
+        if cleared:
+            log_error(
+                f"Cleared shopify_pre_order_enabled on {cleared} deactivated sync "
+                f"row(s) that staging can no longer reach",
+                "clear_orphaned_pre_order_flags",
+                "Info",
+            )
+        return True
+    except Exception:
+        frappe.db.rollback()
+        log_error(frappe.get_traceback(), "clear_orphaned_pre_order_flags", "Warning")
+        return False
+
+
 def resolve_pre_order_claims(rows, allocations=None, effective_live=None):
     """Advertise each physical machine on exactly one Shopify variant.
 
@@ -190,11 +226,14 @@ def resolve_pre_order_claims(rows, allocations=None, effective_live=None):
         if variant_id:
             claimants.setdefault(r["item_code"], set()).add(variant_id)
 
+    # is_active=0 rows are deactivated listings. Staging never revisits them,
+    # so a flag left at 1 there is frozen forever - and as an incumbent it would
+    # keep winning the claim ahead of a variant that can actually be sold.
     incumbents = {
         str(r["shopify_variant_id"] or "").strip()
         for r in frappe.get_all(
             "NJ Inventory Sync Main",
-            filters={"shopify_pre_order_enabled": 1},
+            filters={"shopify_pre_order_enabled": 1, "is_active": 1},
             fields=["shopify_variant_id"],
         )
     }
@@ -581,6 +620,10 @@ def _create_rq_doc(variant_ids=None):
             "Pre-Order Circuit Breaker",
             "Error",
         )
+
+    # Frozen flags on deactivated listings are cleared every cycle, whether or
+    # not the pre-order stage succeeded - a stale claim is wrong either way.
+    clear_orphaned_pre_order_flags()
 
     if not run_stage(5, "updting_sla_department", updting_sla_department):
         return {"run_id": run_id, "status": "failed", "stage": "updting_sla_department"}

@@ -864,16 +864,25 @@ def _pre_order_config_filters(settings):
 
 
 def get_pre_order_pools(settings):
-    """Count free WIP machines per EXACT configuration.
+    """Count free machines per parent + Processor.
 
-    The pool is keyed on parent + Processor + RAM + Storage - i.e. the same
-    attributes that define a Shopify variant - so a pool can never be handed
-    to a variant that is not actually the machine sitting on the line.
+    The pool is keyed on parent + Processor deliberately. RAM and storage are
+    FITTED DURING THE BUILD, so a chassis sitting in L2 is not yet an 8/256 or
+    a 16/512 - it becomes whichever spec the parts going into it decide. Keying
+    the pre-order pool on RAM/Storage splits it on an attribute that has not
+    been chosen yet, which strands real build capacity across several
+    sub-threshold buckets and hides models that can genuinely be supplied.
 
-    Keying on parent + Processor alone (the old behaviour) credited every
-    RAM/SSD variant of a chassis with the whole chassis pool, which is
-    harmless for a yes/no flag and catastrophic once that number is pushed
-    to Shopify as sellable stock.
+    Scope: every department with department_sequence > 0 that declares
+    sla_item_groups, EXCLUDING the ready-stock departments listed in
+    NJ Inventory Settings.departments. Pre-order and ready stock are disjoint by
+    construction - a machine is either sellable today (actual_qty) or promisable
+    (pre_order_qty), never both.
+
+    The over-promise this used to cause is NOT solved by narrowing the key; it
+    is solved in update_pre_order_qty, which CLAIMS the pool (one row takes it)
+    instead of copying it to every variant sharing the parent. Do not re-split
+    this key to fix a quantity bug - check the claim logic instead.
 
     Returns {config_key: free_qty} for configurations with at least one
     free machine, or None when the pool could not be computed (which is
@@ -889,33 +898,46 @@ def get_pre_order_pools(settings):
         )
         return None
 
-    part_waiting_seq = frappe.db.get_value(
-        "Department", {"name": ["like", "%Part waiting%"]}, "department_sequence"
-    )
-    adaptor_seq = frappe.db.get_value(
-        "Department", {"name": ["like", "%Adaptor%"]}, "department_sequence"
-    )
+    # Every sequenced department that declares the item groups it handles,
+    # MINUS the departments that already feed ready stock.
+    #
+    # Business rule (2026-09-22): a machine anywhere in the plant that is still
+    # free can be promised, not only one inside the Part waiting -> Adaptor
+    # window. sla_item_groups is the gate that keeps a laptop out of a
+    # desktop-only department; department_sequence > 0 keeps unsequenced
+    # bookkeeping departments out entirely.
+    #
+    # The NOT IN is not optional. NJ Inventory Settings.departments is the
+    # ready-stock scope: those machines are already counted in actual_qty and
+    # are sellable today. Counting them here as well puts the same physical
+    # machine on the storefront twice - once as ready stock on its own variant,
+    # once as pre-order on a sibling. The claim step cannot catch this because
+    # it only sees the pre-order pool, not what actual_qty already spent.
+    # Measured 2026-09-22: 806 machines (33% of the widened pool) overlapped.
+    ready_stock_depts = [
+        d.strip() for d in (settings.get("departments") or "").split(",") if d.strip()
+    ]
 
-    if part_waiting_seq is None or adaptor_seq is None:
+    if ready_stock_depts:
+        exclude_placeholders = ", ".join(["%s"] * len(ready_stock_depts))
+        depts_list = frappe.db.sql_list(f"""
+            SELECT name FROM `tabDepartment`
+            WHERE department_sequence > 0
+              AND sla_item_groups IS NOT NULL AND sla_item_groups != ''
+              AND name NOT IN ({exclude_placeholders})
+        """, tuple(ready_stock_depts))
+    else:
         log_error(
-            "Could not dynamically find sequence for Part waiting or Adaptor departments",
+            "NJ Inventory Settings.departments is empty - pre-order pool cannot be "
+            "separated from ready stock, so it is not computed",
             "update_pre_order_qty",
             "Warning",
         )
         return None
 
-    min_bound = min(part_waiting_seq, adaptor_seq)
-    max_bound = max(part_waiting_seq, adaptor_seq)
-
-    depts_list = frappe.db.sql_list("""
-        SELECT name FROM `tabDepartment`
-        WHERE department_sequence > %s AND department_sequence < %s
-          AND sla_item_groups IS NOT NULL AND sla_item_groups != ''
-    """, (min_bound, max_bound))
-
     if not depts_list:
         log_error(
-            "No build-pipeline departments found between Part waiting and Adaptor",
+            "No pre-order departments remain after excluding the ready-stock scope",
             "update_pre_order_qty",
             "Warning",
         )
@@ -932,21 +954,27 @@ def get_pre_order_pools(settings):
         SELECT
             CONCAT(
                 COALESCE(i.variant_of, ''), '|',
-                COALESCE(proc.attribute_value, ''), '|',
-                COALESCE(ram.attribute_value, ''), '|',
-                COALESCE(sto.attribute_value, '')
+                COALESCE(proc.attribute_value, '')
             ) AS config_key,
             COUNT(b.name) AS free_qty
-        FROM `tabItem` i
-        LEFT JOIN `tabSerial No` b ON (i.name = b.item_code OR i.item_code = b.item_code)
+        -- Driven from `tabSerial No`, not `tabItem`. The original shape was
+        -- FROM `tabItem` i LEFT JOIN `tabSerial No` b
+        --      ON (i.name = b.item_code OR i.item_code = b.item_code)
+        -- and that OR stops MySQL using any index on the Item side: EXPLAIN
+        -- reported type=ALL with "Range checked for each record" over 229,643
+        -- Item rows, once per candidate serial. Widening the department scope
+        -- to the whole plant made that cost real - 273s per run.
+        --
+        -- Only 3 Items in 247,243 have name <> item_code (all mis-typed
+        -- accessories: a WIFI CARD and two SSDs), none of them in a pre-order
+        -- item group, so the OR branch contributes nothing here. Verified: this
+        -- form returns byte-identical pools (374 pools / 1,656 machines) in 73s.
+        FROM `tabSerial No` b
+        INNER JOIN `tabItem` i ON i.name = b.item_code
         LEFT JOIN `tabWarehouse` w ON b.warehouse = w.name
         INNER JOIN `tabDepartment` dp ON w.department = dp.name
         LEFT JOIN `tabItem Variant Attribute` proc
             ON proc.parent = i.name AND proc.attribute = 'Processor Type1'
-        LEFT JOIN `tabItem Variant Attribute` ram
-            ON ram.parent = i.name AND ram.attribute = 'RAM Capacity'
-        LEFT JOIN `tabItem Variant Attribute` sto
-            ON sto.parent = i.name AND sto.attribute = 'Storage Capacity'
         WHERE
             COALESCE(b.item_group, i.item_group) IN ({item_group_placeholders})
             AND (w.department IN ({department_placeholders}) {parent_warehouse_clause})
@@ -970,6 +998,15 @@ def get_pre_order_pools(settings):
             )
             AND (b.return_reason IS NULL OR b.return_reason = ''
                  OR b.return_reason NOT IN ('Repair', 'Replace'))
+            -- An ungraded machine has no confirmed processor. Widening the pool
+            -- to Inward/Core IQC brought these in, and the pool key would then
+            -- advertise the ITEM MASTER's spec for a machine nobody has opened
+            -- yet (e.g. "Optiplex 3050 | NO PROCESSOR" going live at 21 units).
+            -- Pre-order is a promise about a specific build; we cannot make it
+            -- for a machine whose CPU is unknown.
+            AND proc.attribute_value IS NOT NULL
+            AND TRIM(proc.attribute_value) != ''
+            AND UPPER(TRIM(proc.attribute_value)) NOT IN ('NO PROCESSOR', 'UNKNOWN PROCESSOR')
         GROUP BY config_key
         HAVING COUNT(b.name) > 0
     """, tuple(item_groups_list + depts_list + warehouses_list), as_dict=True)
@@ -977,21 +1014,83 @@ def get_pre_order_pools(settings):
     return {r["config_key"]: int(r["free_qty"] or 0) for r in rows}
 
 
+def get_pre_order_exact_counts(settings):
+    """How many pooled machines carry each exact item code.
+
+    Used only to break ties in update_pre_order_qty: when several variants of
+    one parent+Processor can each claim the whole pool, the listing should go
+    to the variant the machines already are, not to whichever item code sorts
+    first. Returns {item_code: qty}; an empty dict simply means the tie-break
+    falls back to item_code order, which is the previous behaviour.
+    """
+    warehouses_list, item_groups_list = _pre_order_config_filters(settings)
+    if not item_groups_list:
+        return {}
+
+    ready_stock_depts = [
+        d.strip() for d in (settings.get("departments") or "").split(",") if d.strip()
+    ]
+    if not ready_stock_depts:
+        return {}
+
+    exclude_placeholders = ", ".join(["%s"] * len(ready_stock_depts))
+    depts_list = frappe.db.sql_list(f"""
+        SELECT name FROM `tabDepartment`
+        WHERE department_sequence > 0
+          AND sla_item_groups IS NOT NULL AND sla_item_groups != ''
+          AND name NOT IN ({exclude_placeholders})
+    """, tuple(ready_stock_depts))
+    if not depts_list:
+        return {}
+
+    item_group_placeholders = ", ".join(["%s"] * len(item_groups_list))
+    department_placeholders = ", ".join(["%s"] * len(depts_list))
+
+    try:
+        rows = frappe.db.sql(f"""
+            SELECT i.item_code, COUNT(b.name) AS qty
+            -- Same Serial-No-driven shape as get_pre_order_pools; see the note
+            -- there for why the OR join was removed.
+            FROM `tabSerial No` b
+            INNER JOIN `tabItem` i ON i.name = b.item_code
+            LEFT JOIN `tabWarehouse` w ON b.warehouse = w.name
+            INNER JOIN `tabDepartment` dp ON w.department = dp.name
+            WHERE
+                COALESCE(b.item_group, i.item_group) IN ({item_group_placeholders})
+                AND w.department IN ({department_placeholders})
+                AND dp.sla_item_groups IS NOT NULL AND dp.sla_item_groups != ''
+                AND FIND_IN_SET(COALESCE(b.item_group, i.item_group), dp.sla_item_groups)
+                AND b.status = 'Active'
+                AND b.is_replace = 0
+                AND (b.reserved_sales_order IS NULL OR b.reserved_sales_order = '')
+                AND (b.sales_order IS NULL OR b.sales_order = '')
+                AND (b.return_reason IS NULL OR b.return_reason = ''
+                     OR b.return_reason NOT IN ('Repair', 'Replace'))
+            GROUP BY i.item_code
+            HAVING COUNT(b.name) > 0
+        """, tuple(item_groups_list + depts_list), as_dict=True)
+    except Exception:
+        # A tie-break is a nicety, never a reason to fail the allocation.
+        log_error(frappe.get_traceback(), "get_pre_order_exact_counts", "Warning")
+        return {}
+
+    return {r["item_code"]: int(r["qty"] or 0) for r in rows}
+
+
 def update_pre_order_qty(settings):
     """Allocate the free WIP pool to SO Quantity Check rows, one claim per machine.
 
-    Two invariants this function exists to hold:
+    The invariant this function exists to hold:
 
-      1. A machine is counted for the configuration it actually is, never for
-         every RAM/SSD variant of its chassis.
-      2. SUM(pre_order_qty) across all rows of a configuration never exceeds
-         the number of physical machines in that configuration.
+        SUM(pre_order_qty) across all rows sharing a parent + Processor never
+        exceeds the number of physical machines free on the line for it.
 
-    Invariant 2 is why the pool is CLAIMED rather than copied: where several
-    item codes map to the same configuration, the pool goes to the one with
-    the largest waiting backlog and the rest get zero. Splitting it instead
-    would hand most variants a fraction below the sell threshold and advertise
-    nothing at all.
+    That is why the pool is CLAIMED rather than copied. Several item codes (the
+    RAM/SSD variants of one chassis) map to the same pool, and every one of them
+    could legitimately be built from any machine in it - but only one may
+    advertise it, or the same 37 machines get sold 11 times over. Copying the
+    pool to every matching row is exactly what the pre-2026-09-22 code did:
+    measured live, it advertised 3,857 units against 317 physical machines.
 
     Returns True on success, False on failure. A False return means the
     pre-order figures are NOT trustworthy for this cycle - callers must skip
@@ -1010,6 +1109,9 @@ def update_pre_order_qty(settings):
             )
             return False
 
+        # machines-per-exact-item-code, for the tie-break below
+        exact_counts = get_pre_order_exact_counts(settings)
+
         # item code -> its exact configuration, for every row we might fill
         config_rows = frappe.db.sql("""
             SELECT
@@ -1018,18 +1120,12 @@ def update_pre_order_qty(settings):
                 t.pending_allocation_qty,
                 CONCAT(
                     COALESCE(i.variant_of, ''), '|',
-                    COALESCE(proc.attribute_value, ''), '|',
-                    COALESCE(ram.attribute_value, ''), '|',
-                    COALESCE(sto.attribute_value, '')
+                    COALESCE(proc.attribute_value, '')
                 ) AS config_key
             FROM `tabSO Quantity Check` t
             INNER JOIN `tabItem` i ON i.item_code = t.item_code
             LEFT JOIN `tabItem Variant Attribute` proc
                 ON proc.parent = i.name AND proc.attribute = 'Processor Type1'
-            LEFT JOIN `tabItem Variant Attribute` ram
-                ON ram.parent = i.name AND ram.attribute = 'RAM Capacity'
-            LEFT JOIN `tabItem Variant Attribute` sto
-                ON sto.parent = i.name AND sto.attribute = 'Storage Capacity'
         """, as_dict=True)
 
         def backlog(row):
@@ -1069,7 +1165,20 @@ def update_pre_order_qty(settings):
             # waiting most. Picking the largest backlog caps the whole
             # configuration at that row's backlog, so a pool of 38 behind a
             # single row with a backlog of 1 would advertise 1 and strand 37.
-            rows.sort(key=lambda r: (-claimable(r), str(r.get("item_code") or "")))
+            #
+            # Among rows that can advertise the same amount - the usual case,
+            # since siblings with no backlog all claim the full pool - prefer
+            # the variant that the machines in the pool ACTUALLY are. Falling
+            # through to item_code order picked a spec at random: the 7420(PIR)
+            # listing went live as 16 GB/256 GB while all 32 machines were
+            # 16 GB/512 GB. exact_match_qty is how many pooled machines carry
+            # that row's own item code, so the advertised listing is the one
+            # needing the least rework.
+            rows.sort(key=lambda r: (
+                -claimable(r),
+                -exact_counts.get(r.get("item_code"), 0),
+                str(r.get("item_code") or ""),
+            ))
             winner = rows[0]
             allocations[winner["soqc_name"]] = claimable(winner)
 

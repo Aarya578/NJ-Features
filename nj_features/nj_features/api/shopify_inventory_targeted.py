@@ -554,13 +554,29 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
         if stock_map:
             affected_item_codes = list(stock_map.keys())
             ip = ', '.join(['%s'] * len(affected_item_codes))
+
+            # A targeted run deliberately does NOT recompute pre-order
+            # (pre_order_data_ok is False above - the hourly staging run owns
+            # that allocation). But this path rebuilds rows with DELETE+INSERT,
+            # so anything not carried across is silently reset to 0. Read the
+            # current pre-order figures back and re-insert them unchanged,
+            # otherwise a targeted run zeroes the SOQC screen for these items
+            # while Shopify keeps showing the held value.
+            existing_pre_order = dict(frappe.db.sql(
+                f"""SELECT item_code,
+                           CAST(COALESCE(NULLIF(pre_order_qty, ''), '0') AS SIGNED)
+                    FROM `tabSO Quantity Check`
+                    WHERE item_code IN ({ip})""",
+                tuple(affected_item_codes),
+            ) or [])
             now_time = frappe.utils.now()
             user = frappe.session.user or "Administrator"
             fields = [
                 "name", "creation", "modified", "modified_by", "owner",
                 "docstatus", "idx", "item_code", "parent1", "actual_qty",
                 "so_quantity", "remaining_qty", "update_qty", "need_to_reduce",
-                "remove_parent_qty", "update_qty2", "proportional_remove_qty", "sla"
+                "remove_parent_qty", "update_qty2", "proportional_remove_qty", "sla",
+                "pre_order_qty"
             ]
             values = []
             for item_code, data in stock_map.items():
@@ -573,7 +589,8 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
                     frappe.generate_hash(length=10), now_time, now_time, user, user,
                     0, 0, item_code, data.get('parent1', ''), str(actual_qty),
                     str(so_quantity), str(remaining_qty), str(update_qty), str(need_to_reduce),
-                    "0", "0", None, 0
+                    "0", "0", None, 0,
+                    int(existing_pre_order.get(item_code, 0) or 0)
                 ))
 
             max_retries = 3

@@ -3150,7 +3150,8 @@ def run_latest_production_plan_part_allocation(plan_name: Optional[str] = None) 
     This runs after the production plan is already created. It only touches child
     rows whose current Department has Allocate Parts enabled, and it processes
     them by numeric Priority Rank so the virtual deductions follow the same
-    order visible in the plan.
+    order visible in the plan. A row qualifies when either its NJPP current
+    department or its physical Serial No warehouse department is configured.
 
     When plan_name is given the allocation is pinned to that plan. The production
     plan run passes the plan it just built so the recalculation cannot drift onto
@@ -3195,10 +3196,17 @@ def run_latest_production_plan_part_allocation(plan_name: Optional[str] = None) 
             pp.item_code,
             pp.reason,
             pp.priority_rank,
+            sn.warehouse AS serial_warehouse,
+            wh.department AS serial_warehouse_department,
             CAST(IFNULL(NULLIF(pp.priority_rank, ''), '0') AS UNSIGNED) AS priority_rank_no
         FROM `tabFinal Production Planning Data` pp
+        LEFT JOIN `tabSerial No` sn ON sn.name = pp.serial_no
+        LEFT JOIN `tabWarehouse` wh ON wh.name = sn.warehouse
         WHERE pp.parent = %(parent)s
-          AND LOWER(REPLACE(pp.current_department, ' ', '')) IN %(department_keys)s
+          AND (
+              LOWER(REPLACE(pp.current_department, ' ', '')) IN %(department_keys)s
+              OR LOWER(REPLACE(IFNULL(wh.department, ''), ' ', '')) IN %(department_keys)s
+          )
           AND IFNULL(pp.serial_no, '') != ''
         ORDER BY priority_rank_no ASC, pp.idx ASC
         """,
@@ -3214,6 +3222,22 @@ def run_latest_production_plan_part_allocation(plan_name: Optional[str] = None) 
         row.name: _is_allocate_parts_department(row.name, allocate_parts_departments)
         for row in frappe.get_all("Department", fields=["name"])
     }
+    # Google Sheet eligibility is based on the physical Serial No warehouse
+    # department.  A plan row can therefore still have a different NJPP
+    # current_department (for example Paint/L2) while its serial is physically
+    # in a configured Part Waiting warehouse.  Enable only those fetched plan
+    # departments; the normal NJPP department remains in the audit output.
+    for row in rows:
+        if _is_allocate_parts_department(
+            row.get("serial_warehouse_department"), allocate_parts_departments
+        ):
+            department_flags[row.current_department] = True
+            print(
+                "[PART_ALLOC_SCHEDULE] Physical warehouse department enables "
+                f"serial={row.serial_no} warehouse={row.get('serial_warehouse')} "
+                f"warehouse_department={row.get('serial_warehouse_department')} "
+                f"njpp_department={row.current_department}"
+            )
     enabled_departments = sorted([dept for dept, enabled in department_flags.items() if enabled])
     print(f"[PART_ALLOC_SCHEDULE] Allocate Parts matched departments: {enabled_departments}")
     run = PartAllocationRun(department_flags)
@@ -3346,8 +3370,6 @@ def run_latest_production_plan_part_allocation(plan_name: Optional[str] = None) 
         "failed": failed,
         "allocation_audit": allocation_audit,
     }
-
-
 
 
 # =========================

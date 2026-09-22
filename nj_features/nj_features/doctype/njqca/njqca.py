@@ -457,7 +457,6 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
 
         # MODIFIED BLOCK — LOOP OVER ALL item_group_idx matches
         # PARAMETER + SCORE BASED NJQCA → QI SYNC
-        # PARAMETER + SCORE BASED NJQCA → QI SYNC
         # Normal parameters use Parameter + Score.
         # If the same parameter exists under multiple NJQCA Item Groups,
         # Item Group is also used for mapping.

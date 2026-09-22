@@ -8,6 +8,9 @@ frappe.ui.form.on('Purchase Order', {
 
     refresh: function(frm) {
 
+        const is_npd_manager = frappe.user_roles.includes("NPD Manager");
+        frm.toggle_display(["npd_validation", "npd_approval"], is_npd_manager);
+
         // Restrict NPD Approval and Is Sample fields
         frappe.call({
             method: "frappe.client.get_value",

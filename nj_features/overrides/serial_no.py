@@ -199,3 +199,34 @@ def prevent_manual_department_history_edits(doc, method=None):
             "row's Department cannot be changed -- a new row can only be "
             "added for a Department not yet tracked."
         )
+
+
+@frappe.whitelist()
+def format_component_audit_entry(serial_no, item_group, component, field_changed, old_value, new_value, reason):
+    """
+    Format and return a single UI audit log entry for Serial No Component changes.
+    Uses Frappe session user and server formatted date/time.
+    """
+    from frappe.utils import now_datetime, formatdate, format_time
+
+    now = now_datetime()
+    formatted_date = formatdate(now, "dd-MM-yyyy")
+    formatted_time = format_time(now, "HH:mm:ss")
+    user = frappe.session.user
+
+    entry = (
+        "--------------------------------------------------\n"
+        f"Date: {formatted_date}\n"
+        f"Time: {formatted_time}\n"
+        f"User: {user}\n"
+        f"Serial No: {serial_no or ''}\n"
+        f"Item Group: {item_group or ''}\n"
+        f"Component: {component or ''}\n"
+        f"Field: {field_changed or ''}\n"
+        f"Old Value: {old_value or ''}\n"
+        f"New Value: {new_value or ''}\n"
+        f"Reason: {(reason or '').strip()}\n"
+        "--------------------------------------------------"
+    )
+    return entry
+

@@ -1,5 +1,9 @@
 frappe.ui.form.on('Serial No', {
+    onload: function(frm) {
+        init_component_snapshot(frm);
+    },
     refresh: function(frm) {
+        init_component_snapshot(frm);
         applyReadOnlyStyling(frm);
 
         console.log('Current user roles:', frappe.user_roles);
@@ -383,3 +387,219 @@ function  get_report_data(frm) {
         args: { serial_no: frm.doc.name }
     });
 }
+
+// =========================================================================
+// Serial No Component UI Change Audit Log
+// Monitors 'item' (item_code) and 'grade' modifications in child table
+// =========================================================================
+
+function init_component_snapshot(frm) {
+    if (!frm.doc) return;
+    frm._component_original_snapshot = {};
+    const rows = frm.doc.serial_no_component || [];
+    rows.forEach(row => {
+        if (row.name) {
+            frm._component_original_snapshot[row.name] = {
+                item: (row.item || "").trim(),
+                grade: (row.grade || "").trim(),
+                item_group: (row.item_group || "").trim()
+            };
+        }
+    });
+}
+
+function prompt_for_component_reason(frm, row, fieldname, label, old_val, new_val, item_group, on_success, on_cancel) {
+    const dialog = new frappe.ui.Dialog({
+        title: __('Reason for Change'),
+        fields: [
+            {
+                fieldtype: 'HTML',
+                fieldname: 'change_info',
+                options: `
+                    <div style="margin-bottom: 12px; font-size: 13px; line-height: 1.5;">
+                        <p>You changed: <b>${frappe.utils.escape_html(label)}</b></p>
+                        <p style="margin-bottom: 4px;">Old Value: <span class="text-muted font-weight-bold">${frappe.utils.escape_html(old_val || "(Empty)")}</span></p>
+                        <p style="margin-bottom: 4px;">New Value: <span class="text-primary font-weight-bold">${frappe.utils.escape_html(new_val || "(Empty)")}</span></p>
+                        <p class="text-danger" style="margin-top: 8px;"><b>Please enter the reason for this change. Minimum 15 characters.</b></p>
+                    </div>
+                `
+            },
+            {
+                label: __('Reason for change'),
+                fieldname: 'reason',
+                fieldtype: 'Small Text',
+                reqd: 1,
+                description: __('Minimum 15 characters (excluding leading/trailing spaces)')
+            }
+        ],
+        primary_action_label: __('Continue'),
+        primary_action(values) {
+            const reason = (values.reason || "").trim();
+            if (reason.length < 15) {
+                frappe.msgprint({
+                    title: __('Validation Failed'),
+                    indicator: 'red',
+                    message: __('Please provide a reason with at least 15 characters.')
+                });
+                return;
+            }
+            dialog.hide();
+            on_success(reason);
+        }
+    });
+
+    let is_submitted = false;
+    dialog.get_primary_btn().on('click', () => { is_submitted = true; });
+
+    dialog.$wrapper.find('.modal-header .close, .modal-footer .btn-default').on('click', function() {
+        if (!is_submitted && on_cancel) {
+            on_cancel();
+        }
+    });
+
+    dialog.show();
+}
+
+function append_to_serial_no_change_log(frm, log_entry_text) {
+    const existing_log = (frm.doc.serial_no_changes_log || "").trim();
+    let new_log = "";
+    if (!existing_log) {
+        new_log = log_entry_text;
+    } else {
+        new_log = existing_log + "\n\n--------------------------------------------------\n\n" + log_entry_text;
+    }
+    frm.set_value('serial_no_changes_log', new_log);
+    frm.refresh_field('serial_no_changes_log');
+}
+
+frappe.ui.form.on('Serial No Component', {
+    item: function(frm, cdt, cdn) {
+        if (!frm._component_original_snapshot) {
+            init_component_snapshot(frm);
+        }
+        const row = locals[cdt][cdn];
+        const original = frm._component_original_snapshot[row.name];
+        const old_item = original ? original.item : "";
+        const new_item = (row.item || "").trim();
+
+        // If not changed, skip
+        if (original && old_item === new_item) {
+            return;
+        }
+
+        if (!new_item) {
+            return;
+        }
+
+        // Determine Item Group from row or fetch from Item master
+        let item_group = row.item_group || (original ? original.item_group : "");
+        const proceed_with_item = (final_item_group) => {
+            prompt_for_component_reason(
+                frm,
+                row,
+                'item_code',
+                original ? 'Item Code' : 'Item Code (New Row)',
+                old_item || "(None - New)",
+                new_item,
+                final_item_group,
+                function(valid_reason) {
+                    frappe.call({
+                        method: 'nj_features.overrides.serial_no.format_component_audit_entry',
+                        args: {
+                            serial_no: frm.doc.name,
+                            item_group: final_item_group,
+                            component: row.name,
+                            field_changed: 'item_code',
+                            old_value: old_item || "(None - New Row)",
+                            new_value: new_item,
+                            reason: valid_reason
+                        },
+                        callback: function(r) {
+                            if (r.message) {
+                                append_to_serial_no_change_log(frm, r.message);
+                                if (!frm._component_original_snapshot[row.name]) {
+                                    frm._component_original_snapshot[row.name] = { item: "", grade: "", item_group: "" };
+                                }
+                                frm._component_original_snapshot[row.name].item = new_item;
+                                if (final_item_group) {
+                                    frm._component_original_snapshot[row.name].item_group = final_item_group;
+                                }
+                            }
+                        }
+                    });
+                },
+                function() {
+                    frappe.model.set_value(cdt, cdn, 'item', old_item);
+                }
+            );
+        };
+
+        if (!item_group && new_item) {
+            frappe.db.get_value('Item', new_item, 'item_group', function(r) {
+                proceed_with_item(r ? r.item_group : "");
+            });
+        } else {
+            proceed_with_item(item_group);
+        }
+    },
+
+    grade: function(frm, cdt, cdn) {
+        if (!frm._component_original_snapshot) {
+            init_component_snapshot(frm);
+        }
+        const row = locals[cdt][cdn];
+        const original = frm._component_original_snapshot[row.name];
+        const old_grade = original ? original.grade : "";
+        const new_grade = (row.grade || "").trim();
+
+        // If not changed, skip
+        if (original && old_grade === new_grade) {
+            return;
+        }
+
+        if (!new_grade) {
+            return;
+        }
+
+        const item_group = row.item_group || (original ? original.item_group : "");
+
+        prompt_for_component_reason(
+            frm,
+            row,
+            'grade',
+            original ? 'Grade' : 'Grade (New Row)',
+            old_grade || "(None - New)",
+            new_grade,
+            item_group,
+            function(valid_reason) {
+                frappe.call({
+                    method: 'nj_features.overrides.serial_no.format_component_audit_entry',
+                    args: {
+                        serial_no: frm.doc.name,
+                        item_group: item_group,
+                        component: row.name,
+                        field_changed: 'grade',
+                        old_value: old_grade || "(None - New Row)",
+                        new_value: new_grade,
+                        reason: valid_reason
+                    },
+                    callback: function(r) {
+                        if (r.message) {
+                            append_to_serial_no_change_log(frm, r.message);
+                            if (!frm._component_original_snapshot[row.name]) {
+                                frm._component_original_snapshot[row.name] = { item: "", grade: "", item_group: "" };
+                            }
+                            frm._component_original_snapshot[row.name].grade = new_grade;
+                        }
+                    }
+                });
+            },
+            function() {
+                frappe.model.set_value(cdt, cdn, 'grade', old_grade);
+            }
+        );
+    }
+});
+
+
+

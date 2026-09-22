@@ -87,6 +87,7 @@ doc_events = {
     "Purchase Order": {
         "before_save": "nj_features.overrides.purchase_order.restore_manual_conversion_on_po",
         "validate": "nj_features.overrides.purchase_order.validate_mandatory_links",
+        "before_submit": "nj_features.overrides.purchase_order.npd_core_item_group_validataion",
         "on_submit": [
             "nj_features.overrides.purchase_order.validate_warranty_on_submit",
             "nj_features.overrides.purchase_order.create_pr_on_submit",
@@ -236,6 +237,10 @@ override_whitelisted_methods = {
 
 scheduler_events = {
     "cron": {
+        # NOTE: every cron expression must appear exactly ONCE in this dict.
+        # This is a plain Python dict literal, so a repeated key silently
+        # discards the earlier list -- no error, no warning, the jobs just
+        # never run. Add to an existing list, never re-declare a key.
         "0 0 * * *": [
             "nj_features.overrides.sales_order.run_daily_eta_drift_reallocation",
             # Releases serials whose Repair/Replace cycle is finished. Without it
@@ -344,7 +349,7 @@ scheduler_events = {
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.laptop_storage_mr_via_production_plan",
         ],
         "48 23 * * *": [
-            "UPDATE `tabSerial No` AS target",
+            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.laptop_storage_mr_store_to_packing",
         ],
 
         "50 23 * * *": [

@@ -313,8 +313,16 @@ frappe.ui.form.on('Stock Movement', {
                         //     showProductionPlanningConfirmDialog();
                         // }
 
-                        frappe.validated = false; 
-                        return; 
+                        frappe.validated = false;
+                        return;
+                    }
+
+                    if (r.message.warnings && r.message.warnings.length) {
+                        frappe.msgprint({
+                            title: __('Department Count Limit'),
+                            message: __(r.message.warnings.join("<br>")),
+                            indicator: 'orange'
+                        });
                     }
                 }
             }

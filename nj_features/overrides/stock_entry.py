@@ -53,9 +53,13 @@ def _iter_department_crossings(doc):
 
 def get_department_restriction_violation(serial_no, department):
     """
-    Returns an error message string if moving `serial_no` into `department`
-    would violate that Department's Restrict Department Count / Department
-    Count Limit, else None.
+    Returns a warning message string if moving `serial_no` into `department`
+    would breach that Department's Restrict Department Count / Department
+    Count Limit, else None. Callers surface this as a non-blocking popup
+    (frappe.msgprint) -- the move itself is never prevented, see
+    block_restricted_department_moves and
+    nj_features.nj_features.doctype.stock_movement.stock_movement.
+    validate_serial_no_and_department.
 
     Restrict Department Count and Department Count Limit are now
     department-wide settings (fields on the Department doctype itself, after
@@ -64,10 +68,10 @@ def get_department_restriction_violation(serial_no, department):
     subject to the same limit. The serial's own department_history row is
     only consulted for its Count, which is still tracked per (serial,
     department); a serial with no row yet for this department has a count of
-    0 and is never blocked on first entry.
+    0 and never triggers a warning on first entry.
 
     Threshold: count is allowed to REACH the limit; the move that would push
-    it past that (count already >= limit) is what gets blocked.
+    it past that (count already >= limit) is what triggers the warning.
     """
     dept = frappe.db.get_value(
         "Department",
@@ -92,9 +96,9 @@ def get_department_restriction_violation(serial_no, department):
 
     if count >= dept.department_count_limit:
         return (
-            f"Serial No <b>{serial_no}</b> has reached the movement limit "
-            f"(<b>{dept.department_count_limit}</b>) for department "
-            f"<b>{department}</b> and is restricted from moving there again."
+            f"Serial No <b>{serial_no}</b> is crossing the movement limit "
+            f"(<b>{dept.department_count_limit}</b>) set for department "
+            f"<b>{department}</b>."
         )
 
     return None
@@ -102,11 +106,12 @@ def get_department_restriction_violation(serial_no, department):
 
 def block_restricted_department_moves(doc, method=None):
     """
-    Stock Entry "before_submit" hook. Blocks the submission outright (via
-    frappe.throw, surfaced to the user as a popup) if any transferred
-    serial would cross into a department it's Restricted from and has
-    already reached its Limit Count for -- see
-    get_department_restriction_violation().
+    Stock Entry "before_submit" hook. Warns (via frappe.msgprint, surfaced
+    to the user as a non-blocking popup) if any transferred serial would
+    cross into a department it's Restricted from and has already reached
+    its Limit Count for -- see get_department_restriction_violation().
+    Submission proceeds regardless; this is informational only, not a
+    gate.
 
     Stock Movement / NJ Audit / Auto Stock Entry / MPC / NJQCA already get
     this same check earlier, during validate_serial_no_and_department()
@@ -120,15 +125,19 @@ def block_restricted_department_moves(doc, method=None):
     for the nj_lib-routed flows is harmless -- the state they already
     passed can't have changed in the few moments since.
     """
-    error_messages = []
+    warning_messages = []
 
     for serial_no, t_department in _iter_department_crossings(doc):
         violation = get_department_restriction_violation(serial_no, t_department)
         if violation:
-            error_messages.append(violation)
+            warning_messages.append(violation)
 
-    if error_messages:
-        frappe.throw("<br>".join(error_messages))
+    if warning_messages:
+        frappe.msgprint(
+            "<br>".join(warning_messages),
+            title="Department Count Limit",
+            indicator="orange",
+        )
 
 
 def update_department_count_history(doc, method=None):

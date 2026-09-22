@@ -117,14 +117,17 @@ def block_restricted_department_moves(doc, method=None):
     this same check earlier, during validate_serial_no_and_department()
     in nj_features.nj_features.doctype.stock_movement.stock_movement --
     that call happens BEFORE those flows even create their underlying
-    Stock Entry, via nj_lib.utils.stock_entry.stock_entry_using_nj_lib().
-    This hook exists to also catch a Stock Entry created and submitted
-    directly (not through that helper), which is the one path that skips
-    validate_serial_no_and_department entirely (see nj_lib's
-    validate_direct_stock_entry_on_submit docstring). Running here too
-    for the nj_lib-routed flows is harmless -- the state they already
-    passed can't have changed in the few moments since.
+    Stock Entry, via nj_lib.utils.stock_entry.stock_entry_using_nj_lib(),
+    which sets doc.flags.department_restriction_warned once it has shown
+    that warning so this hook doesn't show the identical warning a second
+    time for the same submission. This hook exists to catch a Stock Entry
+    created and submitted directly (not through that helper), which is
+    the one path that skips validate_serial_no_and_department entirely
+    (see nj_lib's validate_direct_stock_entry_on_submit docstring).
     """
+    if doc.flags.get("department_restriction_warned"):
+        return
+
     warning_messages = []
 
     for serial_no, t_department in _iter_department_crossings(doc):

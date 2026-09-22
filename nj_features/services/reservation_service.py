@@ -71,6 +71,70 @@ REFUND_EXCLUSION_SQL = """
 """
 
 
+# ==============================================================================
+# 0b. RTO-BLOCKING CHECK
+# ==============================================================================
+# An RTO return (courier could not deliver, or the customer refused the parcel)
+# reverses delivered_qty, so the Sales Order drops back to "To Deliver" with
+# per_delivered = 0 while staying submitted and 100% billed. To every demand
+# query that made it indistinguishable from a fresh, never-shipped order, so the
+# allocator kept handing it real machines - 32 units were held this way across 65
+# such orders, the oldest since 2026-03-15, each one a paid order nobody had
+# closed or refunded.
+#
+# Repair/Replace are excluded because the unit is owed to the customer who
+# returned it. RTO is excluded for the opposite reason: the sale did not happen,
+# so the order must stop consuming stock until a person decides to refund it,
+# close it, or re-ship it.
+#
+# Same "latest submitted Delivery Note wins" shape as the Refund block above: if
+# someone deliberately re-ships the order, that newer outbound DN lifts the block
+# on its own, with no manual override needed.
+RTO_BLOCKING_CAUSES = ('RTO Customer', 'RTO Delivery Partner')
+
+RTO_EXCLUSION_SQL = """
+    AND so.name NOT IN (
+        SELECT DISTINCT dni.against_sales_order
+        FROM `tabDelivery Note Item` dni
+        INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
+        WHERE dn.docstatus = 1
+          AND dn.is_return = 1
+          AND dn.cause_of_return IN ('RTO Customer', 'RTO Delivery Partner')
+          AND dni.against_sales_order IS NOT NULL AND dni.against_sales_order != ''
+          AND NOT EXISTS (
+              SELECT 1
+              FROM `tabDelivery Note Item` dni2
+              INNER JOIN `tabDelivery Note` dn2 ON dn2.name = dni2.parent
+              WHERE dni2.against_sales_order = dni.against_sales_order
+                AND dn2.docstatus = 1
+                AND dn2.creation > dn.creation
+          )
+    )
+"""
+
+
+def is_sales_order_rto_blocked(so_name):
+    """True if this SO's latest submitted Delivery Note is an RTO return.
+
+    Python mirror of RTO_EXCLUSION_SQL, for the paths that check one order at a
+    time instead of filtering a demand query.
+    """
+    latest_dn = frappe.db.sql("""
+        SELECT dn.is_return, dn.cause_of_return
+        FROM `tabDelivery Note Item` dni
+        INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
+        WHERE dni.against_sales_order = %s AND dn.docstatus = 1
+        ORDER BY dn.creation DESC
+        LIMIT 1
+    """, (so_name,), as_dict=True)
+
+    return bool(
+        latest_dn
+        and latest_dn[0].get("is_return")
+        and latest_dn[0].get("cause_of_return") in RTO_BLOCKING_CAUSES
+    )
+
+
 def is_sales_order_refund_blocked(so_name):
     """True if this SO has a submitted refund record, or its latest submitted
     Delivery Note is a Refund-cause return, that should stop allocation."""
@@ -113,8 +177,7 @@ def get_effective_order_source(so_name, base_sale_type=None):
         WHERE dni.against_sales_order = %s
           AND dn.docstatus = 1
           AND dn.is_return = 1
-          AND dn.cause_of_return IS NOT NULL
-          AND dn.cause_of_return != ''
+          AND dn.cause_of_return IN ('Repair', 'Replace')
         ORDER BY dn.posting_date DESC, dn.creation DESC
         LIMIT 1
     """, (so_name,), as_dict=True)

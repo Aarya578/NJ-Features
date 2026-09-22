@@ -661,11 +661,15 @@ def trim_over_allocated_serials():
                   -- belonging to a different line of the same order.
                   AND COALESCE(NULLIF(to_make, ''), item_code) = %s
                   AND (return_reason IS NULL OR return_reason NOT IN ('Repair', 'Replace'))
+                  -- Repair/Replace only. RTO used to be protected here too, which
+                  -- meant a unit reserved to an RTO'd order could never be trimmed:
+                  -- get_effective_order_source() stamps whatever the latest return
+                  -- cause was, so every RTO reservation was self-locking. The order
+                  -- is no longer demand (RTO_EXCLUSION_SQL), so the hold must be
+                  -- releasable or the machine stays stuck forever.
                   AND (order_source IS NULL OR (
                       order_source NOT LIKE '%%- Repair%%'
                       AND order_source NOT LIKE '%%- Replace%%'
-                      AND order_source NOT LIKE '%%- RTO Customer%%'
-                      AND order_source NOT LIKE '%%- RTO Delivery Partner%%'
                   ))
                   AND status = 'Active'
                 ORDER BY
@@ -1116,7 +1120,7 @@ def get_open_sales_orders(so_name=None):
     """Get all open sales orders with pending items.
     If so_name is passed, return only that Sales Order's items.
     """
-    from nj_features.services.reservation_service import REFUND_EXCLUSION_SQL
+    from nj_features.services.reservation_service import REFUND_EXCLUSION_SQL, RTO_EXCLUSION_SQL
 
     condition_direct = ""
     condition_bundle = ""
@@ -1129,8 +1133,8 @@ def get_open_sales_orders(so_name=None):
         # must apply here too, not just in the bulk/hourly branch below,
         # otherwise on_submit()'s direct calculate_dispatch_eta_for_sales_order
         # call would still allocate a fresh serial to a refunded order.
-        condition_direct = " AND so.name = %s " + REFUND_EXCLUSION_SQL
-        condition_bundle = " AND so.name = %s " + REFUND_EXCLUSION_SQL
+        condition_direct = " AND so.name = %s " + REFUND_EXCLUSION_SQL + RTO_EXCLUSION_SQL
+        condition_bundle = " AND so.name = %s " + REFUND_EXCLUSION_SQL + RTO_EXCLUSION_SQL
         params_direct.append(so_name)
         params_bundle.append(so_name)
     else:
@@ -1150,7 +1154,7 @@ def get_open_sales_orders(so_name=None):
                 WHERE dn.docstatus = 1 AND dn.is_return = 1 AND dn.cause_of_return IN ('Repair', 'Refund')
                   AND dni.against_sales_order IS NOT NULL AND dni.against_sales_order != ''
             )
-        """ + REFUND_EXCLUSION_SQL
+        """ + REFUND_EXCLUSION_SQL + RTO_EXCLUSION_SQL
         condition_direct = active_filter
         condition_bundle = active_filter
 
@@ -1345,17 +1349,8 @@ def is_repair_sales_order(so_name):
 
 
 def is_customer_return_sales_order(so_name):
-    """Check if the sales order has an active return delivery note with Repair or RTO causes."""
-    return bool(frappe.db.sql("""
-        SELECT 1
-        FROM `tabDelivery Note Item` dni
-        JOIN `tabDelivery Note` dn ON dn.name = dni.parent
-        WHERE dni.against_sales_order = %s
-          AND dn.docstatus = 1
-          AND dn.is_return = 1
-          AND dn.cause_of_return IN ('Repair', 'RTO Customer', 'RTO Delivery Partner')
-        LIMIT 1
-    """, (so_name,)))
+    """Check if the sales order has an active return delivery note with Repair cause."""
+    return is_repair_sales_order(so_name)
 
 
 def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, remaining_depts):
@@ -1367,6 +1362,14 @@ def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, r
     """
     item_group = frappe.db.get_value("Item", item_code, "item_group")
     if not item_group or item_group not in HARDWARE_ITEM_GROUPS:
+        return 0
+
+    from nj_features.services.reservation_service import (
+        get_reserved_serial_count,
+        is_sales_order_rto_blocked,
+    )
+
+    if is_sales_order_rto_blocked(so_name):
         return 0
 
     # Count serials already committed to THIS line, keyed on where each serial is
@@ -1388,14 +1391,13 @@ def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, r
     # warehouse read as zero, so this function handed the order a SECOND machine
     # while the first stayed reserved and invisible. See the rule at
     # reservation_service.RESERVED_SERIAL_COUNT_SQL.
-    from nj_features.services.reservation_service import get_reserved_serial_count
 
     allocated_count = get_reserved_serial_count(so_name, item_code)
 
     to_allocate = int(net_pending - allocated_count)
     unallocated_qty = 0
 
-    # Priority 0: For customer return orders (Repair / RTO), bind any active returned serials first
+    # Priority 0: For customer return orders (Repair), bind any active returned serials first
     if to_allocate > 0 and is_customer_return_sales_order(so_name):
         returned_serials = frappe.db.sql("""
             SELECT DISTINCT sn.name, dn.cause_of_return
@@ -1405,7 +1407,7 @@ def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, r
             WHERE dni.against_sales_order = %s
               AND dn.docstatus = 1
               AND dn.is_return = 1
-              AND dn.cause_of_return IN ('Repair', 'RTO Customer', 'RTO Delivery Partner')
+              AND (dn.cause_of_return = 'Repair' OR dn.return_reason IN ('Repair', 'In-House Repair'))
               AND sn.status = 'Active'
               AND (sn.reserved_sales_order IS NULL OR sn.reserved_sales_order = '' OR sn.reserved_sales_order = %s)
         """, (so_name, so_name), as_dict=True)
@@ -1448,7 +1450,7 @@ def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, r
 
     elif to_allocate > 0:
         if is_customer_return_sales_order(so_name):
-            # Customer return orders (Repair / RTO) must only be fulfilled by their specific returned unit(s).
+            # Customer return orders (Repair) must only be fulfilled by their specific returned unit(s).
             # Do not allocate generic inventory from warehouse pools.
             create_unallocated_log(so_name, item_code, to_allocate, "Waiting for returned customer unit")
             return to_allocate
@@ -1709,11 +1711,10 @@ def unassign_serials(so_name, item_code, excess_qty):
             -- SO-2026-04-00203-1; this one was missed.
             AND COALESCE(NULLIF(to_make, ''), item_code) = %s
             AND (return_reason IS NULL OR return_reason NOT IN ('Repair', 'Replace'))
+            -- Repair/Replace only - see trim_over_allocated_serials().
             AND (order_source IS NULL OR (
                 order_source NOT LIKE '%%- Repair%%'
                 AND order_source NOT LIKE '%%- Replace%%'
-                AND order_source NOT LIKE '%%- RTO Customer%%'
-                AND order_source NOT LIKE '%%- RTO Delivery Partner%%'
             ))
             AND NOT EXISTS (
                 SELECT 1

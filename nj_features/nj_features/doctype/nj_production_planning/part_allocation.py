@@ -436,8 +436,13 @@ class PartAllocationRun:
                     MRI.qty AS mr_qty, MRI.stock_qty, MRI.uom, MRI.stock_uom, MRI.conversion_factor,
                     MR.docstatus AS mr_docstatus, MR.status AS mr_status,
                     MRI.docstatus AS row_docstatus, MRI.post_order_status AS row_post_order_status,
-                    MR.post_order_status AS mr_post_order_status, MRI.modified
-                FROM `tabMaterial Request Item` MRI JOIN `tabMaterial Request` MR ON MR.name=MRI.parent
+                    MR.post_order_status AS mr_post_order_status, MRI.modified,
+                    Sr.item_group AS serial_item_group, Sr.warehouse AS serial_warehouse,
+                    WH.department AS serial_warehouse_department
+                FROM `tabMaterial Request Item` MRI
+                JOIN `tabMaterial Request` MR ON MR.name=MRI.parent
+                LEFT JOIN `tabSerial No` Sr ON Sr.serial_no=MRI.serial_no
+                LEFT JOIN `tabWarehouse` WH ON WH.name=Sr.warehouse
                 WHERE MRI.serial_no IN %(serials)s ORDER BY MRI.modified DESC, MRI.name
             """, {"serials": tuple(batch)}, as_dict=True)
             for row in rows:
@@ -454,6 +459,29 @@ class PartAllocationRun:
                 component_default = component_defaults[0] if component_defaults else None
                 entry["mr_item_code"] = row.item_code
                 entry["requirement_source"] = "Material Request Item"
+
+                # Keep MR eligibility identical to the Google Sheet dump.  The
+                # NJ PP department is not the physical stock location: the
+                # sheet only considers serials whose current Serial No
+                # warehouse belongs to Part Waiting, and excludes BG L1/L2
+                # warehouses.  Apply this gate before Item Wizard/component
+                # matching so these rows cannot consume Stores stock.
+                serial_group = normalized(row.get("serial_item_group"))
+                warehouse = str(row.get("serial_warehouse") or "")
+                warehouse_upper = warehouse.upper()
+                warehouse_department = normalized(row.get("serial_warehouse_department"))
+                if serial_group not in {"LAPTOPS", "CHROMEBOOKS"}:
+                    entry["allocation_exclusion_reason"] = (
+                        "Serial item group is outside Google Sheet scope"
+                    )
+                elif "PART WAITING" not in warehouse_department:
+                    entry["allocation_exclusion_reason"] = (
+                        "Serial warehouse department is not Part Waiting"
+                    )
+                elif "BG - L2-" in warehouse_upper or "BG - L1-" in warehouse_upper:
+                    entry["allocation_exclusion_reason"] = (
+                        "Serial warehouse is excluded by Google Sheet warehouse rules"
+                    )
                 if component_default:
                     entry["item_code"] = component_default.get("grade_a_item_code")
                     entry["wizard_default_item_code"] = component_default.get("default_item_code")
@@ -463,7 +491,8 @@ class PartAllocationRun:
                 else:
                     entry["requirement_item_replaced_from_mr"] = 0
                     entry["wizard_component_candidates"] = []
-                    entry["allocation_exclusion_reason"] = "Material Request item group does not match any Item Wizard Component group"
+                    if not entry.get("allocation_exclusion_reason"):
+                        entry["allocation_exclusion_reason"] = "Material Request item group does not match any Item Wizard Component group"
                 self.mrs[row.serial_no].append(entry)
 
             for row in frappe.get_all("Bag List", filters={"parent": ["in", batch]}, fields=["name", "parent", "item", "item_group", "serial_no", "quantity", "is_available"]):

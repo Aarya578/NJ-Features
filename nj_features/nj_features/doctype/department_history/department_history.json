@@ -14,14 +14,17 @@
    "fieldname": "departmant",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Departmant",
-   "options": "Department"
+   "label": "Department",
+   "options": "Department",
+   "read_only_depends_on": "eval:!doc.__islocal"
   },
   {
+   "default": "0",
    "fieldname": "count",
    "fieldtype": "Int",
    "in_list_view": 1,
-   "label": "Count"
+   "label": "Count",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,

@@ -177,6 +177,11 @@ def _get_shopify_variant_id(item_code: str) -> Optional[str]:
     return variant_id_str
 
 
+from nj_features.services.model_compatibility import is_screen_type_compatible
+
+_TOUCH_SCREEN_MARKER_WORDS = {'touch', 'nt'}
+
+
 def _is_same_model_family(tmpl_a: str, tmpl_b: str) -> bool:
     """Validate that two model templates belong strictly to the same brand and base model series."""
     if not tmpl_a or not tmpl_b:
@@ -198,16 +203,31 @@ def _is_same_model_family(tmpl_a: str, tmpl_b: str) -> bool:
         return False
     
     ignore_words = {
-        'touch', 'win', 'kbd', 'wtb', 'nt', 'sml', 'big', 'pir', 'ir', 'fba',
+        'win', 'kbd', 'wtb', 'sml', 'big', 'ir', 'fba',
         'refurbished', 'sff', 'tiny', 'tower', 'fullset', 'full', 'set', 'pro',
         'elitebook', 'thinkpad', 'latitude', 'optiplex', 'workstation', 'eb', 'pb', 'thinkcentre'
     }
     tokens_a = [w for w in re.findall(r'[a-z0-9]+', clean_a) if w not in ignore_words and w != brand_a]
     tokens_b = [w for w in re.findall(r'[a-z0-9]+', clean_b) if w not in ignore_words and w != brand_b]
-    
+
     if not tokens_a or not tokens_b:
         return False
-    
+
+    # Touch and Non-Touch (NT) screens are physically different, incompatible
+    # parts - the token-position checks below don't examine every token, so
+    # this has to be an explicit hard gate rather than relying on them.
+    touch_markers_a = {t for t in tokens_a if t in _TOUCH_SCREEN_MARKER_WORDS}
+    touch_markers_b = {t for t in tokens_b if t in _TOUCH_SCREEN_MARKER_WORDS}
+    if touch_markers_a != touch_markers_b:
+        return False
+
+    # PIR models have a physically different chassis (body, motherboard) and
+    # cannot be rebuilt into non-PIR units or vice-versa.
+    pir_a = 'pir' in tokens_a
+    pir_b = 'pir' in tokens_b
+    if pir_a != pir_b:
+        return False
+
     if tokens_a[0] != tokens_b[0]:
         return False
     
@@ -217,6 +237,60 @@ def _is_same_model_family(tmpl_a: str, tmpl_b: str) -> bool:
         return False
 
     return True
+
+
+def _is_rebuild_compatible(physical_item_code: str, target_item_code: str) -> bool:
+    """Can a unit physically be rebuilt from its current item into the target?
+
+    RAM and storage are swapped on the bench every day, so those may differ
+    freely. The screen and the chassis cannot: a Touch panel is not an NT
+    panel, and a PIR body/motherboard is not a non-PIR one.
+
+    `_is_same_model_family` and `is_screen_type_compatible` already enforce
+    this when a donor unit is *chosen*, but the pre-reserved path honours a
+    stored `to_make` without consulting either, so a value written before
+    those gates existed - or by hand - is planned unchecked. This is that
+    check, usable from any path.
+
+    Conservative on purpose: when either template is unknown the pair is
+    allowed, so a naming gap strands no real stock.
+    """
+    if not physical_item_code or not target_item_code:
+        return False
+    if str(physical_item_code).strip() == str(target_item_code).strip():
+        return True
+
+    if not is_screen_type_compatible(physical_item_code, target_item_code):
+        return False
+
+    tmpl_a = frappe.db.get_value("Item", physical_item_code, "variant_of")
+    tmpl_b = frappe.db.get_value("Item", target_item_code, "variant_of")
+    if not tmpl_a or not tmpl_b:
+        return True
+
+    return _is_same_model_family(tmpl_a, tmpl_b)
+
+
+def _clear_serial_to_make(serial_no: str, bad_to_make: str) -> None:
+    """Drop a to_make the unit cannot physically be rebuilt into.
+
+    `_append_plan_row` writes to_make back on every run, so without clearing
+    it the planner re-reads the same impossible value each night and the unit
+    never recovers on its own.
+    """
+    if not serial_no or not bad_to_make:
+        return
+    try:
+        frappe.db.sql(
+            """
+            UPDATE `tabSerial No`
+            SET to_make = NULL
+            WHERE name = %s AND to_make = %s
+            """,
+            (serial_no, bad_to_make),
+        )
+    except Exception as e:
+        logger.warning("Could not clear Serial No.to_make for %s: %s", serial_no, e)
 
 
 _EQUIVALENT_PARENT_MODELS_CACHE: Dict[str, Set[str]] = {}
@@ -325,7 +399,7 @@ def _is_dept_applicable(dept_row, item_grp):
     return item_grp.strip().lower() in allowed
 
 
-def _get_sla_department_search_order(depts: List[Dict], delivery_date, current_date, item_grp: str = None) -> List[Dict]:
+def _get_sla_department_search_order(depts: List[Dict], delivery_date, current_date, item_grp: str = None, promise_date=None) -> List[Dict]:
     """
     Given active departments sorted by (department_sequence DESC, name ASC),
     compute Remaining Delivery Days and determine SLA-based department search order.
@@ -348,7 +422,21 @@ def _get_sla_department_search_order(depts: List[Dict], delivery_date, current_d
     else:
         rem_days = 0
 
-    if rem_days > 50:
+    # Same allocation horizon the hourly allocator uses - the two must agree, or
+    # an order falls out of one and not the other and the reservations flap.
+    # Imported inside the function: overrides.sales_order pulls from this module.
+    from nj_features.overrides.sales_order import ALLOCATION_HORIZON_DAYS
+
+    # Judged against the customer promise, never against soi.delivery_date - that
+    # is the exact field the "Update Items" dialog writes, so gating on it let a
+    # user moving the date onto the system's own estimate drop the order out of
+    # production planning for good. See the matching note in overrides/sales_order.py.
+    # rem_days above is untouched and still drives the department ladder below.
+    horizon_src = promise_date or delivery_date
+    horizon_days = (
+        (frappe.utils.getdate(horizon_src) - current_date).days if horizon_src else 0
+    )
+    if horizon_days > ALLOCATION_HORIZON_DAYS:
         return []
 
     starting_dept_idx = len(sorted_depts) - 1  # Default to last (lowest sequence)
@@ -421,19 +509,40 @@ _get_stock_item_code_from_to_make = _resolve_stock_item_from_pb_or_item
 
 
 @log_io
-def _update_serial_to_make(serial_no: str, item_code_to_make: str) -> None:
-    """Update Serial No.to_make (lightweight db write)."""
+def _update_serial_to_make(serial_no: str, item_code_to_make: str, expected_so: Optional[str] = None) -> None:
+    """Update Serial No.to_make (lightweight db write).
+
+    A serial already reserved to a DIFFERENT sales order may already have
+    physical rework (kitting) committed against its current to_make - this
+    must never be silently overwritten. Only write when the serial is
+    unreserved, or already reserved to the same order this call is for.
+    """
     if not UPDATE_SERIAL_TO_MAKE or not item_code_to_make:
         return
 
     item_code_to_make = _resolve_stock_item_from_pb_or_item(item_code_to_make)
+
+    # Guard every writer, not just the allocation gates: a to_make the unit
+    # cannot physically become would otherwise be replayed by the pre-reserved
+    # path on every subsequent run.
+    sn_item_code = frappe.db.get_value("Serial No", serial_no, "item_code")
+    if sn_item_code and not _is_rebuild_compatible(sn_item_code, item_code_to_make):
+        logger.warning(
+            "Refusing to set to_make=%s on %s (physical item %s is not rebuild-compatible)",
+            item_code_to_make, serial_no, sn_item_code,
+        )
+        return
+
+    so_val = (expected_so or "").strip()
     try:
-        frappe.db.set_value(
-            "Serial No",
-            serial_no,
-            "to_make",
-            item_code_to_make,
-            update_modified=False,
+        frappe.db.sql(
+            """
+            UPDATE `tabSerial No`
+            SET to_make = %s
+            WHERE name = %s
+              AND (reserved_sales_order IS NULL OR reserved_sales_order = '' OR reserved_sales_order = %s)
+            """,
+            (item_code_to_make, serial_no, so_val),
         )
     except Exception as e:
         logger.warning("Could not update Serial No.to_make for %s: %s", serial_no, e)
@@ -446,18 +555,47 @@ def _update_serial_reserved_sales_order(serial_no: str, sales_order_no: Optional
     if not UPDATE_SERIAL_RESERVED_SO:
         return True
 
+    # Imported inside the function: reservation_service imports overrides.sales_order
+    # at module level, so a top-level import here risks an import cycle.
+    from nj_features.services.reservation_service import get_effective_order_source
+
     so_val = (sales_order_no or "").strip()
     try:
         if so_val:
+            current, current_source = frappe.db.get_value(
+                "Serial No", serial_no, ["reserved_sales_order", "order_source"]
+            ) or (None, None)
+
+            # order_source has to be written here as well as in the Sales Order
+            # allocator. It is the only record of where a reservation came from,
+            # and a planner-made reservation that omits it is indistinguishable
+            # from one that was never attributed - which is exactly how a wrong
+            # reservation stayed untraceable.
+            effective_source = get_effective_order_source(so_val)
+
+            if (current or "").strip() == so_val:
+                # Already reserved to this order. Backfill the attribution if an
+                # earlier run (before this wrote order_source) left it empty.
+                if effective_source and not (current_source or "").strip():
+                    frappe.db.sql("""
+                        UPDATE `tabSerial No`
+                        SET order_source = %s, modified = NOW()
+                        WHERE name = %s AND reserved_sales_order = %s
+                          AND (order_source IS NULL OR order_source = '')
+                    """, (effective_source, serial_no, so_val))
+                return True
+
             frappe.db.sql("""
                 UPDATE `tabSerial No`
-                SET reserved_sales_order = %s
+                SET reserved_sales_order = %s,
+                    order_source = %s,
+                    modified = NOW()
                 WHERE name = %s
                   AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
                   AND status = 'Active'
                   AND is_replace = 0
-                  AND (return_reason IS NULL OR return_reason = '' OR return_reason != 'Repair')
-            """, (so_val, serial_no))
+                  AND (return_reason IS NULL OR return_reason = '' OR return_reason NOT IN ('Repair', 'Replace'))
+            """, (so_val, effective_source, serial_no))
             if getattr(frappe.db, "_cursor", None) and frappe.db._cursor.rowcount <= 0:
                 logger.warning("Could not reserve Serial No %s for %s: already reserved or ineligible", serial_no, so_val)
                 return False
@@ -465,9 +603,11 @@ def _update_serial_reserved_sales_order(serial_no: str, sales_order_no: Optional
         else:
             frappe.db.sql("""
                 UPDATE `tabSerial No`
-                SET reserved_sales_order = NULL
+                SET reserved_sales_order = NULL,
+                    order_source = NULL,
+                    modified = NOW()
                 WHERE name = %s
-                  AND (return_reason IS NULL OR return_reason = '' OR return_reason != 'Repair')
+                  AND (return_reason IS NULL OR return_reason = '' OR return_reason NOT IN ('Repair', 'Replace'))
             """, (serial_no,))
             return True
     except Exception as e:
@@ -751,6 +891,22 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
             all_serial_ids.extend([r["name"] for r in rows])
             logger.debug(f"has taken {len(rows)} serial no from the department {dept_name}")
 
+            eligible_names = {r["name"] for r in rows}
+            excluded_rows = _get_return_excluded_serials_for_department(dept_doc, eligible_names)
+            for ex in excluded_rows:
+                reason_bits = []
+                if ex.get("return_reason"):
+                    reason_bits.append(f"return_reason={ex['return_reason']}")
+                if int(ex.get("is_replace") or 0) == 1:
+                    reason_bits.append("is_replace=1")
+                reason_text = "Excluded: " + (", ".join(reason_bits) if reason_bits else "not yet reprocessed")
+                plan_doc.append("missing_serial_nos", {
+                    "serial_no": ex["name"],
+                    "current_department": dept_name,
+                    "current_warehouse": ex.get("warehouse"),
+                    "reason": reason_text
+                })
+
     priority_per_dept: Dict[str, int] = defaultdict(lambda: 1)
 
     # -------------------------------------------------------------
@@ -800,6 +956,26 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                 item_code_to_make = res_row.get("to_make") or _get_fallback_pb_item_code(res_row["item_code"])
                 if not item_code_to_make:
                     skip_reason = "Reserved for SO - Product Bundle not found"
+                    _update_serial_remarks(sn_id, f"Not Allocated: {skip_reason}")
+                    plan_doc.append("missing_serial_nos", {
+                        "serial_no": sn_id,
+                        "current_department": dept_name,
+                        "current_warehouse": wh,
+                        "reason": skip_reason
+                    })
+                    continue
+
+                # This path honours a stored to_make and never ran the screen
+                # and chassis gates the SO allocation phase applies, so a value
+                # written before those gates existed (or by hand) was planned
+                # unchecked - e.g. a (PIR) unit targeted at an (IR-KBD WTB)
+                # build, which cannot be done: different body and motherboard.
+                if not _is_rebuild_compatible(res_row["item_code"], item_code_to_make):
+                    skip_reason = (
+                        f"Reserved for SO - to_make '{item_code_to_make}' is not physically "
+                        f"buildable from '{res_row['item_code']}'"
+                    )
+                    _clear_serial_to_make(sn_id, item_code_to_make)
                     _update_serial_remarks(sn_id, f"Not Allocated: {skip_reason}")
                     plan_doc.append("missing_serial_nos", {
                         "serial_no": sn_id,
@@ -862,7 +1038,10 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
 
         original_needed_qty = needed_qty
         item_grp = frappe.db.get_value("Item", target_ic, "item_group")
-        search_order = _get_sla_department_search_order(all_eligible_depts, deliv_date, today, item_grp=item_grp)
+        search_order = _get_sla_department_search_order(
+            all_eligible_depts, deliv_date, today, item_grp=item_grp,
+            promise_date=order_row.get("promise_date"),
+        )
 
         variant_id = _get_shopify_variant_id(target_ic)
         p2_codes = set(_get_variant_bundle_item_codes(variant_id)) - {target_ic} if variant_id else set()
@@ -883,6 +1062,13 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
 
         def _try_assign_sn(s, dept_name, remarks_text):
             nonlocal needed_qty
+            # A Non-Touch panel cannot be rebuilt into a Touch one. _is_same_model_family
+            # already enforces this for C3, but C1b matches on to_make and C2/C4 on
+            # Shopify variant grouping - none of them look at the screen, so all three
+            # can pair a Touch order with an NT machine.
+            if not is_screen_type_compatible(s.get("item_code"), target_ic):
+                return False
+
             # Part allocation is recalculated by run_latest_production_plan_part_allocation.
             part_allocation = False
             success = _append_plan_row(
@@ -922,7 +1108,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
         #   → If ANY condition found a serial → allocated. Move to next qty needed.
         #   → If NOTHING found in this dept → move to next dept.
         # -------------------------------------------------------------------------
-        downstream_search = sorted(search_order, key=lambda d: int(d.get("department_sequence") or 0), reverse=True)
+        downstream_search = list(search_order)
 
         target_tmpl, target_proc = None, None
         equiv_templates = set()
@@ -1309,6 +1495,22 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
     total_rows = len(plan_doc.get("lines") or [])
     frappe.db.commit()
 
+    # Every plan row is written with part_allocation = 0, so the checkboxes stay
+    # blank until the allocation run recalculates them. The scheduler only fires
+    # that job once a day (15 0 * * *) while plans are rebuilt twice a day, which
+    # left the midday plan showing no ticks at all. Enqueue it here so it always
+    # follows the plan that was just built, whatever triggered the plan.
+    try:
+        frappe.enqueue(
+            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.run_latest_production_plan_part_allocation",
+            queue="long",
+            timeout=1800,
+            plan_name=plan_doc.name,
+            now=frappe.flags.in_test,
+        )
+    except Exception as part_alloc_err:
+        logger.warning("Part allocation recalculation after production plan failed: %s", part_alloc_err)
+
     # Safely refresh dispatch ETAs for all newly allocated serials and sales orders in background
     try:
         frappe.enqueue(
@@ -1322,7 +1524,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
 
     return {
         "allocation_audit": None,
-        "audit_storage": "Deferred: run_latest_production_plan_part_allocation",
+        "audit_storage": "Enqueued: run_latest_production_plan_part_allocation",
         "total_departments": 1,
         "total_rows": total_rows,
         "plans": [
@@ -1373,6 +1575,7 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
             so_data.customer                                      AS customer,
             so_data.transaction_date                              AS transaction_date,
             so_data.delivery_date                                 AS delivery_date,
+            so_data.promise_date                                  AS promise_date,
 
             so_data.item_code                                     AS item_code,
             so_data.pb_code                                       AS pb_code,
@@ -1405,6 +1608,7 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
                 so.transaction_date            AS transaction_date,
                 so.creation                    AS so_creation,
                 soi.delivery_date              AS delivery_date,
+                so.committed_delivery_date     AS promise_date,
 
                 soi.item_code                  AS pb_code,
 
@@ -1440,11 +1644,11 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
                 so.status NOT IN ('Closed', 'Completed', 'Draft', 'Cancelled')
                 AND so.docstatus = 1
                 AND so.name NOT IN (
-                    SELECT DISTINCT sales_order 
-                    FROM `tabNJ Refund` 
-                    WHERE refund_status IN ('Paid', 'Refunded', 'Initiated') 
-                      AND docstatus = 1 
-                      AND sales_order IS NOT NULL 
+                    SELECT DISTINCT sales_order
+                    FROM `tabNJ Refund`
+                    WHERE refund_status IN ('Paid', 'Refunded', 'Initiated', 'Debit Failed', 'Returned')
+                      AND docstatus = 1
+                      AND sales_order IS NOT NULL
                       AND sales_order != ''
                 )
                 AND so.name NOT IN (
@@ -1536,14 +1740,11 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
                 )                          AS item_code,
                 COUNT(*)                   AS reserved_qty
             FROM `tabSerial No` sn
-            INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
-            INNER JOIN `tabDepartment` dp ON w.department = dp.name
             WHERE
+                -- Location-blind: see sales_order.adjust_serial_allocations().
                 sn.reserved_sales_order IS NOT NULL
                 AND sn.reserved_sales_order != ''
                 AND (sn.status IS NULL OR sn.status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
-                AND IFNULL(dp.department_sequence, 0) != 0
-                AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
             GROUP BY sn.reserved_sales_order, 
                 COALESCE(
                     (
@@ -1616,6 +1817,7 @@ def _allocate_orders_to_sequences_multi(
         base_ref = {
             "so_name": row["so_name"],
             "delivery_date": row.get("delivery_date"),
+            "promise_date": row.get("promise_date"),
             "order_item_code": ic,
             "pb_code": row.get("pb_code"),
         }
@@ -2425,9 +2627,8 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
           AND (sn.reserved_sales_order IS NULL OR sn.reserved_sales_order = '')
           AND IFNULL(dp.department_sequence, 0) != 0
           AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
-          AND (sn.return_reason IS NULL OR sn.return_reason != 'Repair')
+          AND (sn.return_reason IS NULL OR sn.return_reason NOT IN ('Repair', 'Replace'))
           AND (sn.order_source IS NULL OR sn.order_source NOT LIKE '%%- Repair%%')
-          AND (sn.order_source IS NULL OR sn.order_source NOT LIKE '%- Repair%')
           -- Keep the SO candidate rule identical to assign_serials in
           -- overrides/sales_order.py. Returned/replacement stock is sellable only
           -- after it has reached the reprocessed portion of the pipeline.
@@ -2444,6 +2645,64 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
 
     _prime_item_cache([r["item_code"] for r in rows])
     return rows
+
+
+@log_io
+def _get_return_excluded_serials_for_department(dept_doc, eligible_names) -> List[Dict]:
+    """
+    Reporting-only: serials that pass the same base filters as
+    _get_inward_serials_for_department() but are excluded by the return/replace
+    eligibility rule (return unit not yet reprocessed far enough downstream).
+    Lets a plan run log *why* a serial isn't included, instead of it silently
+    looking like a vanished/lost serial.
+    """
+    restricted_warehouse: List[str] = []
+    for row in dept_doc.get("inventory_details_child", []):
+        raw = (row.get("restricted_department_warehouse_list") or "").strip()
+        if raw:
+            restricted_warehouse.extend([w.strip() for w in raw.split(",") if w.strip()])
+
+    extra_where = ""
+    params = {
+        "dept": dept_doc.name,
+        "igroups": tuple(SELLABLE_ITEM_GROUPS)
+    }
+    if restricted_warehouse:
+        extra_where = " AND sn.warehouse NOT IN %(restricted_whs)s"
+        params["restricted_whs"] = tuple(restricted_warehouse)
+
+    rows = frappe.db.sql(
+        f"""
+        SELECT
+            sn.name,
+            sn.item_code,
+            sn.warehouse,
+            sn.return_reason,
+            sn.is_replace
+        FROM `tabSerial No` sn
+        INNER JOIN `tabItem` it
+            ON sn.item_code = it.name
+        INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
+        INNER JOIN `tabDepartment` dp ON w.department = dp.name
+        WHERE w.department = %(dept)s
+          AND (sn.status IS NULL OR sn.status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
+          AND it.item_group IN %(igroups)s
+          AND (sn.reserved_sales_order IS NULL OR sn.reserved_sales_order = '')
+          AND IFNULL(dp.department_sequence, 0) != 0
+          AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
+          AND (sn.return_reason IS NULL OR sn.return_reason NOT IN ('Repair', 'Replace'))
+          AND (sn.order_source IS NULL OR sn.order_source NOT LIKE '%%- Repair%%')
+          AND NOT (
+              (IFNULL(sn.is_replace, 0) = 0 AND (sn.return_reason IS NULL OR sn.return_reason = ''))
+              OR (sn.sales_order_id IS NOT NULL AND sn.sales_order_id != '')
+              OR IFNULL(dp.department_sequence, 0) >= 10
+          )
+          {extra_where}
+        """,
+        params,
+        as_dict=True,
+    )
+    return [r for r in rows if r["name"] not in eligible_names]
 
 
 @log_io
@@ -2485,11 +2744,11 @@ def _get_reserved_serials_for_department(dept_name: str) -> List[Dict]:
           AND sn.reserved_sales_order != ''
           AND so.status NOT IN ('Closed', 'Cancelled', 'Completed')
           AND so.name NOT IN (
-              SELECT DISTINCT sales_order 
-              FROM `tabNJ Refund` 
-              WHERE refund_status IN ('Paid', 'Refunded') 
-                AND docstatus = 1 
-                AND sales_order IS NOT NULL 
+              SELECT DISTINCT sales_order
+              FROM `tabNJ Refund`
+              WHERE refund_status IN ('Paid', 'Refunded', 'Initiated', 'Debit Failed', 'Returned')
+                AND docstatus = 1
+                AND sales_order IS NOT NULL
                 AND sales_order != ''
           )
           AND IFNULL(dp.department_sequence, 0) != 0
@@ -2851,16 +3110,29 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str, pl
 
 @frappe.whitelist()
 @log_io
-def run_latest_production_plan_part_allocation() -> Dict:
+def run_latest_production_plan_part_allocation(plan_name: Optional[str] = None) -> Dict:
     """
-    Recalculate Part Allocation checkboxes for the latest NJ Production Planning.
+    Recalculate Part Allocation checkboxes for an NJ Production Planning document.
 
     This runs after the production plan is already created. It only touches child
     rows whose current Department has Allocate Parts enabled, and it processes
     them by numeric Priority Rank so the virtual deductions follow the same
     order visible in the plan.
+
+    When plan_name is given the allocation is pinned to that plan. The production
+    plan run passes the plan it just built so the recalculation cannot drift onto
+    a different document if another plan is created while this job is queued.
+    Called with no argument (the scheduler) it falls back to the newest plan.
     """
-    latest_plan = frappe.db.get_value(
+    # This rewrites plan checkboxes and consumes virtual Stores stock, so restrict
+    # direct HTTP callers to System Manager. Background callers (the scheduler and
+    # the production plan run) have no request and are unaffected -- important
+    # because an enqueued job inherits the session user of whoever triggered the
+    # plan, which is not necessarily a System Manager.
+    if frappe.request:
+        frappe.only_for("System Manager")
+
+    latest_plan = plan_name or frappe.db.get_value(
         "NJ Production Planning",
         filters={},
         fieldname="name",
@@ -3079,7 +3351,7 @@ def _append_plan_row(
             sales_order_number, item_code_to_make, serial_no, current_department, current_warehouse, remarks
         )
 
-    _update_serial_to_make(serial_no, item_code_to_make)
+    _update_serial_to_make(serial_no, item_code_to_make, expected_so=sales_order_number)
 
     if remarks:
         _update_serial_remarks(serial_no, remarks)
@@ -7981,7 +8253,7 @@ def nj_clear_stale_reservations():
         SELECT sn.name
         FROM `tabSerial No` sn
         INNER JOIN `tabSales Order` so ON so.name = sn.reserved_sales_order
-        LEFT JOIN `tabNJ Refund` njr ON njr.sales_order = so.name AND njr.refund_status IN ('Paid', 'Refunded') AND njr.docstatus = 1
+        LEFT JOIN `tabNJ Refund` njr ON njr.sales_order = so.name AND njr.refund_status IN ('Paid', 'Refunded', 'Initiated', 'Debit Failed', 'Returned') AND njr.docstatus = 1
         WHERE (so.status IN ('Closed', 'Cancelled', 'Completed') OR njr.name IS NOT NULL)
           AND sn.reserved_sales_order IS NOT NULL
           AND sn.reserved_sales_order != ''
@@ -8005,7 +8277,7 @@ def nj_check_stale_reservations():
         select sn.name, sn.reserved_sales_order, so.status, njr.refund_status 
         from `tabSerial No` sn 
         inner join `tabSales Order` so on sn.reserved_sales_order = so.name  
-        left join `tabNJ Refund` njr on njr.sales_order = so.name and njr.refund_status in ('Paid', 'Refunded') and njr.docstatus = 1
+        left join `tabNJ Refund` njr on njr.sales_order = so.name and njr.refund_status in ('Paid', 'Refunded', 'Initiated', 'Debit Failed', 'Returned') and njr.docstatus = 1
         where (so.status in ('Closed', 'Cancelled', 'Completed') or njr.name is not null)
           and sn.reserved_sales_order is not null
           and sn.reserved_sales_order != ''
@@ -8111,11 +8383,8 @@ def nj_check_over_allocations():
                 COALESCE(NULLIF(sn.to_make, ''), sn.item_code) AS item_code,
                 COUNT(*) AS reserved_count
             FROM `tabSerial No` sn
-            INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
-            INNER JOIN `tabDepartment` dp ON w.department = dp.name
+            -- Location-blind: see sales_order.adjust_serial_allocations().
             WHERE sn.reserved_sales_order IS NOT NULL AND sn.reserved_sales_order != '' AND sn.status = 'Active'
-              AND IFNULL(dp.department_sequence, 0) != 0
-              AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
             GROUP BY sn.reserved_sales_order, COALESCE(NULLIF(sn.to_make, ''), sn.item_code)
         ) res
         LEFT JOIN `tabSales Order` so ON so.name = res.reserved_sales_order
@@ -8203,11 +8472,8 @@ def nj_check_over_allocations_fast():
                 COALESCE(NULLIF(sn.to_make, ''), sn.item_code) AS item_code,
                 COUNT(*) AS reserved_count
             FROM `tabSerial No` sn
-            INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
-            INNER JOIN `tabDepartment` dp ON w.department = dp.name
+            -- Location-blind: see sales_order.adjust_serial_allocations().
             WHERE sn.reserved_sales_order IN ({so_list_str}) AND sn.status = 'Active'
-              AND IFNULL(dp.department_sequence, 0) != 0
-              AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
             GROUP BY sn.reserved_sales_order, COALESCE(NULLIF(sn.to_make, ''), sn.item_code)
         ) res
         LEFT JOIN `tabSales Order` so ON so.name = res.reserved_sales_order
@@ -8336,11 +8602,8 @@ def nj_detailed_allocation_audit():
             COALESCE(NULLIF(sn.to_make, ''), sn.item_code) AS item_code,
             COUNT(*) AS reserved_count
         FROM `tabSerial No` sn
-        INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
-        INNER JOIN `tabDepartment` dp ON w.department = dp.name
+        -- Location-blind: see sales_order.adjust_serial_allocations().
         WHERE sn.reserved_sales_order IN ({so_list_str}) AND sn.status = 'Active'
-          AND IFNULL(dp.department_sequence, 0) != 0
-          AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
         GROUP BY sn.reserved_sales_order, COALESCE(NULLIF(sn.to_make, ''), sn.item_code)
     """, as_dict=True)
 

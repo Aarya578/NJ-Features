@@ -684,15 +684,21 @@ def get_all_emp_warehouse(user):
 
 def get_child_warehouses(parent_warehouse):
     all_emp_ware = []  
-    child_warehouse_with_qty_query = """SELECT w.name, w.is_group,
-                CASE 
-                    WHEN q.available_capacity IS NULL THEN w.max_capacity
-                    ELSE q.available_capacity
-                END AS available_capacity,
-                COALESCE(q.max_capacity, w.max_capacity) AS max_capacity
-                FROM `tabWarehouse` w LEFT JOIN `tabWarehouse Qty` q ON q.warehouse = w.name 
-                WHERE w.parent_warehouse = %s AND w.disabled = 0"""
-    child_warehouse_with_qty = frappe.db.sql(child_warehouse_with_qty_query, parent_warehouse, as_dict=1)
+    child_warehouse_with_qty_query = """SELECT 
+                w.name, 
+                w.is_group,
+                COALESCE(NULLIF(w.max_capacity, 0), q.max_capacity, 0) AS max_capacity,
+                GREATEST(0, COALESCE(NULLIF(w.max_capacity, 0), q.max_capacity, 0) - COALESCE(sn.cnt, 0)) AS available_capacity
+            FROM `tabWarehouse` w 
+            LEFT JOIN `tabWarehouse Qty` q ON q.warehouse = w.name 
+            LEFT JOIN (
+                SELECT warehouse, COUNT(*) AS cnt
+                FROM `tabSerial No`
+                WHERE warehouse IN (SELECT name FROM `tabWarehouse` WHERE parent_warehouse = %(parent_warehouse)s)
+                GROUP BY warehouse
+            ) sn ON sn.warehouse = w.name
+            WHERE w.parent_warehouse = %(parent_warehouse)s AND w.disabled = 0"""
+    child_warehouse_with_qty = frappe.db.sql(child_warehouse_with_qty_query, {"parent_warehouse": parent_warehouse}, as_dict=1)
 
     for row in child_warehouse_with_qty:
         if row['is_group']: 
@@ -834,6 +840,14 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
     except frappe.DoesNotExistError:
         error_messages.append(f"Serial No <b>{serial_no}</b> does not exist.")
         return False
+
+    if s_warehouse and t_warehouse and s_warehouse != t_warehouse and department != s_department:
+        from nj_features.overrides.stock_entry import get_department_restriction_violation
+
+        restriction_violation = get_department_restriction_violation(serial_no, department)
+        if restriction_violation:
+            error_messages.append(restriction_violation)
+            return False
 
     current_doctype = (
         doc.get("doctype")

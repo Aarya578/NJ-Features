@@ -14,6 +14,33 @@ frappe.ui.form.on('Quotation', {
     refresh: function(frm) {
         check_and_hide_sales_order_button(frm);
 
+        if (!frm.is_new()) {
+            frm.add_custom_button(__('Calculate ETA'), function () {
+                if (frm.is_dirty()) {
+                    frappe.msgprint(__('Please save the Quotation before calculating ETA.'));
+                    return;
+                }
+                frappe.call({
+                    method: "nj_features.overrides.quotation.calculate_delivery_dates_for_quotation",
+                    args: { quotation_name: frm.doc.name },
+                    freeze: true,
+                    freeze_message: __("Calculating ETA..."),
+                    callback: function (r) {
+                        if (r.message) {
+                            frm.reload_doc();
+                            frappe.show_alert({
+                                message: __("ETA calculated: Request Date {0}, Estimated Date {1}", [
+                                    r.message.request_delivery_date,
+                                    r.message.estimated_delivery_date
+                                ]),
+                                indicator: "green"
+                            });
+                        }
+                    }
+                });
+            });
+        }
+
         if (frm.doc.docstatus === 1) {
 
             // Remove ERPNext default SO button

@@ -91,19 +91,7 @@ def update_so_quantity_check(settings):
                               AND dn.status NOT IN ('Return Issued', 'Closed')
                               AND dn.name NOT IN (SELECT return_against FROM `tabDelivery Note` WHERE is_return = 1 AND docstatus = 1 AND return_against IS NOT NULL AND return_against != '')
                         )
-                        AND (
-                            b.return_reason IS NULL
-                            OR b.return_reason = ''
-                            OR b.return_reason != 'Repair'
-                            OR (
-                                b.return_reason = 'Repair'
-                                AND (
-                                    so.name IS NULL
-                                    OR so.status = 'Closed'
-                                    OR so.per_delivered = 100
-                                )
-                            )
-                        )
+                        AND (b.return_reason IS NULL OR b.return_reason = '' OR b.return_reason NOT IN ('Repair', 'Replace'))
                     GROUP BY i.variant_of, COALESCE(proc.attribute_value, '')
                 ),
 
@@ -130,19 +118,7 @@ def update_so_quantity_check(settings):
                               AND dn.status NOT IN ('Return Issued', 'Closed')
                               AND dn.name NOT IN (SELECT return_against FROM `tabDelivery Note` WHERE is_return = 1 AND docstatus = 1 AND return_against IS NOT NULL AND return_against != '')
                         )
-                        AND (
-                            s.return_reason IS NULL
-                            OR s.return_reason = ''
-                            OR s.return_reason != 'Repair'
-                            OR (
-                                s.return_reason = 'Repair'
-                                AND (
-                                    so.name IS NULL
-                                    OR so.status = 'Closed'
-                                    OR so.per_delivered = 100
-                                )
-                            )
-                        )
+                        AND (s.return_reason IS NULL OR s.return_reason = '' OR s.return_reason NOT IN ('Repair', 'Replace'))
                     GROUP BY s.item_code
                 ),
 
@@ -304,19 +280,26 @@ def update_so_quantity_check(settings):
             HAVING total_pending_qty > 0
         """, {"hardware_groups": hardware_groups_tuple}, as_dict=True)
 
-        # Step 2.5: Map allocated/reserved serials per (sales_order, item_code)
-        # to prevent double-deduction (since allocated serials are already excluded from actual_qty)
-        allocated_serials = frappe.db.sql("""
+        # Step 2.5: Map allocated/reserved serials in ready departments per (sales_order, item_code)
+        # to prevent double-deduction (only deducting serials that were excluded from actual_qty)
+        alloc_query = f"""
             SELECT 
-                reserved_sales_order,
-                IFNULL(NULLIF(to_make, ''), item_code) AS item_code,
-                COUNT(name) AS allocated_qty
-            FROM `tabSerial No`
-            WHERE reserved_sales_order IS NOT NULL 
-              AND reserved_sales_order != ''
-              AND status = 'Active'
-            GROUP BY reserved_sales_order, IFNULL(NULLIF(to_make, ''), item_code)
-        """, as_dict=True)
+                s.reserved_sales_order,
+                IFNULL(NULLIF(s.to_make, ''), s.item_code) AS item_code,
+                COUNT(s.name) AS allocated_qty
+            FROM `tabSerial No` s
+            INNER JOIN `tabWarehouse` w ON w.name = s.warehouse
+            INNER JOIN `tabItem` i ON (s.item_code = i.name OR s.item_code = i.item_code)
+            WHERE s.reserved_sales_order IS NOT NULL 
+              AND s.reserved_sales_order != ''
+              AND s.status = 'Active'
+              AND s.is_replace = 0
+              AND COALESCE(s.item_group, i.item_group) IN ({item_group_placeholders})
+              AND (w.department IN ({department_placeholders}) {item_warehouse_clause})
+            GROUP BY s.reserved_sales_order, IFNULL(NULLIF(s.to_make, ''), s.item_code)
+        """
+        alloc_params = tuple(item_groups_list + departments_list + warehouses_list)
+        allocated_serials = frappe.db.sql(alloc_query, alloc_params, as_dict=True)
         alloc_map = {(r.reserved_sales_order, r.item_code): r.allocated_qty for r in allocated_serials}
 
         pending_qty_by_item = {}
@@ -479,7 +462,7 @@ def updting_sla_department():
             INNER JOIN `tabItem` i ON i.item_code = s.item_code
             WHERE (s.reserved_sales_order IS NULL OR s.reserved_sales_order = '')
               AND s.is_replace = 0
-              AND (s.return_reason IS NULL OR s.return_reason = '' OR s.return_reason != 'Repair')
+              AND (s.return_reason IS NULL OR s.return_reason = '' OR s.return_reason NOT IN ('Repair', 'Replace'))
               AND d.department_sequence >= %s
               AND i.variant_of IS NOT NULL AND i.variant_of != ''
             GROUP BY i.variant_of
@@ -499,7 +482,7 @@ def updting_sla_department():
                 ON proc.parent = i.item_code AND proc.attribute = 'Processor Type1'
             WHERE (s.reserved_sales_order IS NULL OR s.reserved_sales_order = '')
               AND s.is_replace = 0
-              AND (s.return_reason IS NULL OR s.return_reason = '' OR s.return_reason != 'Repair')
+              AND (s.return_reason IS NULL OR s.return_reason = '' OR s.return_reason NOT IN ('Repair', 'Replace'))
               AND d.department_sequence >= %s
               AND i.variant_of IS NOT NULL AND i.variant_of != ''
             GROUP BY i.variant_of, COALESCE(proc.attribute_value, '')
@@ -518,7 +501,7 @@ def updting_sla_department():
             INNER JOIN `tabProduct Bundle` pb ON pb.name = pbi.parent
             WHERE (s.reserved_sales_order IS NULL OR s.reserved_sales_order = '')
               AND s.is_replace = 0
-              AND (s.return_reason IS NULL OR s.return_reason = '' OR s.return_reason != 'Repair')
+              AND (s.return_reason IS NULL OR s.return_reason = '' OR s.return_reason NOT IN ('Repair', 'Replace'))
               AND d.department_sequence >= %s
               AND pb.shopify_variant_id IS NOT NULL AND pb.shopify_variant_id != ''
               AND COALESCE(pb.disable, 0) = 0
@@ -536,7 +519,7 @@ def updting_sla_department():
             INNER JOIN `tabDepartment` d ON d.name = w.department
             WHERE (s.reserved_sales_order IS NULL OR s.reserved_sales_order = '')
               AND s.is_replace = 0
-              AND (s.return_reason IS NULL OR s.return_reason = '' OR s.return_reason != 'Repair')
+              AND (s.return_reason IS NULL OR s.return_reason = '' OR s.return_reason NOT IN ('Repair', 'Replace'))
               AND d.department_sequence >= %s
             GROUP BY s.item_code
         """, (min_seq,), as_dict=True)
@@ -803,19 +786,7 @@ def update_pre_order_qty(settings):
                           AND dn.status NOT IN ('Return Issued', 'Closed')
                           AND dn.name NOT IN (SELECT return_against FROM `tabDelivery Note` WHERE is_return = 1 AND docstatus = 1 AND return_against IS NOT NULL AND return_against != '')
                     )
-                    AND (
-                        b.return_reason IS NULL
-                        OR b.return_reason = ''
-                        OR b.return_reason != 'Repair'
-                        OR (
-                            b.return_reason = 'Repair'
-                            AND (
-                                so.name IS NULL
-                                OR so.status = 'Closed'
-                                OR so.per_delivered = 100
-                            )
-                        )
-                    )
+                    AND (b.return_reason IS NULL OR b.return_reason = '' OR b.return_reason NOT IN ('Repair', 'Replace'))
                 GROUP BY i.variant_of, COALESCE(proc.attribute_value, '')
             ) ps ON t.parent1 = ps.parent
             SET t.pre_order_qty = IF(

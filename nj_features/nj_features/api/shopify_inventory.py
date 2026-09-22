@@ -1060,6 +1060,14 @@ def _create_shopify_inventory_sync(variant_ids=None):
                             "variables": {
                                 "idempotencyKey": batch_id,
                                 "input": {
+                                    # "available" is correct here: the quantity we
+                                    # stage (updated_qty) already excludes serials
+                                    # reserved to a sales order, so it is a
+                                    # SELLABLE number, not a physical on-hand one.
+                                    # Pushing it as on_hand would double-count the
+                                    # reservation (once in our exclusion, once in
+                                    # Shopify's committed) and drive available
+                                    # negative.
                                     "name": "available",
                                     "reason": "correction",
                                     "quantities": quantities,
@@ -1646,9 +1654,14 @@ def get_shopify_variants(
         result = []
 
         def fetch_batch(batch):
+            # "available" drives the sync (it matches the semantics of the
+            # quantity we stage - see the mutation input below). on_hand is
+            # fetched alongside it for diagnostics: a growing gap between
+            # on_hand and available means Shopify is accumulating committed
+            # units we are re-advertising.
             inventory_level_fields = """
                     inventoryLevel(locationId: $locationId) {
-                        quantities(names: ["available"]) {
+                        quantities(names: ["on_hand", "available"]) {
                             name
                             quantity
                         }
@@ -1712,18 +1725,21 @@ def get_shopify_variants(
                 product_gid = node.get("product", {}).get("id", "")
                 product_id = product_gid.split("/")[-1] if product_gid else None
                 location_quantity = None
+                location_on_hand_quantity = None
                 inventory_level = inventory_item.get("inventoryLevel")
                 if inventory_level:
                     for quantity in inventory_level.get("quantities") or []:
                         if quantity.get("name") == "available":
                             location_quantity = quantity.get("quantity")
-                            break
+                        elif quantity.get("name") == "on_hand":
+                            location_on_hand_quantity = quantity.get("quantity")
 
                 batch_result.append({
                     "variant_id": variant_id,
                     "inventory_item_id": inventory_item_id,
                     "inventory_quantity": inventory_quantity,
                     "location_quantity": location_quantity,
+                    "location_on_hand_quantity": location_on_hand_quantity,
                     "inventory_policy": node.get("inventoryPolicy"),
                     "product_id": product_id,
                 })

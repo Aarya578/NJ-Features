@@ -18,6 +18,7 @@ import frappe
 from frappe.utils import now_datetime, flt
 
 from nj_features.nj_features.api.zoho_api import zoho_get, zoho_put, ZohoAPIError
+from nj_features.nj_features.api.zoho_common import resolve_customer, skip as _skip
 
 COMPANY = "NewJaisa"
 SELLING_PRICE_LIST = "Standard Selling"
@@ -74,56 +75,6 @@ def _resolve_line_item(row):
     )
 
 
-NEW_CUSTOMER_GROUP = "All Customer Groups"
-NEW_CUSTOMER_TERRITORY = "All Territories"
-
-
-def _resolve_customer(account_id, deal_id):
-    """Return an ERPNext Customer name for a Zoho Account, creating one on
-    the fly if the Account was made directly in Zoho and never mirrored
-    from ERP (no ERP_Customer_ID yet, or one that no longer resolves).
-    The new Customer's name is written back onto the Zoho Account so this
-    only happens once per Account.
-    """
-    account_detail = zoho_get(f"Accounts/{account_id}", params={"fields": "Account_Name,ERP_Customer_ID"})
-    account_data = (account_detail.get("data") or [{}])[0]
-
-    erp_customer_id = account_data.get("ERP_Customer_ID")
-    if erp_customer_id and frappe.db.exists("Customer", erp_customer_id):
-        return erp_customer_id
-
-    account_name = account_data.get("Account_Name")
-    if not account_name:
-        _skip(deal_id, f"Account {account_id} has no Account_Name to create a Customer from.")
-        return None
-
-    customer = frappe.new_doc("Customer")
-    customer.customer_name = account_name
-    customer.customer_type = "Company"
-    customer.customer_group = NEW_CUSTOMER_GROUP
-    customer.territory = NEW_CUSTOMER_TERRITORY
-    customer.insert(ignore_permissions=True)
-    frappe.db.commit()
-
-    zoho_put(f"Accounts/{account_id}", {"data": [{"id": account_id, "ERP_Customer_ID": customer.name}]})
-
-    return customer.name
-
-
-def _skip(deal_id, reason):
-    """A validation problem -- leave the checkbox on and log server-side.
-
-    There's no error-visible-to-the-rep field on the Deal yet (would need
-    an "ERP Sync Error" Custom Field in Zoho), so this is only visible in
-    ERPNext's Error Log for now. Leaving the flag checked means it keeps
-    retrying every poll until someone fixes the underlying data and
-    notices it stopped erroring -- better than silently dropping it, per
-    the spec's own "silent no-op is the worst outcome" rule, but still
-    not great. Worth adding that field later.
-    """
-    frappe.log_error(reason, f"Zoho quotation sync skipped Deal {deal_id}")
-
-
 def poll_zoho_deals_and_create_quotations():
     settings = frappe.get_single("Zoho Settings")
     if not settings.enabled:
@@ -169,9 +120,9 @@ def _process_deal(row):
     if not item_code:
         return  # _resolve_line_item already called _skip with the reason
 
-    erp_customer_id = _resolve_customer(account["id"], deal_id)
+    erp_customer_id = resolve_customer(account["id"], deal_id, zoho_get, zoho_put)
     if not erp_customer_id:
-        return  # _resolve_customer already called _skip with the reason
+        return  # resolve_customer already called skip() with the reason
 
     amount = flt(row.get("Amount"))
     rate = amount / quantity if amount else 0

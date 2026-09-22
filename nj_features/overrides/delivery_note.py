@@ -15,6 +15,9 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from frappe import _
 from frappe.utils import now
+# Single source of truth for order_source, shared with the Sales Order
+# allocator and the production planner so all three write the same value.
+from nj_features.services.reservation_service import get_effective_order_source
 from contextlib import contextmanager
 #from __future__ import unicode_literals
 from datetime import datetime, timedelta
@@ -813,6 +816,11 @@ class CustomDeliveryNote(DeliveryNote):
                     # Delete all Department History rows
                     if serial_doc.get("department_history"):
                         serial_doc.department_history = []
+                        # Without this, prevent_manual_department_history_edits
+                        # (Serial No validate hook) would reject this as a
+                        # manual row deletion -- this specific clear-on-return
+                        # is legitimate, pre-existing business logic.
+                        serial_doc.flags.ignore_validate = True
                         serial_doc.save(ignore_permissions=True)
                         # frappe.db.commit()
     def _process_serial_numbers(self):
@@ -867,198 +875,203 @@ class CustomDeliveryNote(DeliveryNote):
 
             cause = (self.cause_of_return or "").strip()
 
-            against_sales_order = None
-            item_code = None
+            if cause == "Repair":
+                against_sales_order = None
+                item_code = None
 
-            for item in self.get("items") or []:
-                item_serials = [s.strip() for s in (item.serial_no or "").replace(",", "\n").split("\n") if s.strip()]
-                if sn in item_serials:
-                    against_sales_order = item.against_sales_order
-                    item_code = item.item_code
-                    break
-
-            if not against_sales_order:
-                for p_item in self.get("packed_items") or []:
-                    p_serials = [s.strip() for s in (p_item.serial_no or "").replace(",", "\n").split("\n") if s.strip()]
-                    if sn in p_serials:
-                        item_code = p_item.item_code
-                        parent_item_code = p_item.parent_item
-                        for item in self.get("items") or []:
-                            if item.item_code == parent_item_code:
-                                against_sales_order = item.against_sales_order
-                                break
-                        break
-
-            if not against_sales_order and self.return_against:
-                orig_dn = frappe.get_doc("Delivery Note", self.return_against)
-                for item in orig_dn.get("items") or []:
+                for item in self.get("items") or []:
                     item_serials = [s.strip() for s in (item.serial_no or "").replace(",", "\n").split("\n") if s.strip()]
                     if sn in item_serials:
                         against_sales_order = item.against_sales_order
                         item_code = item.item_code
                         break
+
                 if not against_sales_order:
-                    for p_item in orig_dn.get("packed_items") or []:
+                    for p_item in self.get("packed_items") or []:
                         p_serials = [s.strip() for s in (p_item.serial_no or "").replace(",", "\n").split("\n") if s.strip()]
                         if sn in p_serials:
                             item_code = p_item.item_code
                             parent_item_code = p_item.parent_item
-                            for item in orig_dn.get("items") or []:
+                            for item in self.get("items") or []:
                                 if item.item_code == parent_item_code:
                                     against_sales_order = item.against_sales_order
                                     break
                             break
 
-            so_info = None
-            if against_sales_order:
-                so_info = frappe.db.get_value(
-                    "Sales Order",
-                    against_sales_order,
-                    ["status", "docstatus", "per_delivered", "sale_type", "order_type"],
-                    as_dict=True
-                )
-
-            is_open_so = bool(
-                so_info
-                and so_info.docstatus == 1
-                and so_info.status not in ('Closed', 'Cancelled', 'Completed')
-                and (so_info.per_delivered or 0) < 100
-                and (so_info.order_type or "Sales") != "Maintenance"
-            )
-
-            if cause in ["Repair", "RTO Customer", "RTO Delivery Partner"]:
-                if is_open_so and item_code:
-                    so_sale_type = so_info.sale_type or ""
-                    effective_source = f"{so_sale_type} - {cause}" if (so_sale_type and cause) else (so_sale_type or cause)
+                if against_sales_order and item_code:
+                    # order_source must be written alongside the reservation. It is
+                    # the only record of where a reservation came from, and on this
+                    # path it also carries the return cause (e.g.
+                    # "NJ-Website-B2C - Repair"), which downstream queries filter on.
                     frappe.db.set_value(
                         "Serial No",
                         sn,
                         {
                             "reserved_sales_order": against_sales_order,
                             "to_make": item_code,
-                            "return_reason": cause,
-                            "order_source": effective_source,
-                            "remarks": f"Allocated to SO {against_sales_order} (Return - {cause}) | to_make: {item_code}"
-                        },
-                        update_modified=True
-                    )
-                    # Set initial_allocated_department once — first allocation wins, never overwritten
-                    sn_dept = frappe.db.get_value("Serial No", sn, "department")
-                    if sn_dept:
-                        frappe.db.sql("""
-                            UPDATE `tabSerial No`
-                            SET initial_allocated_department = %s
-                            WHERE name = %s
-                              AND (initial_allocated_department IS NULL OR initial_allocated_department = '')
-                        """, (sn_dept, sn))
-                    # Release any wrong generic serial that was temporarily allocated to this SO
-                    wrong_serials = frappe.db.sql_list("""
-                        SELECT name
-                        FROM `tabSerial No`
-                        WHERE reserved_sales_order = %s
-                          AND (item_code = %s OR to_make = %s)
-                          AND name != %s
-                          AND (return_reason IS NULL OR return_reason NOT IN ('Repair', 'Replace', 'RTO Customer', 'RTO Delivery Partner'))
-                    """, (against_sales_order, item_code, item_code, sn))
-                    if wrong_serials:
-                        frappe.db.sql("""
-                            UPDATE `tabSerial No`
-                            SET reserved_sales_order = NULL,
-                                to_make = NULL,
-                                remarks = NULL,
-                                order_source = NULL
-                            WHERE name IN %(serials)s
-                        """, {"serials": wrong_serials})
-
-                else:
-                    frappe.db.set_value(
-                        "Serial No",
-                        sn,
-                        {
-                            "reserved_sales_order": "",
-                            "to_make": "",
-                            "return_reason": cause,
-                            "remarks": f"Unreserved via Return DN {self.name} ({cause})"
+                            "order_source": get_effective_order_source(against_sales_order),
+                            "remarks": f"Allocated to SO {against_sales_order} (Return) | to_make: {item_code}"
                         },
                         update_modified=True
                     )
 
-                if cause == "Repair":
-                    warehouse = frappe.db.get_value("Serial No", sn, "warehouse")
-                    if not warehouse:
-                        sle = frappe.db.sql("""
-                            SELECT warehouse
-                            FROM `tabStock Ledger Entry`
-                            WHERE serial_no = %s
-                            AND is_cancelled = 0
-                            AND qty_after_transaction > 0
-                            ORDER BY posting_date DESC, posting_time DESC, creation DESC
-                            LIMIT 1
-                        """, (sn,), as_list=True)
-                        warehouse = sle[0][0] if sle else None
+                warehouse = frappe.db.get_value("Serial No", sn, "warehouse")
 
-                    if not warehouse:
-                        warehouse = frappe.db.get_value(
-                            "Delivery Note Item",
-                            {"parent": self.name, "serial_no": ["like", f"%{sn}%"]},
-                            "warehouse"
-                        )
+                if not warehouse:
+                    sle = frappe.db.sql("""
+                        SELECT warehouse
+                        FROM `tabStock Ledger Entry`
+                        WHERE serial_no = %s
+                        AND is_cancelled = 0
+                        AND qty_after_transaction > 0
+                        ORDER BY posting_date DESC, posting_time DESC, creation DESC
+                        LIMIT 1
+                    """, (sn,), as_list=True)
+                    warehouse = sle[0][0] if sle else None
 
-                    if not warehouse:
-                        frappe.log_error(
-                            f"Warehouse not found for serial no {sn} in return DN {self.name}.",
-                            "Return DN Grade D Reset"
-                        )
-                        continue
-
-                    reset_only_motherboard_grade_to_d_on_return(
-                        sn,
-                        self.name,
-                        warehouse,
-                        expense_account
+                if not warehouse:
+                    warehouse = frappe.db.get_value(
+                        "Delivery Note Item",
+                        {"parent": self.name, "serial_no": ["like", f"%{sn}%"]},
+                        "warehouse"
                     )
-                else:
-                    frappe.logger().info(
-                        f"No grade change required for serial {sn} in Return DN {self.name}. "
-                        f"cause_of_return={cause}"
+
+                if not warehouse:
+                    frappe.log_error(
+                        f"Warehouse not found for serial no {sn} in return DN {self.name}.",
+                        "Return DN Grade D Reset"
                     )
+                    continue
+
+                reset_only_motherboard_grade_to_d_on_return(
+                    sn,
+                    self.name,
+                    warehouse,
+                    expense_account
+                )
+
+            elif cause in ["RTO Customer", "RTO Delivery Partner"]:
+                frappe.logger().info(
+                    f"No grade change required for serial {sn} in Return DN {self.name}. "
+                    f"cause_of_return={cause}"
+                )
 
             elif cause in ["Replace", "Refund"]:
-                frappe.db.set_value(
-                    "Serial No",
-                    sn,
-                    {
-                        "reserved_sales_order": "",
-                        "to_make": "",
-                        "return_reason": cause,
-                        "order_source": "",
-                        "remarks": f"Unreserved via Return DN {self.name} ({cause})"
-                    },
-                    update_modified=True
-                )
                 if cause == "Replace":
-                    if against_sales_order and self.replacement_serial_no and item_code:
-                        so_sale_type = so_info.sale_type if so_info else (frappe.db.get_value("Sales Order", against_sales_order, "sale_type") or "")
-                        effective_source = f"{so_sale_type} - Replace" if so_sale_type else "Replace"
-                        frappe.db.set_value(
-                            "Serial No",
-                            self.replacement_serial_no,
-                            {
-                                "reserved_sales_order": against_sales_order,
-                                "to_make": item_code,
-                                "return_reason": "Replace",
-                                "order_source": effective_source,
-                                "remarks": f"Allocated to SO {against_sales_order} (Replacement) | to_make: {item_code}"
-                            },
-                            update_modified=True
-                        )
+                    against_sales_order = None
+                    item_code = None
 
-                    if against_sales_order:
-                        try:
-                            from nj_features.overrides.sales_order import calculate_dispatch_eta_for_sales_order
-                            calculate_dispatch_eta_for_sales_order(so_name=against_sales_order)
-                        except Exception as e:
-                            frappe.log_error(title=f"Replacement allocation failed for {against_sales_order}", message=frappe.get_traceback())
+                    for item in self.get("items") or []:
+                        item_serials = [s.strip() for s in (item.serial_no or "").replace(",", "\n").split("\n") if s.strip()]
+                        if sn in item_serials:
+                            against_sales_order = item.against_sales_order
+                            item_code = item.item_code
+                            break
+
+                    if not against_sales_order:
+                        for p_item in self.get("packed_items") or []:
+                            p_serials = [s.strip() for s in (p_item.serial_no or "").replace(",", "\n").split("\n") if s.strip()]
+                            if sn in p_serials:
+                                item_code = p_item.item_code
+                                parent_item_code = p_item.parent_item
+                                for item in self.get("items") or []:
+                                    if item.item_code == parent_item_code:
+                                        against_sales_order = item.against_sales_order
+                                        break
+                                break
+
+                    if against_sales_order and item_code:
+                        from nj_features.overrides.sales_order import create_unallocated_log
+
+                        # -- C1 + C1b: exact item_code, or a unit already WIP-reconfiguring
+                        # into this item_code (to_make match). Exact match is preferred over
+                        # a to_make match within the same department sequence.
+                        available_serials = frappe.db.sql("""
+                            SELECT sn.name
+                            FROM `tabSerial No` sn
+                            LEFT JOIN `tabDepartment` dept ON sn.department = dept.name
+                            WHERE (sn.item_code = %(item_code)s OR sn.to_make = %(item_code)s)
+                              AND sn.name != %(sn)s
+                              AND (sn.status IS NULL OR sn.status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
+                              AND (sn.reserved_sales_order IS NULL OR sn.reserved_sales_order = '')
+                              AND IFNULL(sn.is_replace, 0) = 0
+                              AND (sn.return_reason IS NULL OR sn.return_reason = '' OR sn.return_reason NOT IN ('Repair', 'RTO Customer', 'RTO Delivery Partner'))
+                              AND IFNULL(dept.department_sequence, 0) > 0
+                            ORDER BY
+                                IFNULL(dept.department_sequence, 0) DESC,
+                                CASE WHEN sn.item_code = %(item_code)s THEN 0 ELSE 1 END ASC,
+                                sn.creation ASC
+                            LIMIT 1
+                        """, {"item_code": item_code, "sn": sn}, as_dict=True)
+
+                        match_reason = "Return Replacement"
+
+                        # -- C2: same Shopify variant (a different SKU that is the same
+                        # customer-facing product). Deliberately NOT extended to C3/C4
+                        # (model+CPU family / parent variant) — those can land on a unit
+                        # needing a RAM/Storage reconfig first, which would make an
+                        # already-waiting replacement customer wait even longer. A
+                        # shortage in that case should be reviewed by a person, not
+                        # auto-allocated to a "close enough" unit.
+                        if not available_serials:
+                            try:
+                                from nj_features.nj_features.doctype.nj_production_planning.nj_production_planning import (
+                                    _get_shopify_variant_id,
+                                    _get_variant_bundle_item_codes,
+                                )
+                                variant_id = _get_shopify_variant_id(item_code)
+                                variant_codes = list(
+                                    set(_get_variant_bundle_item_codes(variant_id)) - {item_code}
+                                ) if variant_id else []
+                            except Exception:
+                                variant_codes = []
+
+                            if variant_codes:
+                                placeholders = ", ".join(["%s"] * len(variant_codes))
+                                available_serials = frappe.db.sql(f"""
+                                    SELECT sn.name
+                                    FROM `tabSerial No` sn
+                                    LEFT JOIN `tabDepartment` dept ON sn.department = dept.name
+                                    WHERE (sn.item_code IN ({placeholders}) OR sn.to_make IN ({placeholders}))
+                                      AND sn.name != %s
+                                      AND (sn.status IS NULL OR sn.status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
+                                      AND (sn.reserved_sales_order IS NULL OR sn.reserved_sales_order = '')
+                                      AND IFNULL(sn.is_replace, 0) = 0
+                                      AND (sn.return_reason IS NULL OR sn.return_reason = '' OR sn.return_reason NOT IN ('Repair', 'RTO Customer', 'RTO Delivery Partner'))
+                                      AND IFNULL(dept.department_sequence, 0) > 0
+                                    ORDER BY IFNULL(dept.department_sequence, 0) DESC, sn.creation ASC
+                                    LIMIT 1
+                                """, (*variant_codes, *variant_codes, sn), as_dict=True)
+                                match_reason = "Return Replacement - Shopify Variant match"
+
+                        if available_serials:
+                            replacement_sn = available_serials[0]["name"]
+                            frappe.db.set_value(
+                                "Serial No",
+                                replacement_sn,
+                                {
+                                    "reserved_sales_order": against_sales_order,
+                                    "to_make": item_code,
+                                    "order_source": get_effective_order_source(against_sales_order),
+                                    "remarks": f"Allocated to SO {against_sales_order} ({match_reason}) | to_make: {item_code}"
+                                },
+                                update_modified=True
+                            )
+                        else:
+                            # Previously failed silently — now flagged the same way a
+                            # production-planning shortage is flagged, so ops can see it.
+                            try:
+                                create_unallocated_log(
+                                    sales_order=against_sales_order,
+                                    item_code=item_code,
+                                    pending_qty=1,
+                                    reason=f"Return Replacement - No available stock (returned serial {sn} in DN {self.name})"
+                                )
+                            except Exception:
+                                frappe.log_error(
+                                    title="Return Replacement allocation failed",
+                                    message=f"No replacement serial found for SO {against_sales_order}, item {item_code}, returned serial {sn}, DN {self.name}."
+                                )
 
                 warehouse = frappe.db.get_value("Serial No", sn, "warehouse")
 
@@ -4398,3 +4411,30 @@ def deviding_tax_chargese_return_dn(doc, method=None):
             tax_amount = -abs(flt(allocated_tax_by_account[tax.account_head]))
             tax.tax_amount = tax_amount
             tax.base_tax_amount = round(tax_amount * conversion_rate, 2)
+
+
+def set_linked_sales_order_flags(doc, method=None):
+    """
+    Mirror sale_type/pre_order from the linked Sales Order onto this Delivery Note.
+
+    The "B2B Delivery Confirmation" notification fires on Delivery Note Submit
+    and needs to know whether the underlying order was a non-pre-order B2B sale.
+    Notification conditions can only see fields already present on `doc` (no
+    frappe.db access in that sandbox), so we copy these over here instead of
+    trying to look up the Sales Order from the condition itself.
+    """
+    if not doc.items:
+        return
+
+    against_sales_order = doc.items[0].against_sales_order
+    if not against_sales_order:
+        return
+
+    so = frappe.db.get_value(
+        "Sales Order", against_sales_order, ["sale_type", "pre_order"], as_dict=True
+    )
+    if not so:
+        return
+
+    doc.sale_type = so.sale_type
+    doc.pre_order = so.pre_order

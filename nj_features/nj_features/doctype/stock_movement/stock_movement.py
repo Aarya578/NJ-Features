@@ -740,6 +740,7 @@ def validate_stock_movement_for_grade(doc):
 
     error_messages = []
     model_mismatch_messages = []
+    warning_messages = []
     qty_check_cache = {
         "checked_keys": set(),
         "item_group_cache": {},
@@ -756,7 +757,8 @@ def validate_stock_movement_for_grade(doc):
             doc,
             error_messages,
             model_mismatch_messages,
-            qty_check_cache
+            qty_check_cache,
+            warning_messages
         )
 
         print(
@@ -780,16 +782,18 @@ def validate_stock_movement_for_grade(doc):
 
         return {
             "error": error_messages,
+            "warnings": warning_messages,
             "show_production_plan_prompt": bool(model_mismatch_messages),
         }
 
     print(">>> RETURNING SUCCESS <<<")
 
     return {
-        "success": "Validation passed without errors."
+        "success": "Validation passed without errors.",
+        "warnings": warning_messages,
     }
 
-def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_messages=None, qty_check_cache=None):
+def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_messages=None, qty_check_cache=None, warning_messages=None):
     
     
     has_serialized = frappe.db.get_value(
@@ -845,9 +849,10 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
         from nj_features.overrides.stock_entry import get_department_restriction_violation
 
         restriction_violation = get_department_restriction_violation(serial_no, department)
-        if restriction_violation:
-            error_messages.append(restriction_violation)
-            return False
+        if restriction_violation and warning_messages is not None:
+            # Informational only -- does not block the move, see
+            # nj_features.overrides.stock_entry.block_restricted_department_moves.
+            warning_messages.append(restriction_violation)
 
     current_doctype = (
         doc.get("doctype")

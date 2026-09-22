@@ -311,6 +311,14 @@ scheduler_events = {
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.run_latest_production_plan_part_allocation",
         ],
 
+        # Runs hourly at :30 -- refreshes ONLY the Priority Rank (and the serial's
+        # current department/warehouse) on the latest plan. It never changes the
+        # to make item code. :30 keeps it clear of the 12 hourly plan run at :00
+        # and the part allocation job at 00:15.
+        "30 * * * *": [
+            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.enqueue_latest_production_plan_priority_rank",
+        ],
+
         "20,40 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.start_shopify_inventory_sync",
             # nj_features.nj_features.api.shopify_inventory.create_shopify_inventory_sync

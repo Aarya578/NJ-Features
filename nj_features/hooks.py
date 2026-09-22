@@ -68,6 +68,17 @@ override_doctype_class = {
     "Purchase Invoice": "nj_features.overrides.purchase_invoice.CustomPurchaseInvoice",
 }
 
+# ========== After Migrate ==========
+
+after_migrate = [
+    # Prevents duplicate Department Count History rows for the same
+    # (serial, department) pair at the DB level -- see
+    # nj_features.overrides.serial_no.ensure_department_history_unique_constraint
+    # for why this is needed (two independent writers racing on the same
+    # check-then-append pattern could both conclude a row didn't exist yet).
+    "nj_features.overrides.serial_no.ensure_department_history_unique_constraint",
+]
+
 # ========== Doc Events ==========
 
 doc_events = {
@@ -108,14 +119,18 @@ doc_events = {
     # exclusive, so this doesn't touch or conflict with that app's own
     # BIOS-uniqueness checks there.
     "Serial No": {
-        # Order matters: prevent_manual_department_history_edits must run
-        # BEFORE seed_department_count_history -- see the former's
-        # docstring for why (it needs to see the client-submitted state
-        # before our own seeding hook mutates department_history in this
-        # same validate cycle).
         "validate": [
             "nj_features.overrides.serial_no.validate_rfq_qty",
             "nj_features.overrides.serial_no.prevent_manual_department_history_edits",
+        ],
+        # seed_department_count_history writes department_history via raw
+        # SQL (see _atomic_department_history_write's docstring) rather
+        # than doc.append() + doc.save(), so it has to run AFTER this
+        # Serial No's own save (including Frappe's child-table sync) has
+        # fully completed -- on validate, that sync would see the row it
+        # just inserted isn't in the in-memory department_history list
+        # and delete it right back out.
+        "on_update": [
             "nj_features.overrides.serial_no.seed_department_count_history",
         ],
     },

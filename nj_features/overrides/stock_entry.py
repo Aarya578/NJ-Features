@@ -170,30 +170,21 @@ def update_department_count_history(doc, method=None):
 
 
 def _bump_department_count(serial_no, department):
-    if not frappe.db.exists("Serial No", serial_no):
-        return
+    """
+    Writes via nj_features.overrides.serial_no._atomic_department_history_write
+    (raw SQL, INSERT ... ON DUPLICATE KEY UPDATE count = count + 1) instead
+    of the old load-the-whole-Serial-No-doc-append-and-save pattern -- see
+    that function's docstring for why the old pattern could race with
+    other Department History writers and create a duplicate row.
 
-    serial_doc = frappe.get_doc("Serial No", serial_no)
+    One behavior change from the old version: this no longer reorders
+    department_history so the just-touched row jumps to idx 1 (top of
+    the grid) -- that reordering doesn't fit an atomic single-statement
+    upsert without a second write touching every other row's idx, and
+    it was purely cosmetic (which row displays first in the Desk grid),
+    not something count tracking or the movement-limit warning depend
+    on, so it wasn't worth reintroducing a second, non-atomic write here.
+    """
+    from nj_features.overrides.serial_no import _atomic_department_history_write
 
-    existing_row = next(
-        (row for row in serial_doc.department_history if (row.departmant or "").strip() == department),
-        None,
-    )
-
-    if existing_row:
-        existing_row.count = (existing_row.count or 0) + 1
-        serial_doc.department_history.remove(existing_row)
-        serial_doc.department_history.insert(0, existing_row)
-    else:
-        new_row = serial_doc.append("department_history", {})
-        new_row.departmant = department
-        new_row.count = 1
-        serial_doc.department_history.remove(new_row)
-        serial_doc.department_history.insert(0, new_row)
-
-    for idx, row in enumerate(serial_doc.department_history, start=1):
-        row.idx = idx
-
-    serial_doc.flags.ignore_validate = True
-    serial_doc.flags.ignore_on_update = True
-    serial_doc.save(ignore_permissions=True, ignore_version=True)
+    _atomic_department_history_write(serial_no, department, increment=True)

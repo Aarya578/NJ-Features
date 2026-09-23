@@ -873,11 +873,13 @@ def get_pre_order_pools(settings):
     been chosen yet, which strands real build capacity across several
     sub-threshold buckets and hides models that can genuinely be supplied.
 
-    Scope: every department with department_sequence > 0 that declares
-    sla_item_groups, EXCLUDING the ready-stock departments listed in
-    NJ Inventory Settings.departments. Pre-order and ready stock are disjoint by
-    construction - a machine is either sellable today (actual_qty) or promisable
-    (pre_order_qty), never both.
+    Scope: the build window only - departments sequenced strictly between
+    'Part waiting' and 'Adaptor' that declare sla_item_groups, EXCLUDING the
+    ready-stock departments listed in NJ Inventory Settings.departments.
+    Pre-order and ready stock are disjoint by construction - a machine is
+    either sellable today (actual_qty) or promisable (pre_order_qty), never
+    both. Machines before the window (Inward, Paint, Core IQC) are NOT
+    promisable: they have not entered the line.
 
     The over-promise this used to cause is NOT solved by narrowing the key; it
     is solved in update_pre_order_qty, which CLAIMS the pool (one row takes it)
@@ -894,44 +896,67 @@ def get_pre_order_pools(settings):
         log_error(
             "Item groups are required to update pre-order quantities",
             "update_pre_order_qty",
-            "Warning",
+            "Error",
         )
         return None
 
-    # Every sequenced department that declares the item groups it handles,
-    # MINUS the departments that already feed ready stock.
+    # Scope: the build window only - departments sequenced strictly between
+    # 'Part waiting' and 'Adaptor' - MINUS the departments that already feed
+    # ready stock.
     #
-    # Business rule (2026-09-22): a machine anywhere in the plant that is still
-    # free can be promised, not only one inside the Part waiting -> Adaptor
-    # window. sla_item_groups is the gate that keeps a laptop out of a
-    # desktop-only department; department_sequence > 0 keeps unsequenced
-    # bookkeeping departments out entirely.
+    # Business rule (2026-09-23, reverting the 2026-09-22 widening): only a
+    # machine already inside the build window is promisable. A chassis sitting
+    # in Inward, Paint or Core IQC has not entered the line and must not be
+    # sold against. sla_item_groups is the gate that keeps a laptop out of a
+    # desktop-only department.
     #
-    # The NOT IN is not optional. NJ Inventory Settings.departments is the
-    # ready-stock scope: those machines are already counted in actual_qty and
-    # are sellable today. Counting them here as well puts the same physical
-    # machine on the storefront twice - once as ready stock on its own variant,
-    # once as pre-order on a sibling. The claim step cannot catch this because
-    # it only sees the pre-order pool, not what actual_qty already spent.
-    # Measured 2026-09-22: 806 machines (33% of the widened pool) overlapped.
+    # Bounds are looked up by name, never hardcoded, and are EXCLUSIVE at both
+    # ends: 'Part waiting' itself is not build capacity, and 'Adaptor QC' is
+    # past the point this pool is meant to cover.
+    #
+    # The NOT IN is not optional, and it matters MORE at this width, not less:
+    # 'L1 - NJ' and 'L1 Line - NJ' sit inside the window and are also in the
+    # ready-stock scope, so without it 42 machines (measured 2026-09-23) would
+    # be sold twice - once as ready stock on their own variant, once as
+    # pre-order on a sibling. The claim step cannot catch this, because it only
+    # sees the pre-order pool and not what actual_qty already spent.
     ready_stock_depts = [
         d.strip() for d in (settings.get("departments") or "").split(",") if d.strip()
     ]
+
+    part_waiting_seq = frappe.db.get_value(
+        "Department", {"name": ["like", "%Part waiting%"]}, "department_sequence"
+    )
+    adaptor_seq = frappe.db.get_value(
+        "Department", {"name": ["like", "%Adaptor%"]}, "department_sequence"
+    )
+
+    if part_waiting_seq is None or adaptor_seq is None:
+        log_error(
+            "Could not find the sequence for Part waiting or Adaptor - the "
+            "pre-order build window cannot be bounded, so it is not computed",
+            "update_pre_order_qty",
+            "Error",
+        )
+        return None
+
+    min_bound = min(part_waiting_seq, adaptor_seq)
+    max_bound = max(part_waiting_seq, adaptor_seq)
 
     if ready_stock_depts:
         exclude_placeholders = ", ".join(["%s"] * len(ready_stock_depts))
         depts_list = frappe.db.sql_list(f"""
             SELECT name FROM `tabDepartment`
-            WHERE department_sequence > 0
+            WHERE department_sequence > %s AND department_sequence < %s
               AND sla_item_groups IS NOT NULL AND sla_item_groups != ''
               AND name NOT IN ({exclude_placeholders})
-        """, tuple(ready_stock_depts))
+        """, tuple([min_bound, max_bound] + ready_stock_depts))
     else:
         log_error(
             "NJ Inventory Settings.departments is empty - pre-order pool cannot be "
             "separated from ready stock, so it is not computed",
             "update_pre_order_qty",
-            "Warning",
+            "Error",
         )
         return None
 
@@ -939,9 +964,21 @@ def get_pre_order_pools(settings):
         log_error(
             "No pre-order departments remain after excluding the ready-stock scope",
             "update_pre_order_qty",
-            "Warning",
+            "Error",
         )
         return None
+
+    return _count_free_machines_by_config(depts_list, item_groups_list, warehouses_list)
+
+
+def _count_free_machines_by_config(depts_list, item_groups_list, warehouses_list=None):
+    """Free machines per parent + Processor across the given departments.
+
+    Shared by the pre-order pool and the company quantity so that both are
+    counted with exactly the same idea of "free" - only the department scope
+    differs. Returns {config_key: free_qty}.
+    """
+    warehouses_list = warehouses_list or []
 
     item_group_placeholders = ", ".join(["%s"] * len(item_groups_list))
     department_placeholders = ", ".join(["%s"] * len(depts_list))
@@ -1014,6 +1051,65 @@ def get_pre_order_pools(settings):
     return {r["config_key"]: int(r["free_qty"] or 0) for r in rows}
 
 
+def get_company_qty_pools(settings):
+    """Free machines per parent + Processor across the whole company.
+
+    This is the GATE for pre-order, not the quantity advertised. Business rule
+    (2026-09-23): a configuration may be listed as pre-order only when the
+    company as a whole holds more than pre_order_threshold free machines of it.
+    What is pushed is still the build-window pool from get_pre_order_pools -
+    the company quantity only decides whether that pool is shown or zeroed.
+
+    Scope: every pipeline department (department_sequence > 0) that declares
+    sla_item_groups, MINUS the ready-stock departments in NJ Inventory
+    Settings.departments (that stock is already live quantity) and MINUS
+    Reject/Scrap departments (not sellable stock). "Free" means exactly what
+    it means for the pool - see _count_free_machines_by_config.
+
+    Returns {config_key: qty}, or None when it could not be computed (which,
+    as with the pool, is NOT the same as "no stock").
+    """
+    _, item_groups_list = _pre_order_config_filters(settings)
+    if not item_groups_list:
+        log_error(
+            "Item groups are required to compute the company quantity",
+            "update_pre_order_qty",
+            "Error",
+        )
+        return None
+
+    ready_stock_depts = [
+        d.strip() for d in (settings.get("departments") or "").split(",") if d.strip()
+    ]
+    if not ready_stock_depts:
+        log_error(
+            "NJ Inventory Settings.departments is empty - company quantity cannot be "
+            "separated from ready stock, so it is not computed",
+            "update_pre_order_qty",
+            "Error",
+        )
+        return None
+
+    exclude_placeholders = ", ".join(["%s"] * len(ready_stock_depts))
+    depts_list = frappe.db.sql_list(f"""
+        SELECT name FROM `tabDepartment`
+        WHERE department_sequence > 0
+          AND sla_item_groups IS NOT NULL AND sla_item_groups != ''
+          AND name NOT IN ({exclude_placeholders})
+          AND name NOT LIKE %s AND name NOT LIKE %s
+    """, tuple(ready_stock_depts + ["%Reject%", "%Scrap%"]))
+
+    if not depts_list:
+        log_error(
+            "No company-quantity departments remain after excluding the ready-stock scope",
+            "update_pre_order_qty",
+            "Error",
+        )
+        return None
+
+    return _count_free_machines_by_config(depts_list, item_groups_list)
+
+
 def get_pre_order_exact_counts(settings):
     """How many pooled machines carry each exact item code.
 
@@ -1071,7 +1167,7 @@ def get_pre_order_exact_counts(settings):
         """, tuple(item_groups_list + depts_list), as_dict=True)
     except Exception:
         # A tie-break is a nicety, never a reason to fail the allocation.
-        log_error(frappe.get_traceback(), "get_pre_order_exact_counts", "Warning")
+        log_error(frappe.get_traceback(), "get_pre_order_exact_counts", "Error")
         return {}
 
     return {r["item_code"]: int(r["qty"] or 0) for r in rows}
@@ -1084,6 +1180,11 @@ def update_pre_order_qty(settings):
 
         SUM(pre_order_qty) across all rows sharing a parent + Processor never
         exceeds the number of physical machines free on the line for it.
+
+    A configuration is only allocated at all when its company quantity (see
+    get_company_qty_pools) is above pre_order_threshold; otherwise every row of
+    it gets 0. The threshold is applied HERE and nowhere else - the Shopify
+    push treats any pre_order_qty > 0 as a pre-order.
 
     That is why the pool is CLAIMED rather than copied. Several item codes (the
     RAM/SSD variants of one chassis) map to the same pool, and every one of them
@@ -1108,6 +1209,22 @@ def update_pre_order_qty(settings):
                 "Error",
             )
             return False
+
+        company_qty = get_company_qty_pools(settings)
+
+        if company_qty is None:
+            # Same reasoning as the pool: without the gate we cannot say which
+            # configurations may be shown, so hold everything as it is.
+            log_error(
+                "Company quantity could not be computed - SO Quantity Check left untouched",
+                "update_pre_order_qty",
+                "Error",
+            )
+            return False
+
+        # Imported here: shopify_inventory imports this module at load time.
+        from nj_features.nj_features.api.shopify_inventory import get_inventory_sync_flags
+        threshold = get_inventory_sync_flags()["pre_order_threshold"]
 
         # machines-per-exact-item-code, for the tie-break below
         exact_counts = get_pre_order_exact_counts(settings)
@@ -1145,9 +1262,16 @@ def update_pre_order_qty(settings):
 
         allocations = {}
         collisions = 0
+        gated_configs = 0
+        gated_units = 0
         for key, rows in candidates.items():
             free_qty = pools.get(key, 0)
             if free_qty <= 0:
+                continue
+            if company_qty.get(key, 0) <= threshold:
+                # Not enough of this configuration company-wide: push 0.
+                gated_configs += 1
+                gated_units += free_qty
                 continue
             if len(rows) > 1:
                 collisions += 1
@@ -1201,7 +1325,9 @@ def update_pre_order_qty(settings):
             f"Pre-order allocation complete: {len(allocations)} rows, "
             f"{allocated_units} units allocated from a pool of {pool_units} "
             f"machines across {len(pools)} configurations "
-            f"({collisions} configurations had competing item codes)",
+            f"({collisions} configurations had competing item codes; "
+            f"{gated_configs} configurations / {gated_units} machines zeroed because "
+            f"company quantity was not above the threshold of {threshold})",
             "update_pre_order_qty",
             "Info",
         )
@@ -1337,7 +1463,7 @@ def update_minimum_qty_after_proportional() -> bool:
                 log_error(
                     f"[MIN-QTY] Skipped parent={parent1}: need={total_deficit}, reducible={reducible_total}",
                     "update_minimum_qty_after_proportional",
-                    "Warning",
+                    "Error",
                 )
                 continue
 

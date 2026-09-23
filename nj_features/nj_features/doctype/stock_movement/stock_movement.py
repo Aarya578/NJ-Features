@@ -740,7 +740,6 @@ def validate_stock_movement_for_grade(doc):
 
     error_messages = []
     model_mismatch_messages = []
-    warning_messages = []
     qty_check_cache = {
         "checked_keys": set(),
         "item_group_cache": {},
@@ -757,8 +756,7 @@ def validate_stock_movement_for_grade(doc):
             doc,
             error_messages,
             model_mismatch_messages,
-            qty_check_cache,
-            warning_messages
+            qty_check_cache
         )
 
         print(
@@ -782,18 +780,16 @@ def validate_stock_movement_for_grade(doc):
 
         return {
             "error": error_messages,
-            "warnings": warning_messages,
             "show_production_plan_prompt": bool(model_mismatch_messages),
         }
 
     print(">>> RETURNING SUCCESS <<<")
 
     return {
-        "success": "Validation passed without errors.",
-        "warnings": warning_messages,
+        "success": "Validation passed without errors."
     }
 
-def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_messages=None, qty_check_cache=None, warning_messages=None):
+def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_messages=None, qty_check_cache=None):
     
     
     has_serialized = frappe.db.get_value(
@@ -849,10 +845,9 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
         from nj_features.overrides.stock_entry import get_department_restriction_violation
 
         restriction_violation = get_department_restriction_violation(serial_no, department)
-        if restriction_violation and warning_messages is not None:
-            # Informational only -- does not block the move, see
-            # nj_features.overrides.stock_entry.block_restricted_department_moves.
-            warning_messages.append(restriction_violation)
+        if restriction_violation:
+            error_messages.append(restriction_violation)
+            return False
 
     current_doctype = (
         doc.get("doctype")
@@ -862,7 +857,7 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
 
     # Rack Pick has its own production-plan priority validation. Skip only the
     # shared NJ Production Plan validation here; all validations below continue.
-    if current_doctype == "Rack Pick":
+    if current_doctype == "Rack Pick" or current_doctype == "NJ Audit":
         production_plan_result = True
     else:
         production_plan_result = validate_serial_no_in_latest_nj_production_plan(

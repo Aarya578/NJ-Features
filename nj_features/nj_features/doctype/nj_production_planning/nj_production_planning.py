@@ -1712,7 +1712,7 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
         ) AS so_data
 
         LEFT JOIN (
-            SELECT
+                
                 dni.against_sales_order       AS against_sales_order,
                 CASE 
                     WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code

@@ -171,7 +171,7 @@ def clear_orphaned_pre_order_flags():
         return True
     except Exception:
         frappe.db.rollback()
-        log_error(frappe.get_traceback(), "clear_orphaned_pre_order_flags", "Warning")
+        log_error(frappe.get_traceback(), "clear_orphaned_pre_order_flags", "Error")
         return False
 
 
@@ -873,7 +873,9 @@ def _create_rq_doc(variant_ids=None):
             if live_qty > 0:
                 desired_qty = float(live_qty)
                 is_pre_order = 0
-            elif pre_order_qty > flags["pre_order_threshold"]:
+            elif pre_order_qty > 0:
+                # The threshold was already applied upstream in update_pre_order_qty
+                # (against company quantity); anything still > 0 has passed it.
                 desired_qty = float(pre_order_qty)
                 is_pre_order = 1
                 update_status += f"[PreOrderSynced→{desired_qty:g}] "
@@ -1597,8 +1599,6 @@ def sync_shopify_pre_order_policies(shopify_data, shop, token):
     stats = {"checked": 0, "updated": 0, "unchanged": 0, "failed": 0}
 
     try:
-        threshold = get_inventory_sync_flags()["pre_order_threshold"]
-
         variant_ids = [
             str(data.get("variant_id") or "").strip()
             for data in shopify_data
@@ -1633,7 +1633,7 @@ def sync_shopify_pre_order_policies(shopify_data, shop, token):
             # Pre-order quantity is now synced directly to Shopify as available inventory.
             # We set policy to DENY so Shopify strictly sells up to the synced quantity and prevents overselling.
             desired_policy = "DENY"
-            is_pre = 1 if (live_qty <= 0 and pre_order_qty > threshold) else 0
+            is_pre = 1 if (live_qty <= 0 and pre_order_qty > 0) else 0
 
             if current_policy == desired_policy:
                 frappe.db.set_value(
@@ -1735,7 +1735,7 @@ def sync_shopify_pre_order_policies(shopify_data, shop, token):
 
                 live_qty = safe_float(sync_row.actual_qty) or 0
                 pre_order_qty = safe_float(sync_row.shopify_pre_order_qty) or 0
-                is_pre = 1 if (live_qty <= 0 and pre_order_qty > threshold) else 0
+                is_pre = 1 if (live_qty <= 0 and pre_order_qty > 0) else 0
 
                 frappe.db.set_value(
                     "NJ Inventory Sync Main",
@@ -2207,8 +2207,6 @@ def sync_shopify_pre_order_metafields_and_tags(shopify_data, shop=None, token=No
             shop = settings["shop"]
             token = settings["token"]
 
-        threshold = get_inventory_sync_flags()["pre_order_threshold"]
-
         variant_ids = [
             str(data.get("variant_id") or "").strip()
             for data in shopify_data
@@ -2236,7 +2234,7 @@ def sync_shopify_pre_order_metafields_and_tags(shopify_data, shop=None, token=No
             """
             live_qty = safe_float(row.get("actual_qty")) or 0
             pre_order_qty = safe_float(row.get("shopify_pre_order_qty")) or 0
-            if live_qty <= 0 and pre_order_qty > threshold:
+            if live_qty <= 0 and pre_order_qty > 0:
                 return PRE_ORDER_STATUS_VALUE
             if live_qty > 0:
                 return READY_STOCK_STATUS_VALUE
@@ -2362,7 +2360,15 @@ def sync_shopify_pre_order_metafields_and_tags(shopify_data, shop=None, token=No
 
             is_pre = any(value == PRE_ORDER_STATUS_VALUE for value in statuses.values())
             desired_status = PRE_ORDER_STATUS_VALUE if is_pre else ""
-            has_tag = "pre-order" in (state["tags"] or [])
+            # Shopify preserves whatever casing a tag was first created with
+            # and dedupes case-insensitively. This store already carries
+            # "Pre-Order", so a case-sensitive check reports the tag missing on
+            # every run: tagsAdd fires forever as a no-op, and - worse - a
+            # product that should LOSE the tag never does, because is_pre and
+            # has_tag both read False and the branch is skipped.
+            existing_tags = state["tags"] or []
+            matching_tags = [t for t in existing_tags if str(t).strip().lower() == "pre-order"]
+            has_tag = bool(matching_tags)
             product_gid = f"gid://shopify/Product/{product_id}"
             touched = False
 
@@ -2394,7 +2400,24 @@ def sync_shopify_pre_order_metafields_and_tags(shopify_data, shop=None, token=No
                 else:
                     touched = True
 
-            if is_pre != has_tag:
+            # Shopify keeps whatever casing a tag was first created with and
+            # dedupes case-insensitively, so tagsAdd("pre-order") on a product
+            # already carrying "Pre-Order" silently does nothing. To publish the
+            # canonical lowercase form the old casing has to be removed first.
+            PRE_ORDER_TAG = "pre-order"
+            stale_casing = [t for t in matching_tags if str(t) != PRE_ORDER_TAG]
+
+            tag_ops = []
+            if is_pre:
+                if stale_casing:
+                    tag_ops.append(("tagsRemove", stale_casing))
+                if stale_casing or not has_tag:
+                    tag_ops.append(("tagsAdd", [PRE_ORDER_TAG]))
+            elif has_tag:
+                # Remove every casing present, not just our canonical one.
+                tag_ops.append(("tagsRemove", matching_tags))
+
+            for op, tag_values in tag_ops:
                 tag_mutation = """
                     mutation AddProductTags($id: ID!, $tags: [String!]!) {
                         tagsAdd(id: $id, tags: $tags) {
@@ -2402,7 +2425,7 @@ def sync_shopify_pre_order_metafields_and_tags(shopify_data, shop=None, token=No
                             userErrors { field message }
                         }
                     }
-                """ if is_pre else """
+                """ if op == "tagsAdd" else """
                     mutation RemoveProductTags($id: ID!, $tags: [String!]!) {
                         tagsRemove(id: $id, tags: $tags) {
                             node { id }
@@ -2412,11 +2435,21 @@ def sync_shopify_pre_order_metafields_and_tags(shopify_data, shop=None, token=No
                 """
                 data = _shopify_graphql(
                     url, headers, tag_mutation,
-                    {"id": product_gid, "tags": ["pre-order"]},
+                    {"id": product_gid, "tags": tag_values},
                     "Shopify Pre-Order Tag Sync",
                 )
                 if data is None:
                     stats["failed"] += 1
+                    continue
+                # userErrors here were previously ignored, so a rejected tag
+                # change looked like a success.
+                errors = (data.get(op) or {}).get("userErrors") or []
+                if errors:
+                    stats["failed"] += 1
+                    log_error(
+                        f"Shopify {op} rejected for {product_id}: {errors}",
+                        "Shopify Pre-Order Tag Sync",
+                    )
                 else:
                     touched = True
 

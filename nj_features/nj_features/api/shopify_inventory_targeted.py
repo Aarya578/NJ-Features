@@ -824,7 +824,6 @@ def stage_targeted_variants(variant_ids, settings, pre_order_data_ok=True):
             _effective_live_qty,
         )
         flags = get_inventory_sync_flags()
-        pre_order_threshold = flags["pre_order_threshold"]
 
         # Parent qty map (same as create_rq_doc)
         parent_qty_map = frappe.db.sql("""
@@ -913,7 +912,8 @@ def stage_targeted_variants(variant_ids, settings, pre_order_data_ok=True):
             if live_qty > 0:
                 desired_qty = float(live_qty)
                 is_pre_order = 0
-            elif pre_order_qty > pre_order_threshold:
+            elif pre_order_qty > 0:
+                # Threshold already applied in update_pre_order_qty (company quantity).
                 desired_qty = float(pre_order_qty)
                 is_pre_order = 1
                 update_status += f"[PreOrderSynced→{desired_qty:g}] "

@@ -79,7 +79,72 @@ def ensure_department_history_unique_constraint():
 
     frappe.db.add_unique no-ops if the index already exists, so this is
     safe to run on every migrate.
+
+    Rows written BEFORE the atomic writers landed can still violate the
+    constraint, and add_unique does not clean up after itself - it just raises
+    IntegrityError and aborts the whole migrate. So dedupe first. Observed on
+    production 2026-09-22: 3 duplicate pairs, each two rows with count=1 written
+    seconds apart by the same user - one event, double-written, exactly the race
+    described above.
+
+    Merge rule is MAX, not SUM: these pairs are one event recorded twice, so
+    summing would inflate the department pass count. A genuine second pass would
+    have been an increment on the existing row, not a new row.
     """
+    duplicates = frappe.db.sql("""
+        SELECT parent, departmant, COUNT(*) AS n
+        FROM `tabDepartment History`
+        GROUP BY parent, departmant
+        HAVING COUNT(*) > 1
+    """, as_dict=True)
+
+    if duplicates:
+        # Keep the earliest row of each group, fold the others into it, delete
+        # the rest. Done in SQL per group rather than through the ORM: these are
+        # child rows of Serial No and re-saving the parent would re-trigger the
+        # very writers that created the duplicates.
+        for d in duplicates:
+            rows = frappe.db.sql("""
+                SELECT name,
+                       COALESCE(`count`, 0) AS cnt,
+                       COALESCE(`restrict`, 0) AS restrict_flag,
+                       COALESCE(limit_count, 0) AS limit_count
+                FROM `tabDepartment History`
+                WHERE parent = %s AND departmant = %s
+                ORDER BY creation, name
+            """, (d["parent"], d["departmant"]), as_dict=True)
+
+            keeper = rows[0]
+            losers = [r["name"] for r in rows[1:]]
+
+            frappe.db.sql("""
+                UPDATE `tabDepartment History`
+                SET `count` = %s, `restrict` = %s, limit_count = %s
+                WHERE name = %s
+            """, (
+                max(r["cnt"] for r in rows),
+                max(r["restrict_flag"] for r in rows),
+                max(r["limit_count"] for r in rows),
+                keeper["name"],
+            ))
+
+            frappe.db.sql(
+                "DELETE FROM `tabDepartment History` WHERE name IN ({})".format(
+                    ", ".join(["%s"] * len(losers))
+                ),
+                tuple(losers),
+            )
+
+        frappe.db.commit()
+        frappe.log_error(
+            "Removed {} duplicate Department History row(s) across {} "
+            "(parent, departmant) group(s) before applying the unique "
+            "index".format(
+                sum(d["n"] - 1 for d in duplicates), len(duplicates)
+            ),
+            "ensure_department_history_unique_constraint",
+        )
+
     frappe.db.add_unique("Department History", ["parent", "departmant"])
 
 

@@ -333,22 +333,31 @@ class PartAllocationRun:
         self.stock_snapshot["warehouses"] = sorted(warehouses)
         if not warehouses:
             return {}
-        params = {"warehouses": tuple(warehouses)}
-        # Match the Google Sheet stock query: serialized items are counted from
-        # tabSerial No, while non-serialized items are summed from positive Bin
-        # quantities.  Do not substitute Bin quantity for serialized stock;
-        # that can make ERP allocate a part which the sheet considers absent.
+        params = {
+            "warehouses": tuple(warehouses),
+            "excluded_warehouses": tuple(sorted(STORES_STOCK_EXCLUDED_WAREHOUSES)),
+        }
+        # Match the Sheet stock rule: serialized items are counted from
+        # Serial No records, while non-serialized items are summed from
+        # positive Bin quantities.  Keep the sources separate so stale Bin
+        # quantities cannot inflate serialized stock.
         serialized_rows = frappe.db.sql("""
             SELECT
                 sn.item_code,
                 sn.warehouse,
-                COUNT(sn.serial_no) AS qty
+                COUNT(*) AS qty
             FROM `tabSerial No` sn
             JOIN `tabItem` i ON i.item_code = sn.item_code
+            JOIN `tabWarehouse` w ON w.name = sn.warehouse
             WHERE sn.warehouse IN %(warehouses)s
+                AND w.department = 'Stores - NJ'
+                AND sn.department = 'Stores - NJ'
+                AND sn.status = 'Active'
                 AND i.has_serial_no = 1
                 AND sn.warehouse IS NOT NULL
+                AND sn.status = 'Active'
                 AND sn.warehouse <> ''
+                AND sn.warehouse NOT IN %(excluded_warehouses)s
             GROUP BY sn.item_code, sn.warehouse
         """, params, as_dict=True)
         bins = frappe.db.sql("""
@@ -359,9 +368,12 @@ class PartAllocationRun:
                 IFNULL(i.has_serial_no, 0) AS has_serial_no
             FROM `tabBin` b
             JOIN `tabItem` i ON i.name = b.item_code
+            JOIN `tabWarehouse` w ON w.name = b.warehouse
             WHERE b.warehouse IN %(warehouses)s
+                AND w.department = 'Stores - NJ'
                 AND i.has_serial_no = 0
                 AND b.actual_qty > 0
+                AND b.warehouse NOT IN %(excluded_warehouses)s
             GROUP BY b.item_code, b.warehouse
         """, params, as_dict=True)
         stock = defaultdict(float)
@@ -381,7 +393,7 @@ class PartAllocationRun:
             details[code]["initial_available_qty"] = stock[code]
         self.stock_snapshot["warehouse_scope"] = "Stores - NJ enabled warehouses minus Google Sheet exclusion list"
         self.stock_snapshot["serialized_qty_scope"] = "Count of tabSerial No rows in eligible Stores - NJ warehouses"
-        self.stock_snapshot["bin_qty_scope"] = "Positive tabBin.actual_qty rows are counted only for non-serialized items"
+        self.stock_snapshot["bin_qty_scope"] = "Positive tabBin.actual_qty rows counted only for non-serialized items"
         self.stock_snapshot["bag_exclusion_scope"] = "Skipped global Bag List deduction from pooled Stores quantity"
         return dict(stock)
 

@@ -154,9 +154,15 @@ def get_repack_variant_options(item_template):
     result = {}
 
     for row in template.attributes:
-        result[row.attribute] = get_variant_attribute_options(
+
+        options = get_variant_attribute_options(
             item_template=item_template,
             attribute=row.attribute
         ) or []
+
+        if row.attribute == "MODEL":
+            options.insert(0, "")
+
+        result[row.attribute] = options
 
     return result

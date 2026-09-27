@@ -131,33 +131,49 @@ def create_rq_doc_by_item_codes(item_codes, sales_order=None):
     except Exception:
         log_error(frappe.get_traceback(), "create_rq_doc_by_item_codes - updting_sla_department")
 
-    # Step 4c: Update Pre-Order Quantity
-    try:
-        from nj_features.nj_features.doctype.so_quantity_check.so_quantity_check import update_pre_order_qty
-        update_pre_order_qty(settings)
-    except Exception:
-        log_error(frappe.get_traceback(), "create_rq_doc_by_item_codes - update_pre_order_qty")
+    # Step 4c: Pre-order quantities are deliberately NOT recomputed here.
+    #
+    # update_pre_order_qty() reallocates the pool across the WHOLE table, but a
+    # targeted run only re-stages and re-pushes the handful of variants it was
+    # called for. Running it from a Sales Order submit therefore moves claims
+    # globally while only the batch gets pushed: the variant that lost its
+    # claim is zeroed on Shopify and the variant that won it is never pushed at
+    # all, so a listing goes from 32 units to 0 and nothing takes its place.
+    #
+    # The hourly staging run owns pre-order allocation. A targeted run holds
+    # whatever is already staged and only moves live stock.
+    pre_order_data_ok = False
 
     # Step 5: Stage into NJ Inventory Sync Main
-    shopify_data = stage_targeted_variants(variant_ids, settings)
+    shopify_data = stage_targeted_variants(variant_ids, settings, pre_order_data_ok=pre_order_data_ok)
 
     # Step 6: Immediate Push to Shopify
     push_targeted_variants_to_shopify(variant_ids, settings)
 
-    # Step 7: Push Pre-Order Policies & ETD Variant Metafield to Shopify
+    # Step 7: Push Pre-Order Policies & ETD / Pre-Order Metafields to Shopify
     try:
         from nj_features.nj_features.api.shopify_inventory import (
             sync_shopify_pre_order_policies,
             sync_shopify_etd_metafields,
+            sync_shopify_pre_order_metafields_and_tags,
         )
-        sync_data = [{"variant_id": vid} for vid in variant_ids]
+        # These all run normally. A targeted run does not REALLOCATE pre-order
+        # (that is the hourly job's job), but it must still publish the state of
+        # the variants it just moved - otherwise a variant that gained stock
+        # keeps a stale "pre_order" badge until the next hour.
+        sync_payload = shopify_data if shopify_data else [{"variant_id": vid} for vid in variant_ids]
         sync_shopify_pre_order_policies(
-            sync_data,
+            sync_payload,
             shop=settings.get("shop"),
             token=settings.get("token"),
         )
         sync_shopify_etd_metafields(
-            sync_data,
+            sync_payload,
+            shop=settings.get("shop"),
+            token=settings.get("token"),
+        )
+        sync_shopify_pre_order_metafields_and_tags(
+            sync_payload,
             shop=settings.get("shop"),
             token=settings.get("token"),
         )
@@ -383,7 +399,12 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
         # Step 2: Get sales order pending quantities with line-level delivery matching
         hardware_groups_tuple = tuple(item_groups_list)
 
-        pending_so_data = frappe.db.sql("""
+        # Imported inside the function: reservation_service imports
+        # overrides.sales_order at module level, so a top-level import here risks
+        # an import cycle.
+        from nj_features.services.reservation_service import RTO_EXCLUSION_SQL
+
+        pending_so_data = frappe.db.sql(f"""
             SELECT 
                 so_comp.sales_order,
                 so_comp.component_item_code,
@@ -407,13 +428,18 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
                     AND IFNULL(it.is_stock_item, 0) = 1
                     AND it.item_group IN %(hardware_groups)s
                     AND so.name NOT IN (
-                        SELECT DISTINCT sales_order 
-                        FROM `tabNJ Refund` 
-                        WHERE refund_status IN ('Paid', 'Refunded', 'Initiated') 
-                          AND docstatus = 1 
-                          AND sales_order IS NOT NULL 
+                        SELECT DISTINCT sales_order
+                        FROM `tabNJ Refund`
+                        WHERE refund_status IN ('Paid', 'Refunded', 'Initiated')
+                          AND docstatus = 1
+                          AND sales_order IS NOT NULL
                           AND sales_order != ''
                     )
+                    -- An RTO'd order is not pending demand: the parcel came back,
+                    -- so counting it here subtracted a unit from what Shopify was
+                    -- allowed to advertise, for an order that will never ship.
+                    -- Same list the allocator uses - see RTO_EXCLUSION_SQL.
+                    {RTO_EXCLUSION_SQL}
                     AND (
                         so.creation > CURDATE() - INTERVAL 100 DAY
                         OR so.name IN (
@@ -446,13 +472,18 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
                     AND IFNULL(it_bundle.is_stock_item, 0) = 0
                     AND it_comp.item_group IN %(hardware_groups)s
                     AND so.name NOT IN (
-                        SELECT DISTINCT sales_order 
-                        FROM `tabNJ Refund` 
-                        WHERE refund_status IN ('Paid', 'Refunded', 'Initiated') 
-                          AND docstatus = 1 
-                          AND sales_order IS NOT NULL 
+                        SELECT DISTINCT sales_order
+                        FROM `tabNJ Refund`
+                        WHERE refund_status IN ('Paid', 'Refunded', 'Initiated')
+                          AND docstatus = 1
+                          AND sales_order IS NOT NULL
                           AND sales_order != ''
                     )
+                    -- An RTO'd order is not pending demand: the parcel came back,
+                    -- so counting it here subtracted a unit from what Shopify was
+                    -- allowed to advertise, for an order that will never ship.
+                    -- Same list the allocator uses - see RTO_EXCLUSION_SQL.
+                    {RTO_EXCLUSION_SQL}
                     AND (
                         so.creation > CURDATE() - INTERVAL 100 DAY
                         OR so.name IN (
@@ -480,8 +511,12 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
             HAVING total_pending_qty > 0
         """, {"hardware_groups": hardware_groups_tuple}, as_dict=True)
 
-        # Step 2.5: Map allocated/reserved serials in ready departments per (sales_order, item_code)
-        # to prevent double-deduction (only deducting serials that were excluded from actual_qty)
+        # Step 2.5: Map allocated/reserved serials per (sales_order, item_code)
+        # to prevent double-deduction. An order whose machine is already reserved
+        # (whether in Packing, FQC, or upstream in QC/L2/Testing) is covered by that serial
+        # and must NOT deduct from unreserved sellable stock in ready departments.
+        # Delivered units (sales_order) are handled by line_delivered_qty and excluded here.
+        # Reject and Scrap departments/warehouses are strictly excluded from coverage.
         alloc_query = f"""
             SELECT 
                 s.reserved_sales_order,
@@ -495,10 +530,12 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
               AND s.status = 'Active'
               AND s.is_replace = 0
               AND COALESCE(s.item_group, i.item_group) IN ({item_group_placeholders})
-              AND (w.department IN ({department_placeholders}) {item_warehouse_clause})
+              AND (s.return_reason IS NULL OR s.return_reason = '' OR s.return_reason NOT IN ('Repair', 'Replace'))
+              AND (w.department NOT LIKE '%%%%Reject%%%%' AND w.department NOT LIKE '%%%%Scrap%%%%')
+              AND (s.warehouse NOT LIKE '%%%%Reject%%%%' AND s.warehouse NOT LIKE '%%%%Scrap%%%%')
             GROUP BY s.reserved_sales_order, IFNULL(NULLIF(s.to_make, ''), s.item_code)
         """
-        alloc_params = tuple(item_groups_list + departments_list + warehouses_list)
+        alloc_params = tuple(item_groups_list)
         allocated_serials = frappe.db.sql(alloc_query, alloc_params, as_dict=True)
         alloc_map = {(r.reserved_sales_order, r.item_code): r.allocated_qty for r in allocated_serials}
 
@@ -517,13 +554,29 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
         if stock_map:
             affected_item_codes = list(stock_map.keys())
             ip = ', '.join(['%s'] * len(affected_item_codes))
+
+            # A targeted run deliberately does NOT recompute pre-order
+            # (pre_order_data_ok is False above - the hourly staging run owns
+            # that allocation). But this path rebuilds rows with DELETE+INSERT,
+            # so anything not carried across is silently reset to 0. Read the
+            # current pre-order figures back and re-insert them unchanged,
+            # otherwise a targeted run zeroes the SOQC screen for these items
+            # while Shopify keeps showing the held value.
+            existing_pre_order = dict(frappe.db.sql(
+                f"""SELECT item_code,
+                           CAST(COALESCE(NULLIF(pre_order_qty, ''), '0') AS SIGNED)
+                    FROM `tabSO Quantity Check`
+                    WHERE item_code IN ({ip})""",
+                tuple(affected_item_codes),
+            ) or [])
             now_time = frappe.utils.now()
             user = frappe.session.user or "Administrator"
             fields = [
                 "name", "creation", "modified", "modified_by", "owner",
                 "docstatus", "idx", "item_code", "parent1", "actual_qty",
                 "so_quantity", "remaining_qty", "update_qty", "need_to_reduce",
-                "remove_parent_qty", "update_qty2", "proportional_remove_qty", "sla"
+                "remove_parent_qty", "update_qty2", "proportional_remove_qty", "sla",
+                "pre_order_qty"
             ]
             values = []
             for item_code, data in stock_map.items():
@@ -536,14 +589,19 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
                     frappe.generate_hash(length=10), now_time, now_time, user, user,
                     0, 0, item_code, data.get('parent1', ''), str(actual_qty),
                     str(so_quantity), str(remaining_qty), str(update_qty), str(need_to_reduce),
-                    "0", "0", None, 0
+                    "0", "0", None, 0,
+                    int(existing_pre_order.get(item_code, 0) or 0)
                 ))
 
             max_retries = 3
             for attempt in range(max_retries):
                 try:
                     frappe.db.sql(f"DELETE FROM `tabSO Quantity Check` WHERE item_code IN ({ip})", tuple(affected_item_codes))
-                    frappe.db.bulk_insert("SO Quantity Check", fields, values)
+                    if values:
+                        placeholders = ', '.join(['(' + ', '.join(['%s'] * len(fields)) + ')'] * len(values))
+                        flat_values = [v for row in values for v in row]
+                        fields_str = ', '.join([f"`{f}`" for f in fields])
+                        frappe.db.sql(f"INSERT INTO `tabSO Quantity Check` ({fields_str}) VALUES {placeholders}", tuple(flat_values))
                     frappe.db.commit()
                     break
                 except (pymysql.err.OperationalError, frappe.QueryDeadlockError) as e:
@@ -606,18 +664,19 @@ def update_parent_quantity_for_variant_ids(variant_ids):
             return True
 
         pp = ', '.join(['%s'] * len(parent1_list))
-        # Single joined UPDATE - no N+1 loop needed
+        # Left-joined UPDATE so parents with zero shortfall reset remove_parent_qty to '0'
         frappe.db.sql(f"""
             UPDATE `tabSO Quantity Check` t
-            INNER JOIN (
+            LEFT JOIN (
                 SELECT parent1, SUM(CAST(need_to_reduce AS DECIMAL(10,2))) AS total
                 FROM `tabSO Quantity Check`
                 WHERE CAST(need_to_reduce AS DECIMAL(10,2)) > 0
                 AND parent1 IN ({pp})
                 GROUP BY parent1
             ) s ON t.parent1 = s.parent1
-            SET t.remove_parent_qty = CAST(s.total AS CHAR)
-        """, tuple(parent1_list))
+            SET t.remove_parent_qty = CAST(COALESCE(s.total, 0) AS CHAR)
+            WHERE t.parent1 IN ({pp})
+        """, tuple(parent1_list + parent1_list))
 
         frappe.db.commit()
         log_error(
@@ -641,47 +700,51 @@ def update_parent_quantity_for_variant_ids(variant_ids):
 def update_proportional_qty_and_updt_qty_for_variant_ids(variant_ids):
     """
     Targeted version of update_proportional_qty_and_updt_qty().
-    Only updates parent1 groups affected by the given variant_ids.
+    Only updates parent1 groups affected by the given variant_ids using
+    the Largest Remainder (Hamilton's) distribution method.
     """
     try:
         parent1_list = _get_affected_parent1_list(variant_ids)
         if not parent1_list:
             return True
 
+        from nj_features.nj_features.doctype.so_quantity_check.so_quantity_check import (
+            distribute_proportional_deduction
+        )
+
         pp = ', '.join(['%s'] * len(parent1_list))
-        # Single joined UPDATE - replaces N+1 loop
-        frappe.db.sql(f"""
-            UPDATE `tabSO Quantity Check` t
-            INNER JOIN (
-                SELECT parent1,
-                    SUM(CAST(COALESCE(NULLIF(update_qty, ''), '0') AS DECIMAL(10,2))) AS total_update_qty
-                FROM `tabSO Quantity Check`
-                WHERE parent1 IN ({pp})
-                GROUP BY parent1
-            ) s ON t.parent1 = s.parent1
-            SET
-                t.proportional_remove_qty = CAST(
-                    IF(s.total_update_qty > 0,
-                        ROUND((CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS DECIMAL(10,2)) / s.total_update_qty) * CAST(COALESCE(NULLIF(t.remove_parent_qty, ''), '0') AS DECIMAL(10,2))),
-                        0
-                    ) AS SIGNED
-                ),
-                t.update_qty2 = CAST(
-                    IF(CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS DECIMAL(10,2)) <= 0,
-                        0,
-                        GREATEST(
-                            CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS SIGNED) -
-                            CAST(
-                                IF(s.total_update_qty > 0,
-                                    ROUND((CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS DECIMAL(10,2)) / s.total_update_qty) * CAST(COALESCE(NULLIF(t.remove_parent_qty, ''), '0') AS DECIMAL(10,2))),
-                                    0
-                                ) AS SIGNED
-                            ),
-                            0
-                        )
-                    ) AS SIGNED
-                )
-        """, tuple(parent1_list))
+        rows = frappe.db.sql(f"""
+            SELECT name, parent1, item_code, update_qty, need_to_reduce, pending_allocation_qty
+            FROM `tabSO Quantity Check`
+            WHERE parent1 IN ({pp})
+        """, tuple(parent1_list), as_dict=True)
+
+        if not rows:
+            return True
+
+        parents_map = {}
+        for r in rows:
+            parents_map.setdefault(r["parent1"], []).append(r)
+
+        for parent1, p_rows in parents_map.items():
+            # Derive shortfall dynamically from live need_to_reduce across all siblings
+            remove_parent_qty = int(sum(float(r.get("need_to_reduce") or 0) for r in p_rows))
+            allocations = distribute_proportional_deduction(p_rows, remove_parent_qty)
+            for item_alloc in allocations:
+                frappe.db.sql("""
+                    UPDATE `tabSO Quantity Check`
+                    SET remove_parent_qty = %s,
+                        proportional_remove_qty = %s,
+                        update_qty2 = %s,
+                        pending_allocation_qty = %s
+                    WHERE name = %s
+                """, (
+                    str(remove_parent_qty),
+                    str(item_alloc["proportional_remove_qty"]),
+                    str(item_alloc["update_qty2"]),
+                    item_alloc["pending_allocation_qty"],
+                    item_alloc["name"]
+                ))
 
         frappe.db.commit()
         log_error(
@@ -691,7 +754,7 @@ def update_proportional_qty_and_updt_qty_for_variant_ids(variant_ids):
         )
         return True
 
-    except pymysql.err.OperationalError as e:
+    except pymysql.err.OperationalError:
         return False
     except Exception:
         log_error(frappe.get_traceback(), "update_proportional_qty_and_updt_qty_for_variant_ids")
@@ -702,7 +765,7 @@ def update_proportional_qty_and_updt_qty_for_variant_ids(variant_ids):
 # 🔹 STEP 5: Stage Affected Variants into NJ Inventory Sync Main
 # =============================================================================
 
-def stage_targeted_variants(variant_ids, settings):
+def stage_targeted_variants(variant_ids, settings, pre_order_data_ok=True):
     """
     Aggregates final quantities from SO Quantity Check for affected variants,
     applies business rules, UPSERTs into NJ Inventory Sync Main,
@@ -755,6 +818,13 @@ def stage_targeted_variants(variant_ids, settings):
         """
         results = frappe.db.sql(query, tuple(variant_ids), as_dict=True)
 
+        from nj_features.nj_features.api.shopify_inventory import (
+            get_inventory_sync_flags,
+            resolve_pre_order_claims,
+            _effective_live_qty,
+        )
+        flags = get_inventory_sync_flags()
+
         # Parent qty map (same as create_rq_doc)
         parent_qty_map = frappe.db.sql("""
             SELECT
@@ -769,7 +839,15 @@ def stage_targeted_variants(variant_ids, settings):
             for row in parent_qty_map
         }
 
-        flags = get_inventory_sync_flags()
+        # One machine, one variant. resolve_pre_order_claims() looks at every
+        # variant an allocated item code appears in, not just the ones in this
+        # targeted batch, so a narrow sync cannot hand itself a claim that a
+        # variant outside the batch is already advertising.
+        # Run AFTER parent quantities are loaded: mirrors Parent Override.
+        if pre_order_data_ok:
+            resolve_pre_order_claims(
+                results, effective_live=_effective_live_qty(results, flags, parent_qty_dict)
+            )
 
         # Pre-fetch live Shopify quantities and inventory_item_ids so the queueing
         # decision is based on actual live store state, not stale DB records.
@@ -826,11 +904,27 @@ def stage_targeted_variants(variant_ids, settings):
                 if shopify_row and shopify_row.get("location_quantity") is not None
                 else (safe_float(shopify_row.get("inventory_quantity")) if shopify_row else None)
             )
-            desired_qty = float(row.total_actual_qty)
-            quantity_matches = (
-                fresh_shopify_qty is not None
-                and desired_qty == fresh_shopify_qty
-            )
+            live_qty = safe_float(row.total_actual_qty) or 0
+            pre_order_qty = safe_float(row.total_pre_order_qty) or 0
+
+            hold_pre_order = False
+
+            if live_qty > 0:
+                desired_qty = float(live_qty)
+                is_pre_order = 0
+            elif pre_order_qty > 0:
+                # Threshold already applied in update_pre_order_qty (company quantity).
+                desired_qty = float(pre_order_qty)
+                is_pre_order = 1
+                update_status += f"[PreOrderSynced→{desired_qty:g}] "
+            elif not pre_order_data_ok:
+                hold_pre_order = True
+                desired_qty = None
+                is_pre_order = None
+                update_status += "[PreOrderHeld] "
+            else:
+                desired_qty = 0.0
+                is_pre_order = 0
 
             lookup_error = ""
             if not variant_id.isdigit():
@@ -848,12 +942,29 @@ def stage_targeted_variants(variant_ids, settings):
                 params.append(f"%{code.strip()}%")
 
             existing = frappe.db.sql(f"""
-                SELECT name, actual_qty, status, sync_error, shopify_quantity, estimated_time_of_dispatch, shopify_pre_order_qty, inventory_item_id
+                SELECT name, actual_qty, updated_qty, status, sync_error, shopify_quantity,
+                       estimated_time_of_dispatch, shopify_pre_order_qty,
+                       shopify_pre_order_enabled, inventory_item_id
                 FROM `tabNJ Inventory Sync Main`
                 WHERE shopify_variant_id = %s
                 AND ({' OR '.join(item_code_like_clauses)})
                 ORDER BY modified DESC
             """, tuple(params), as_dict=True)
+
+            # Breaker tripped: keep whatever this variant already advertises.
+            if hold_pre_order:
+                if existing:
+                    desired_qty = safe_float(existing[0].get("updated_qty")) or 0.0
+                    pre_order_qty = safe_float(existing[0].get("shopify_pre_order_qty")) or 0
+                    is_pre_order = int(existing[0].get("shopify_pre_order_enabled") or 0)
+                else:
+                    desired_qty = 0.0
+                    is_pre_order = 0
+
+            quantity_matches = (
+                fresh_shopify_qty is not None
+                and desired_qty == fresh_shopify_qty
+            )
 
             if existing:
                 existing_doc = existing[0]
@@ -869,9 +980,10 @@ def stage_targeted_variants(variant_ids, settings):
                 if not is_not_found:
                     update_payload = {
                         "is_active": 1,
-                        "actual_qty": row.total_actual_qty,
-                        "updated_qty": row.total_actual_qty,
-                        "shopify_pre_order_qty": row.total_pre_order_qty,
+                        "actual_qty": live_qty,
+                        "updated_qty": desired_qty,
+                        "shopify_pre_order_qty": pre_order_qty,
+                        "shopify_pre_order_enabled": is_pre_order,
                         "estimated_time_of_dispatch": new_etd,
                         "modified": frappe.utils.now(),
                     }
@@ -905,10 +1017,9 @@ def stage_targeted_variants(variant_ids, settings):
                     frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, update_payload)
             else:
                 new_doc = frappe.new_doc("NJ Inventory Sync Main")
-                qty = safe_float(row.total_actual_qty)
                 new_doc.is_active = 1
-                new_doc.actual_qty = qty
-                new_doc.updated_qty = qty
+                new_doc.actual_qty = live_qty
+                new_doc.updated_qty = desired_qty
                 if inventory_item_id:
                     new_doc.inventory_item_id = inventory_item_id
                 if fresh_shopify_qty is not None:
@@ -929,7 +1040,8 @@ def stage_targeted_variants(variant_ids, settings):
                     )
                     new_doc.sync_error = f"{update_status}{queue_reason}".strip()
 
-                new_doc.shopify_pre_order_qty = row.total_pre_order_qty
+                new_doc.shopify_pre_order_qty = pre_order_qty
+                new_doc.shopify_pre_order_enabled = is_pre_order
                 new_doc.estimated_time_of_dispatch = getattr(row, "estimated_time_of_dispatch", "") or ""
                 new_doc.item_code = row.item_codes
                 new_doc.item_group = row.item_groups

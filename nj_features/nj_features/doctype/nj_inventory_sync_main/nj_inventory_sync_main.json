@@ -123,6 +123,8 @@
    "default": "0",
    "fieldname": "shopify_pre_order_enabled",
    "fieldtype": "Check",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Shopify Pre Order Enabled"
   },
   {

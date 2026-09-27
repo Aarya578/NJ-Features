@@ -10872,6 +10872,29 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
                       AND (dn.cause_of_return IN ('Repair', 'Refund') OR dn.return_reason IN ('Repair', 'In-House Repair', 'Refund'))
                       AND dni.against_sales_order IS NOT NULL AND dni.against_sales_order != ''
                 )
+                -- An RTO'd order is not demand: the parcel came back, so the sale
+                -- did not happen. Kept in step with RTO_EXCLUSION_SQL in
+                -- reservation_service - the planner reserves units too
+                -- (_update_serial_reserved_sales_order), so excluding these orders
+                -- in the Sales Order allocator alone would leave the planner
+                -- re-reserving exactly what the allocator had stopped taking.
+                -- Latest submitted DN wins, so a deliberate re-ship lifts it.
+                AND so.name NOT IN (
+                    SELECT DISTINCT dni.against_sales_order
+                    FROM `tabDelivery Note Item` dni
+                    JOIN `tabDelivery Note` dn ON dn.name = dni.parent
+                    WHERE dn.docstatus = 1 AND dn.is_return = 1
+                      AND dn.cause_of_return IN ('RTO Customer', 'RTO Delivery Partner')
+                      AND dni.against_sales_order IS NOT NULL AND dni.against_sales_order != ''
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM `tabDelivery Note Item` dni2
+                          JOIN `tabDelivery Note` dn2 ON dn2.name = dni2.parent
+                          WHERE dni2.against_sales_order = dni.against_sales_order
+                            AND dn2.docstatus = 1
+                            AND dn2.creation > dn.creation
+                      )
+                )
                 AND (
                     (so.sale_type IN ('NJ-Website-B2C', 'NJ-Direct-B2C') AND so.creation > CURDATE() - INTERVAL %(lookback_b2c)s DAY)
                     OR
@@ -10902,7 +10925,7 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
         ) AS so_data
 
         LEFT JOIN (
-            SELECT
+                
                 dni.against_sales_order       AS against_sales_order,
                 CASE 
                     WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code
@@ -11925,8 +11948,13 @@ def _get_reserved_serials_for_department(dept_name: str) -> List[Dict]:
     an active Sales Order (status NOT Closed/Cancelled/Completed).
     These bypass normal allocation logic and are added directly to the plan.
     """
+    # Imported inside the function: reservation_service imports
+    # overrides.sales_order at module level, so a top-level import here risks an
+    # import cycle.
+    from nj_features.services.reservation_service import RTO_EXCLUSION_SQL
+
     rows = frappe.db.sql(
-        """
+        f"""
         SELECT
             sn.name,
             sn.item_code,
@@ -11964,6 +11992,11 @@ def _get_reserved_serials_for_department(dept_name: str) -> List[Dict]:
                 AND sales_order IS NOT NULL
                 AND sales_order != ''
           )
+          -- A unit still reserved to an RTO'd order must not be planned for it
+          -- either: the parcel came back, so the build has no customer waiting.
+          -- release_rto_dead_order_reservations() frees these, but this keeps
+          -- the plan correct for any that are still held when it runs.
+          {RTO_EXCLUSION_SQL}
           AND IFNULL(dp.department_sequence, 0) != 0
           AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
         """,
@@ -12568,6 +12601,210 @@ def run_latest_production_plan_part_allocation(plan_name: Optional[str] = None) 
         "allocated": allocated,
         "failed": failed,
         "allocation_audit": allocation_audit,
+    }
+
+
+# =========================
+# Hourly Priority Rank refresh
+# =========================
+
+# Ordering the hourly re-rank applies inside one department queue. Anything with
+# an unrecognised reason sorts after the three the production plan writes.
+PP_RANK_REASON_ORDER = {"Order": 0, "Reconfig": 1, "Forecast": 2}
+PP_RANK_DEAD_SERIAL_STATUSES = ("Delivered", "Scrapped", "Inactive")
+PP_RANK_FAR_FUTURE_DATE = "9999-12-31"
+
+
+@frappe.whitelist()
+def enqueue_latest_production_plan_priority_rank(plan_name: Optional[str] = None):
+    """Enqueue the Priority Rank refresh so the hourly scheduler tick never blocks on it."""
+    frappe.enqueue(
+        "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning"
+        ".refresh_latest_production_plan_priority_rank",
+        queue="long",
+        timeout=1800,
+        plan_name=plan_name,
+    )
+    return {"message": "Priority rank refresh enqueued successfully", "status": "queued"}
+
+
+def _get_priority_rank_sort_key(row: Dict) -> tuple:
+    """Sort key for one plan row inside its department queue. Lowest sorts to rank 1."""
+    # A serial that has left the floor (delivered, scrapped, deleted) keeps its plan
+    # row until the next full plan run. Ranking it first would park a permanent
+    # blocker at the top of the queue, so dead rows are pushed to the end instead.
+    dead = 1 if row.get("is_dead") else 0
+
+    # Stock Movement refuses every other serial while a part allocated one is still
+    # pending in the same scope, so the rank order mirrors the rule it enforces.
+    part_allocated = 0 if int(flt(row.get("part_allocation") or 0)) else 1
+
+    reason_order = PP_RANK_REASON_ORDER.get(row.get("reason"), len(PP_RANK_REASON_ORDER))
+
+    # Only Order rows carry a delivery date worth ranking on; the rest sort neutrally.
+    # delivery_date is a real DATE column, so the driver hands back a date or None --
+    # never a string needing parsing. getdate() does return None for a zero date
+    # though, and str(None) sorts after 9999-12-31, which would quietly bury the row
+    # at the bottom of its queue instead of treating it as "no date".
+    delivery_date = row.get("delivery_date") if row.get("reason") == "Order" else None
+    parsed_delivery_date = frappe.utils.getdate(delivery_date) if delivery_date else None
+    delivery_key = (
+        parsed_delivery_date.isoformat() if parsed_delivery_date else PP_RANK_FAR_FUTURE_DATE
+    )
+
+    # FIFO tiebreak: the oldest serial (largest age in days) moves first.
+    age_days = int(flt(row.get("serial_age_days") or 0))
+
+    return (dead, part_allocated, reason_order, delivery_key, -age_days, row.get("serial_no") or "")
+
+
+@frappe.whitelist()
+@log_io
+def refresh_latest_production_plan_priority_rank(plan_name: Optional[str] = None) -> Dict:
+    """
+    Re-rank the serials in the latest NJ Production Planning document, hourly.
+
+    Stock Movement re-reads priority_rank, part_allocation and current_department
+    straight off `tabFinal Production Planning Data` on every submit, so rewriting
+    the rank column is enough to change what the floor is allowed to move next --
+    the 12 hourly plan rebuild is not needed for that.
+
+    This job never touches item_code (the to make item), sales_order_no,
+    delivery_date, reason, or anything on the Serial No: what to build stays
+    exactly as the 12 hourly plan decided it. It rewrites priority_rank, and
+    refreshes current_department / current_warehouse to where the serial actually
+    is now -- the rank scope for a Rack/Transit move is the stored
+    current_department, so a stale value compares a serial against the wrong queue.
+    """
+    # Same guard as the part allocation job: this rewrites plan rows, so direct
+    # HTTP callers must be System Manager. The scheduler has no request and is
+    # unaffected.
+    if frappe.request:
+        frappe.only_for("System Manager")
+
+    latest_plan = plan_name or _get_latest_nj_production_plan_name()
+    if not latest_plan:
+        print("[RANK_REFRESH] No NJ Production Planning record found")
+        return {"status": "No NJ Production Planning found"}
+
+    print(f"[RANK_REFRESH] Started priority rank refresh plan={latest_plan}")
+
+    rows = frappe.db.sql(
+        """
+        SELECT
+            pp.name AS row_name,
+            pp.serial_no,
+            pp.current_department,
+            pp.current_warehouse,
+            pp.reason,
+            pp.delivery_date,
+            pp.serial_age_days,
+            CAST(IFNULL(NULLIF(pp.priority_rank, ''), '0') AS UNSIGNED) AS priority_rank,
+            IFNULL(pp.part_allocation, 0) AS part_allocation,
+            sn.name AS live_serial_no,
+            sn.status AS serial_status,
+            sn.warehouse AS live_warehouse,
+            wh.department AS live_department
+        FROM `tabFinal Production Planning Data` pp
+        LEFT JOIN `tabSerial No` sn ON sn.name = pp.serial_no
+        LEFT JOIN `tabWarehouse` wh ON wh.name = sn.warehouse
+        WHERE pp.parent = %(parent)s
+          AND pp.parenttype = 'NJ Production Planning'
+          AND pp.parentfield = 'lines'
+        ORDER BY pp.idx
+        """,
+        {"parent": latest_plan},
+        as_dict=True,
+    )
+
+    if not rows:
+        print(f"[RANK_REFRESH] No plan rows found plan={latest_plan}")
+        return {"status": "No plan rows found", "production_plan": latest_plan}
+
+    rows_by_dept: Dict[str, List[Dict]] = defaultdict(list)
+    dead_rows = 0
+
+    for row in rows:
+        row["is_dead"] = (
+            not row.get("live_serial_no")
+            or not row.get("live_warehouse")
+            or (row.get("serial_status") or "") in PP_RANK_DEAD_SERIAL_STATUSES
+        )
+        if row["is_dead"]:
+            dead_rows += 1
+
+        # Queue the serial where it physically is now, falling back to the planned
+        # department when the serial has no live warehouse/department any more.
+        dept_name = row.get("live_department") or row.get("current_department")
+        if not dept_name:
+            print(
+                "[RANK_REFRESH] SKIPPED serial=%s row=%s reason=no department to rank in"
+                % (row.get("serial_no"), row.get("row_name"))
+            )
+            continue
+
+        rows_by_dept[dept_name].append(row)
+
+    rank_updates = 0
+    position_updates = 0
+
+    for dept_name in sorted(rows_by_dept):
+        dept_rows = sorted(rows_by_dept[dept_name], key=_get_priority_rank_sort_key)
+
+        for new_rank, row in enumerate(dept_rows, start=1):
+            changes = {}
+
+            if int(flt(row.get("priority_rank") or 0)) != new_rank:
+                changes["priority_rank"] = str(new_rank)
+
+            if row.get("live_department") and row["live_department"] != row.get("current_department"):
+                changes["current_department"] = row["live_department"]
+
+            if row.get("live_warehouse") and row["live_warehouse"] != row.get("current_warehouse"):
+                changes["current_warehouse"] = row["live_warehouse"]
+
+            if not changes:
+                continue
+
+            if "priority_rank" in changes:
+                rank_updates += 1
+            if "current_department" in changes or "current_warehouse" in changes:
+                position_updates += 1
+
+            frappe.db.set_value(
+                "Final Production Planning Data",
+                row["row_name"],
+                changes,
+                update_modified=False,
+            )
+            # Per row detail goes to the rotating plan log, not the scheduler log:
+            # this runs 24 times a day over a few thousand rows.
+            logger.debug(
+                "[RANK_REFRESH] UPDATED serial=%s department=%s old_rank=%s new_rank=%s changes=%s",
+                *(
+                    row.get("serial_no"),
+                    dept_name,
+                    row.get("priority_rank"),
+                    new_rank,
+                    ", ".join(sorted(changes)),
+                )
+            )
+
+    frappe.db.commit()
+    print(
+        "[RANK_REFRESH] Completed plan=%s departments=%s rows=%s rank_updates=%s "
+        "position_updates=%s dead_rows=%s"
+        % (latest_plan, len(rows_by_dept), len(rows), rank_updates, position_updates, dead_rows)
+    )
+
+    return {
+        "status": "Completed",
+        "production_plan": latest_plan,
+        "departments": len(rows_by_dept),
+        "rows": len(rows),
+        "rank_updates": rank_updates,
+        "position_updates": position_updates,
+        "dead_rows": dead_rows,
     }
 
 

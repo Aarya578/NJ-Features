@@ -45,6 +45,13 @@ def _safe_int(v, default=0) -> int:
 def update_so_quantity_check(settings):
     """Update SO Quantity Check DocType with data from inventory and pending sales orders"""
     try:
+        try:
+            frappe.db.sql("SET SESSION wait_timeout = 600")
+            frappe.db.sql("SET SESSION net_read_timeout = 600")
+            frappe.db.sql("SET SESSION net_write_timeout = 600")
+        except Exception:
+            pass
+
         warehouses_list = []
         warehouses = settings.get('warehouses') or ''
         departments = settings.get('departments') or ''
@@ -183,7 +190,12 @@ def update_so_quantity_check(settings):
         # Step 2: Get sales order pending quantities with line-level delivery matching,
         hardware_groups_tuple = tuple(item_groups_list)
 
-        pending_so_data = frappe.db.sql("""
+        # Imported inside the function: reservation_service imports
+        # overrides.sales_order at module level, so a top-level import here risks
+        # an import cycle.
+        from nj_features.services.reservation_service import RTO_EXCLUSION_SQL
+
+        pending_so_data = frappe.db.sql(f"""
             SELECT 
                 so_comp.sales_order,
                 so_comp.component_item_code,
@@ -207,13 +219,20 @@ def update_so_quantity_check(settings):
                     AND IFNULL(it.is_stock_item, 0) = 1
                     AND it.item_group IN %(hardware_groups)s
                     AND so.name NOT IN (
-                        SELECT DISTINCT sales_order 
-                        FROM `tabNJ Refund` 
-                        WHERE refund_status IN ('Paid', 'Refunded', 'Initiated') 
-                          AND docstatus = 1 
-                          AND sales_order IS NOT NULL 
+                        SELECT DISTINCT sales_order
+                        FROM `tabNJ Refund`
+                        WHERE refund_status IN ('Paid', 'Refunded', 'Initiated')
+                          AND docstatus = 1
+                          AND sales_order IS NOT NULL
                           AND sales_order != ''
                     )
+                    -- An RTO'd order is not pending demand: the parcel came back,
+                    -- so counting it here subtracted a unit from what Shopify was
+                    -- allowed to advertise, for an order that will never ship.
+                    -- Same list the allocator uses - see RTO_EXCLUSION_SQL. This
+                    -- query is duplicated in shopify_inventory_targeted.py; the
+                    -- two decide the same number and must stay in step.
+                    {RTO_EXCLUSION_SQL}
                     AND (
                         so.creation > CURDATE() - INTERVAL 100 DAY
                         OR so.name IN (
@@ -246,13 +265,20 @@ def update_so_quantity_check(settings):
                     AND IFNULL(it_bundle.is_stock_item, 0) = 0
                     AND it_comp.item_group IN %(hardware_groups)s
                     AND so.name NOT IN (
-                        SELECT DISTINCT sales_order 
-                        FROM `tabNJ Refund` 
-                        WHERE refund_status IN ('Paid', 'Refunded', 'Initiated') 
-                          AND docstatus = 1 
-                          AND sales_order IS NOT NULL 
+                        SELECT DISTINCT sales_order
+                        FROM `tabNJ Refund`
+                        WHERE refund_status IN ('Paid', 'Refunded', 'Initiated')
+                          AND docstatus = 1
+                          AND sales_order IS NOT NULL
                           AND sales_order != ''
                     )
+                    -- An RTO'd order is not pending demand: the parcel came back,
+                    -- so counting it here subtracted a unit from what Shopify was
+                    -- allowed to advertise, for an order that will never ship.
+                    -- Same list the allocator uses - see RTO_EXCLUSION_SQL. This
+                    -- query is duplicated in shopify_inventory_targeted.py; the
+                    -- two decide the same number and must stay in step.
+                    {RTO_EXCLUSION_SQL}
                     AND (
                         so.creation > CURDATE() - INTERVAL 100 DAY
                         OR so.name IN (
@@ -280,8 +306,12 @@ def update_so_quantity_check(settings):
             HAVING total_pending_qty > 0
         """, {"hardware_groups": hardware_groups_tuple}, as_dict=True)
 
-        # Step 2.5: Map allocated/reserved serials in ready departments per (sales_order, item_code)
-        # to prevent double-deduction (only deducting serials that were excluded from actual_qty)
+        # Step 2.5: Map allocated/reserved serials per (sales_order, item_code)
+        # to prevent double-deduction. An order whose machine is already reserved
+        # (whether in Packing, FQC, or upstream in QC/L2/Testing) is covered by that serial
+        # and must NOT deduct from unreserved sellable stock in ready departments.
+        # Delivered units (sales_order) are handled by line_delivered_qty and excluded here.
+        # Reject and Scrap departments/warehouses are strictly excluded from coverage.
         alloc_query = f"""
             SELECT 
                 s.reserved_sales_order,
@@ -295,10 +325,12 @@ def update_so_quantity_check(settings):
               AND s.status = 'Active'
               AND s.is_replace = 0
               AND COALESCE(s.item_group, i.item_group) IN ({item_group_placeholders})
-              AND (w.department IN ({department_placeholders}) {item_warehouse_clause})
+              AND (s.return_reason IS NULL OR s.return_reason = '' OR s.return_reason NOT IN ('Repair', 'Replace'))
+              AND (w.department NOT LIKE '%%%%Reject%%%%' AND w.department NOT LIKE '%%%%Scrap%%%%')
+              AND (s.warehouse NOT LIKE '%%%%Reject%%%%' AND s.warehouse NOT LIKE '%%%%Scrap%%%%')
             GROUP BY s.reserved_sales_order, IFNULL(NULLIF(s.to_make, ''), s.item_code)
         """
-        alloc_params = tuple(item_groups_list + departments_list + warehouses_list)
+        alloc_params = tuple(item_groups_list)
         allocated_serials = frappe.db.sql(alloc_query, alloc_params, as_dict=True)
         alloc_map = {(r.reserved_sales_order, r.item_code): r.allocated_qty for r in allocated_serials}
 
@@ -607,16 +639,17 @@ def updting_sla_department():
 
 def update_parent_quantity():
     try:
-        # Update remove_parent_qty for all rows using a single joined UPDATE query
+        # Update remove_parent_qty for all rows using a LEFT JOIN so cleared shortfalls reset to '0'
         frappe.db.sql("""
             UPDATE `tabSO Quantity Check` t
-            INNER JOIN (
+            LEFT JOIN (
                 SELECT parent1, SUM(CAST(need_to_reduce AS DECIMAL(10,2))) AS total
                 FROM `tabSO Quantity Check`
                 WHERE CAST(need_to_reduce AS DECIMAL(10,2)) > 0
                 GROUP BY parent1
             ) s ON t.parent1 = s.parent1
-            SET t.remove_parent_qty = CAST(s.total AS CHAR)
+            SET t.remove_parent_qty = CAST(COALESCE(s.total, 0) AS CHAR)
+            WHERE t.parent1 IS NOT NULL AND t.parent1 != ''
         """)
 
         frappe.db.commit()
@@ -634,56 +667,169 @@ def update_parent_quantity():
         log_error(frappe.get_traceback(), "update_parent_quantity")
         return False
 
+def distribute_proportional_deduction(rows, total_remove_qty):
+    """
+    Distributes total_remove_qty across sibling rows of a parent using the
+    Largest Remainder (Hamilton's) method instead of independent ROUND(),
+    preventing over-deduction where multiple siblings round 0.5 up.
+
+    rows: list of dicts with:
+        name: str
+        item_code: str
+        update_qty: int/float/str
+        pending_allocation_qty: int/float/str/None
+
+    total_remove_qty: numeric (remove_parent_qty)
+
+    Returns: list of dicts with:
+        name: str
+        proportional_remove_qty: int
+        update_qty2: int
+        pending_allocation_qty: int
+    """
+    try:
+        remove_qty = int(float(total_remove_qty or 0))
+    except (ValueError, TypeError):
+        remove_qty = 0
+
+    parsed_rows = []
+    total_update_qty = 0
+    for r in rows:
+        try:
+            u = int(float(r.get("update_qty") or 0))
+        except (ValueError, TypeError):
+            u = 0
+        u_pos = max(0, u)
+        total_update_qty += u_pos
+        try:
+            p_alloc = int(float(r.get("pending_allocation_qty") or 0))
+        except (ValueError, TypeError):
+            p_alloc = 0
+        parsed_rows.append({
+            "name": r.get("name"),
+            "item_code": r.get("item_code") or "",
+            "u_pos": u_pos,
+            "raw_u": u,
+            "p_alloc": p_alloc,
+        })
+
+    if remove_qty <= 0:
+        results = []
+        for r in parsed_rows:
+            results.append({
+                "name": r["name"],
+                "proportional_remove_qty": 0,
+                "update_qty2": r["u_pos"],
+                "pending_allocation_qty": r["p_alloc"],
+            })
+        return results
+
+    if total_update_qty <= 0:
+        results = []
+        for r in parsed_rows:
+            results.append({
+                "name": r["name"],
+                "proportional_remove_qty": 0,
+                "update_qty2": 0,
+                "pending_allocation_qty": r["p_alloc"],
+            })
+        return results
+
+    # Largest Remainder (Hamilton's) distribution across rows with u_pos > 0
+    allocations = {}
+    base_sum = 0
+    candidates = []
+
+    for r in parsed_rows:
+        u_pos = r["u_pos"]
+        if u_pos > 0:
+            exact_share = (float(u_pos) / float(total_update_qty)) * float(remove_qty)
+            base = int(exact_share)
+            remainder = exact_share - base
+            allocations[r["name"]] = base
+            base_sum += base
+            candidates.append({
+                "name": r["name"],
+                "item_code": r["item_code"],
+                "u_pos": u_pos,
+                "remainder": remainder,
+            })
+        else:
+            allocations[r["name"]] = 0
+
+    # Distribute the remaining units to rows with the largest fractional remainders.
+    # Ties are broken by larger update_qty, then stable item_code and name.
+    surplus = remove_qty - base_sum
+    if surplus > 0:
+        candidates.sort(
+            key=lambda c: (-c["remainder"], -c["u_pos"], str(c["item_code"]), str(c["name"]))
+        )
+        for i in range(min(surplus, len(candidates))):
+            allocations[candidates[i]["name"]] += 1
+
+    results = []
+    for r in parsed_rows:
+        p_remove = allocations.get(r["name"], 0)
+        net = r["raw_u"] - p_remove
+        u_qty2 = max(0, net)
+        p_alloc = net if net < 0 else r["p_alloc"]
+        results.append({
+            "name": r["name"],
+            "proportional_remove_qty": p_remove,
+            "update_qty2": u_qty2,
+            "pending_allocation_qty": p_alloc,
+        })
+
+    return results
+
+
 def update_proportional_qty_and_updt_qty():
     try:
+        # Step 1: Fast SQL update for rows with no parent deduction needed.
         frappe.db.sql("""
-            UPDATE `tabSO Quantity Check` t
-            INNER JOIN (
-                SELECT parent1, 
-                    SUM(CAST(COALESCE(NULLIF(update_qty, ''), '0') AS DECIMAL(10,2))) AS total_update_qty
-                FROM `tabSO Quantity Check`
-                GROUP BY parent1
-            ) s ON t.parent1 = s.parent1
-            SET 
-                t.proportional_remove_qty = CAST(
-                    IF(s.total_update_qty > 0, 
-                        ROUND((CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS DECIMAL(10,2)) / s.total_update_qty) * CAST(COALESCE(NULLIF(t.remove_parent_qty, ''), '0') AS DECIMAL(10,2))), 
-                        0
-                    ) AS SIGNED
-                ),
-                t.pending_allocation_qty = IF(
-                    CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS SIGNED) -
-                    CAST(
-                        IF(s.total_update_qty > 0,
-                            ROUND((CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS DECIMAL(10,2)) / s.total_update_qty) * CAST(COALESCE(NULLIF(t.remove_parent_qty, ''), '0') AS DECIMAL(10,2))),
-                            0
-                        ) AS SIGNED
-                    ) < 0,
-                    CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS SIGNED) -
-                    CAST(
-                        IF(s.total_update_qty > 0,
-                            ROUND((CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS DECIMAL(10,2)) / s.total_update_qty) * CAST(COALESCE(NULLIF(t.remove_parent_qty, ''), '0') AS DECIMAL(10,2))),
-                            0
-                        ) AS SIGNED
-                    ),
-                    t.pending_allocation_qty
-                ),
-                t.update_qty2 = CAST(
-                    IF(CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS DECIMAL(10,2)) <= 0,
-                        0,
-                        GREATEST(
-                            CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS SIGNED) - 
-                            CAST(
-                                IF(s.total_update_qty > 0, 
-                                    ROUND((CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS DECIMAL(10,2)) / s.total_update_qty) * CAST(COALESCE(NULLIF(t.remove_parent_qty, ''), '0') AS DECIMAL(10,2))), 
-                                    0
-                                ) AS SIGNED
-                            ),
-                            0
-                        )
-                    ) AS SIGNED
-                )
+            UPDATE `tabSO Quantity Check`
+            SET proportional_remove_qty = '0',
+                update_qty2 = CAST(GREATEST(CAST(COALESCE(NULLIF(update_qty, ''), '0') AS SIGNED), 0) AS CHAR)
+            WHERE remove_parent_qty IS NULL 
+               OR remove_parent_qty = '' 
+               OR remove_parent_qty = '0'
+               OR CAST(remove_parent_qty AS DECIMAL(10,2)) <= 0
         """)
+
+        # Step 2: For rows belonging to parents with a positive shortfall (remove_parent_qty > 0),
+        # distribute the deduction using the Largest Remainder (Hamilton's) method.
+        # This fixes the double-subtraction bug where independent ROUND(0.5)
+        # on siblings removed multiple units for a single-unit deficit.
+        deficit_rows = frappe.db.sql("""
+            SELECT name, parent1, item_code, update_qty, need_to_reduce, pending_allocation_qty
+            FROM `tabSO Quantity Check`
+            WHERE parent1 IS NOT NULL AND parent1 != ''
+              AND CAST(COALESCE(NULLIF(remove_parent_qty, ''), '0') AS DECIMAL(10,2)) > 0
+        """, as_dict=True)
+
+        if deficit_rows:
+            parents_map = {}
+            for r in deficit_rows:
+                parents_map.setdefault(r["parent1"], []).append(r)
+
+            for parent1, p_rows in parents_map.items():
+                remove_parent_qty = int(sum(float(r.get("need_to_reduce") or 0) for r in p_rows))
+                allocations = distribute_proportional_deduction(p_rows, remove_parent_qty)
+                for item_alloc in allocations:
+                    frappe.db.sql("""
+                        UPDATE `tabSO Quantity Check`
+                        SET remove_parent_qty = %s,
+                            proportional_remove_qty = %s,
+                            update_qty2 = %s,
+                            pending_allocation_qty = %s
+                        WHERE name = %s
+                    """, (
+                        str(remove_parent_qty),
+                        str(item_alloc["proportional_remove_qty"]),
+                        str(item_alloc["update_qty2"]),
+                        item_alloc["pending_allocation_qty"],
+                        item_alloc["name"]
+                    ))
 
         frappe.db.commit()
         log_error("SO Quantity Check proportional quantity and update quantity updated", "update_proportional_qty_and_updt_qty", "Info")
@@ -700,121 +846,518 @@ def update_proportional_qty_and_updt_qty():
         return False
 
 
-def update_pre_order_qty(settings):
-    """Update pre-order quantities using parent stock from Part waiting to Packing & Dispatch."""
-    try:
-        warehouses = settings.get("warehouses") or ""
-        item_groups = settings.get("item_groups") or ""
+def _pre_order_config_filters(settings):
+    """Shared WHERE fragments for the pre-order WIP pool.
 
-        warehouses_list = [value.strip() for value in warehouses.split(",") if value.strip()]
-        item_groups_list = [value.strip() for value in item_groups.split(",") if value.strip()]
+    A machine counts towards pre-order only while it is inside the build
+    pipeline (between 'Part waiting' and 'Adaptor'), still free, and not
+    already promised to anybody.
+    """
+    warehouses = settings.get("warehouses") or ""
+    item_groups = settings.get("item_groups") or ""
 
-        settings_item_groups = [value.strip() for value in item_groups.split(",") if value.strip()]
-        item_groups_list = list(dict.fromkeys(settings_item_groups + SOQC_ITEM_GROUPS))
+    warehouses_list = [v.strip() for v in warehouses.split(",") if v.strip()]
+    settings_item_groups = [v.strip() for v in item_groups.split(",") if v.strip()]
+    item_groups_list = list(dict.fromkeys(settings_item_groups + SOQC_ITEM_GROUPS))
 
-        if not item_groups_list:
-            log_error(
-                "Item groups are required to update pre-order quantities",
-                "update_pre_order_qty",
-                "Warning",
-            )
-            return False
+    return warehouses_list, item_groups_list
 
-        # Dynamically fetch sequence boundaries for 'Part waiting' and 'Adaptor' (no hardcoded sequence numbers)
-        part_waiting_seq = frappe.db.get_value(
-            "Department", {"name": ["like", "%Part waiting%"]}, "department_sequence"
+
+def get_pre_order_pools(settings):
+    """Count free machines per parent + Processor.
+
+    The pool is keyed on parent + Processor deliberately. RAM and storage are
+    FITTED DURING THE BUILD, so a chassis sitting in L2 is not yet an 8/256 or
+    a 16/512 - it becomes whichever spec the parts going into it decide. Keying
+    the pre-order pool on RAM/Storage splits it on an attribute that has not
+    been chosen yet, which strands real build capacity across several
+    sub-threshold buckets and hides models that can genuinely be supplied.
+
+    Scope: the build window only - departments sequenced strictly between
+    'Part waiting' and 'Adaptor' that declare sla_item_groups, EXCLUDING the
+    ready-stock departments listed in NJ Inventory Settings.departments.
+    Pre-order and ready stock are disjoint by construction - a machine is
+    either sellable today (actual_qty) or promisable (pre_order_qty), never
+    both. Machines before the window (Inward, Paint, Core IQC) are NOT
+    promisable: they have not entered the line.
+
+    The over-promise this used to cause is NOT solved by narrowing the key; it
+    is solved in update_pre_order_qty, which CLAIMS the pool (one row takes it)
+    instead of copying it to every variant sharing the parent. Do not re-split
+    this key to fix a quantity bug - check the claim logic instead.
+
+    Returns {config_key: free_qty} for configurations with at least one
+    free machine, or None when the pool could not be computed (which is
+    NOT the same as "no stock" - see update_pre_order_qty).
+    """
+    warehouses_list, item_groups_list = _pre_order_config_filters(settings)
+
+    if not item_groups_list:
+        log_error(
+            "Item groups are required to update pre-order quantities",
+            "update_pre_order_qty",
+            "Error",
         )
-        adaptor_seq = frappe.db.get_value(
-            "Department", {"name": ["like", "%Adaptor%"]}, "department_sequence"
+        return None
+
+    # Scope: the build window only - departments sequenced strictly between
+    # 'Part waiting' and 'Adaptor' - MINUS the departments that already feed
+    # ready stock.
+    #
+    # Business rule (2026-09-23, reverting the 2026-09-22 widening): only a
+    # machine already inside the build window is promisable. A chassis sitting
+    # in Inward, Paint or Core IQC has not entered the line and must not be
+    # sold against. sla_item_groups is the gate that keeps a laptop out of a
+    # desktop-only department.
+    #
+    # Bounds are looked up by name, never hardcoded, and are EXCLUSIVE at both
+    # ends: 'Part waiting' itself is not build capacity, and 'Adaptor QC' is
+    # past the point this pool is meant to cover.
+    #
+    # The NOT IN is not optional, and it matters MORE at this width, not less:
+    # 'L1 - NJ' and 'L1 Line - NJ' sit inside the window and are also in the
+    # ready-stock scope, so without it 42 machines (measured 2026-09-23) would
+    # be sold twice - once as ready stock on their own variant, once as
+    # pre-order on a sibling. The claim step cannot catch this, because it only
+    # sees the pre-order pool and not what actual_qty already spent.
+    ready_stock_depts = [
+        d.strip() for d in (settings.get("departments") or "").split(",") if d.strip()
+    ]
+
+    part_waiting_seq = frappe.db.get_value(
+        "Department", {"name": ["like", "%Part waiting%"]}, "department_sequence"
+    )
+    adaptor_seq = frappe.db.get_value(
+        "Department", {"name": ["like", "%Adaptor%"]}, "department_sequence"
+    )
+
+    if part_waiting_seq is None or adaptor_seq is None:
+        log_error(
+            "Could not find the sequence for Part waiting or Adaptor - the "
+            "pre-order build window cannot be bounded, so it is not computed",
+            "update_pre_order_qty",
+            "Error",
         )
+        return None
 
-        if part_waiting_seq is None or adaptor_seq is None:
-            log_error(
-                "Could not dynamically find sequence for Part waiting or Adaptor departments",
-                "update_pre_order_qty",
-                "Warning",
-            )
-            return False
+    min_bound = min(part_waiting_seq, adaptor_seq)
+    max_bound = max(part_waiting_seq, adaptor_seq)
 
-        min_bound = min(part_waiting_seq, adaptor_seq)
-        max_bound = max(part_waiting_seq, adaptor_seq)
-
-        depts_list = frappe.db.sql_list("""
+    if ready_stock_depts:
+        exclude_placeholders = ", ".join(["%s"] * len(ready_stock_depts))
+        depts_list = frappe.db.sql_list(f"""
             SELECT name FROM `tabDepartment`
             WHERE department_sequence > %s AND department_sequence < %s
               AND sla_item_groups IS NOT NULL AND sla_item_groups != ''
-        """, (min_bound, max_bound))
-
-        if not depts_list:
-            return True
-
-        item_group_placeholders = ", ".join(["%s"] * len(item_groups_list))
-        department_placeholders = ", ".join(["%s"] * len(depts_list))
-        warehouse_placeholders = ", ".join(["%s"] * len(warehouses_list))
-        parent_warehouse_clause = (
-            f"OR b.warehouse IN ({warehouse_placeholders})" if warehouses_list else ""
-        )
-
-        update_query = f"""
-            UPDATE `tabSO Quantity Check` t
-            LEFT JOIN (
-                SELECT
-                    TRIM(CONCAT(i.variant_of, ' ', COALESCE(proc.attribute_value, ''))) AS parent,
-                    COUNT(b.name) AS total_actual_qty_for_parent
-                FROM `tabItem` i
-                LEFT JOIN `tabSerial No` b ON (i.name = b.item_code OR i.item_code = b.item_code)
-                LEFT JOIN `tabWarehouse` w ON b.warehouse = w.name
-                INNER JOIN `tabDepartment` dp ON w.department = dp.name
-                LEFT JOIN `tabSales Order` so ON b.sales_order_id = so.name
-                LEFT JOIN `tabItem Variant Attribute` proc
-                    ON proc.parent = i.name
-                    AND proc.attribute = 'Processor Type1'
-                WHERE
-                    COALESCE(b.item_group, i.item_group) IN ({item_group_placeholders})
-                    AND (w.department IN ({department_placeholders}) {parent_warehouse_clause})
-                    AND dp.sla_item_groups IS NOT NULL AND dp.sla_item_groups != ''
-                    AND FIND_IN_SET(COALESCE(b.item_group, i.item_group), dp.sla_item_groups)
-                    AND b.status = 'Active'
-                    AND b.is_replace = 0
-                    AND (b.reserved_sales_order IS NULL OR b.reserved_sales_order = '')
-                    AND (b.sales_order IS NULL OR b.sales_order = '')
-                    AND NOT EXISTS (
-                        SELECT 1 FROM `tabDelivery Note Item` dni
-                        JOIN `tabDelivery Note` dn ON dn.name = dni.parent
-                        WHERE dni.serial_no = b.name AND dni.docstatus = 1
-                          AND dn.is_return = 0
-                          AND dn.status NOT IN ('Return Issued', 'Closed')
-                          AND dn.name NOT IN (SELECT return_against FROM `tabDelivery Note` WHERE is_return = 1 AND docstatus = 1 AND return_against IS NOT NULL AND return_against != '')
-                    )
-                    AND (b.return_reason IS NULL OR b.return_reason = '' OR b.return_reason NOT IN ('Repair', 'Replace'))
-                GROUP BY i.variant_of, COALESCE(proc.attribute_value, '')
-            ) ps ON t.parent1 = ps.parent
-            SET t.pre_order_qty = IF(
-                ps.total_actual_qty_for_parent IS NOT NULL AND ps.total_actual_qty_for_parent > 0,
-                IF(
-                    CAST(COALESCE(NULLIF(t.pending_allocation_qty, ''), '0') AS SIGNED) < 0,
-                    LEAST(ABS(CAST(COALESCE(NULLIF(t.pending_allocation_qty, ''), '0') AS SIGNED)), ps.total_actual_qty_for_parent),
-                    ps.total_actual_qty_for_parent
-                ),
-                0
-            )
-        """
-
-        params = item_groups_list + depts_list + warehouses_list
-        frappe.db.sql(update_query, tuple(params))
-        frappe.db.commit()
+              AND name NOT IN ({exclude_placeholders})
+        """, tuple([min_bound, max_bound] + ready_stock_depts))
+    else:
         log_error(
-            "SO Quantity Check pre-order quantity updated using parent stock",
+            "NJ Inventory Settings.departments is empty - pre-order pool cannot be "
+            "separated from ready stock, so it is not computed",
+            "update_pre_order_qty",
+            "Error",
+        )
+        return None
+
+    if not depts_list:
+        log_error(
+            "No pre-order departments remain after excluding the ready-stock scope",
+            "update_pre_order_qty",
+            "Error",
+        )
+        return None
+
+    return _count_free_machines_by_config(depts_list, item_groups_list, warehouses_list)
+
+
+def _count_free_machines_by_config(depts_list, item_groups_list, warehouses_list=None):
+    """Free machines per parent + Processor across the given departments.
+
+    Shared by the pre-order pool and the company quantity so that both are
+    counted with exactly the same idea of "free" - only the department scope
+    differs. Returns {config_key: free_qty}.
+    """
+    warehouses_list = warehouses_list or []
+
+    item_group_placeholders = ", ".join(["%s"] * len(item_groups_list))
+    department_placeholders = ", ".join(["%s"] * len(depts_list))
+    warehouse_placeholders = ", ".join(["%s"] * len(warehouses_list))
+    parent_warehouse_clause = (
+        f"OR b.warehouse IN ({warehouse_placeholders})" if warehouses_list else ""
+    )
+
+    rows = frappe.db.sql(f"""
+        SELECT
+            CONCAT(
+                COALESCE(i.variant_of, ''), '|',
+                COALESCE(proc.attribute_value, '')
+            ) AS config_key,
+            COUNT(b.name) AS free_qty
+        -- Driven from `tabSerial No`, not `tabItem`. The original shape was
+        -- FROM `tabItem` i LEFT JOIN `tabSerial No` b
+        --      ON (i.name = b.item_code OR i.item_code = b.item_code)
+        -- and that OR stops MySQL using any index on the Item side: EXPLAIN
+        -- reported type=ALL with "Range checked for each record" over 229,643
+        -- Item rows, once per candidate serial. Widening the department scope
+        -- to the whole plant made that cost real - 273s per run.
+        --
+        -- Only 3 Items in 247,243 have name <> item_code (all mis-typed
+        -- accessories: a WIFI CARD and two SSDs), none of them in a pre-order
+        -- item group, so the OR branch contributes nothing here. Verified: this
+        -- form returns byte-identical pools (374 pools / 1,656 machines) in 73s.
+        FROM `tabSerial No` b
+        INNER JOIN `tabItem` i ON i.name = b.item_code
+        LEFT JOIN `tabWarehouse` w ON b.warehouse = w.name
+        INNER JOIN `tabDepartment` dp ON w.department = dp.name
+        LEFT JOIN `tabItem Variant Attribute` proc
+            ON proc.parent = i.name AND proc.attribute = 'Processor Type1'
+        WHERE
+            COALESCE(b.item_group, i.item_group) IN ({item_group_placeholders})
+            AND (w.department IN ({department_placeholders}) {parent_warehouse_clause})
+            AND dp.sla_item_groups IS NOT NULL AND dp.sla_item_groups != ''
+            AND FIND_IN_SET(COALESCE(b.item_group, i.item_group), dp.sla_item_groups)
+            AND b.status = 'Active'
+            AND b.is_replace = 0
+            AND (b.reserved_sales_order IS NULL OR b.reserved_sales_order = '')
+            AND (b.sales_order IS NULL OR b.sales_order = '')
+            AND NOT EXISTS (
+                SELECT 1 FROM `tabDelivery Note Item` dni
+                JOIN `tabDelivery Note` dn ON dn.name = dni.parent
+                WHERE dni.serial_no = b.name AND dni.docstatus = 1
+                  AND dn.is_return = 0
+                  AND dn.status NOT IN ('Return Issued', 'Closed')
+                  AND dn.name NOT IN (
+                      SELECT return_against FROM `tabDelivery Note`
+                      WHERE is_return = 1 AND docstatus = 1
+                        AND return_against IS NOT NULL AND return_against != ''
+                  )
+            )
+            AND (b.return_reason IS NULL OR b.return_reason = ''
+                 OR b.return_reason NOT IN ('Repair', 'Replace'))
+            -- An ungraded machine has no confirmed processor. Widening the pool
+            -- to Inward/Core IQC brought these in, and the pool key would then
+            -- advertise the ITEM MASTER's spec for a machine nobody has opened
+            -- yet (e.g. "Optiplex 3050 | NO PROCESSOR" going live at 21 units).
+            -- Pre-order is a promise about a specific build; we cannot make it
+            -- for a machine whose CPU is unknown.
+            AND proc.attribute_value IS NOT NULL
+            AND TRIM(proc.attribute_value) != ''
+            AND UPPER(TRIM(proc.attribute_value)) NOT IN ('NO PROCESSOR', 'UNKNOWN PROCESSOR')
+        GROUP BY config_key
+        HAVING COUNT(b.name) > 0
+    """, tuple(item_groups_list + depts_list + warehouses_list), as_dict=True)
+
+    return {r["config_key"]: int(r["free_qty"] or 0) for r in rows}
+
+
+def get_company_qty_pools(settings):
+    """Free machines per parent + Processor across the whole company.
+
+    This is the GATE for pre-order, not the quantity advertised. Business rule
+    (2026-09-23): a configuration may be listed as pre-order only when the
+    company as a whole holds more than pre_order_threshold free machines of it.
+    What is pushed is still the build-window pool from get_pre_order_pools -
+    the company quantity only decides whether that pool is shown or zeroed.
+
+    Scope: every pipeline department (department_sequence > 0) that declares
+    sla_item_groups, MINUS the ready-stock departments in NJ Inventory
+    Settings.departments (that stock is already live quantity) and MINUS
+    Reject/Scrap departments (not sellable stock). "Free" means exactly what
+    it means for the pool - see _count_free_machines_by_config.
+
+    Returns {config_key: qty}, or None when it could not be computed (which,
+    as with the pool, is NOT the same as "no stock").
+    """
+    _, item_groups_list = _pre_order_config_filters(settings)
+    if not item_groups_list:
+        log_error(
+            "Item groups are required to compute the company quantity",
+            "update_pre_order_qty",
+            "Error",
+        )
+        return None
+
+    ready_stock_depts = [
+        d.strip() for d in (settings.get("departments") or "").split(",") if d.strip()
+    ]
+    if not ready_stock_depts:
+        log_error(
+            "NJ Inventory Settings.departments is empty - company quantity cannot be "
+            "separated from ready stock, so it is not computed",
+            "update_pre_order_qty",
+            "Error",
+        )
+        return None
+
+    exclude_placeholders = ", ".join(["%s"] * len(ready_stock_depts))
+    depts_list = frappe.db.sql_list(f"""
+        SELECT name FROM `tabDepartment`
+        WHERE department_sequence > 0
+          AND sla_item_groups IS NOT NULL AND sla_item_groups != ''
+          AND name NOT IN ({exclude_placeholders})
+          AND name NOT LIKE %s AND name NOT LIKE %s
+    """, tuple(ready_stock_depts + ["%Reject%", "%Scrap%"]))
+
+    if not depts_list:
+        log_error(
+            "No company-quantity departments remain after excluding the ready-stock scope",
+            "update_pre_order_qty",
+            "Error",
+        )
+        return None
+
+    return _count_free_machines_by_config(depts_list, item_groups_list)
+
+
+def get_pre_order_exact_counts(settings):
+    """How many pooled machines carry each exact item code.
+
+    Used only to break ties in update_pre_order_qty: when several variants of
+    one parent+Processor can each claim the whole pool, the listing should go
+    to the variant the machines already are, not to whichever item code sorts
+    first. Returns {item_code: qty}; an empty dict simply means the tie-break
+    falls back to item_code order, which is the previous behaviour.
+    """
+    warehouses_list, item_groups_list = _pre_order_config_filters(settings)
+    if not item_groups_list:
+        return {}
+
+    ready_stock_depts = [
+        d.strip() for d in (settings.get("departments") or "").split(",") if d.strip()
+    ]
+    if not ready_stock_depts:
+        return {}
+
+    exclude_placeholders = ", ".join(["%s"] * len(ready_stock_depts))
+    depts_list = frappe.db.sql_list(f"""
+        SELECT name FROM `tabDepartment`
+        WHERE department_sequence > 0
+          AND sla_item_groups IS NOT NULL AND sla_item_groups != ''
+          AND name NOT IN ({exclude_placeholders})
+    """, tuple(ready_stock_depts))
+    if not depts_list:
+        return {}
+
+    item_group_placeholders = ", ".join(["%s"] * len(item_groups_list))
+    department_placeholders = ", ".join(["%s"] * len(depts_list))
+
+    try:
+        rows = frappe.db.sql(f"""
+            SELECT i.item_code, COUNT(b.name) AS qty
+            -- Same Serial-No-driven shape as get_pre_order_pools; see the note
+            -- there for why the OR join was removed.
+            FROM `tabSerial No` b
+            INNER JOIN `tabItem` i ON i.name = b.item_code
+            LEFT JOIN `tabWarehouse` w ON b.warehouse = w.name
+            INNER JOIN `tabDepartment` dp ON w.department = dp.name
+            WHERE
+                COALESCE(b.item_group, i.item_group) IN ({item_group_placeholders})
+                AND w.department IN ({department_placeholders})
+                AND dp.sla_item_groups IS NOT NULL AND dp.sla_item_groups != ''
+                AND FIND_IN_SET(COALESCE(b.item_group, i.item_group), dp.sla_item_groups)
+                AND b.status = 'Active'
+                AND b.is_replace = 0
+                AND (b.reserved_sales_order IS NULL OR b.reserved_sales_order = '')
+                AND (b.sales_order IS NULL OR b.sales_order = '')
+                AND (b.return_reason IS NULL OR b.return_reason = ''
+                     OR b.return_reason NOT IN ('Repair', 'Replace'))
+            GROUP BY i.item_code
+            HAVING COUNT(b.name) > 0
+        """, tuple(item_groups_list + depts_list), as_dict=True)
+    except Exception:
+        # A tie-break is a nicety, never a reason to fail the allocation.
+        log_error(frappe.get_traceback(), "get_pre_order_exact_counts", "Error")
+        return {}
+
+    return {r["item_code"]: int(r["qty"] or 0) for r in rows}
+
+
+def update_pre_order_qty(settings):
+    """Allocate the free WIP pool to SO Quantity Check rows, one claim per machine.
+
+    The invariant this function exists to hold:
+
+        SUM(pre_order_qty) across all rows sharing a parent + Processor never
+        exceeds the number of physical machines free on the line for it.
+
+    A configuration is only allocated at all when its company quantity (see
+    get_company_qty_pools) is above pre_order_threshold; otherwise every row of
+    it gets 0. The threshold is applied HERE and nowhere else - the Shopify
+    push treats any pre_order_qty > 0 as a pre-order.
+
+    That is why the pool is CLAIMED rather than copied. Several item codes (the
+    RAM/SSD variants of one chassis) map to the same pool, and every one of them
+    could legitimately be built from any machine in it - but only one may
+    advertise it, or the same 37 machines get sold 11 times over. Copying the
+    pool to every matching row is exactly what the pre-2026-09-22 code did:
+    measured live, it advertised 3,857 units against 317 physical machines.
+
+    Returns True on success, False on failure. A False return means the
+    pre-order figures are NOT trustworthy for this cycle - callers must skip
+    the Shopify pre-order push rather than treat the table as "no pre-orders".
+    """
+    try:
+        pools = get_pre_order_pools(settings)
+
+        if pools is None:
+            # Could not compute the pool at all. Leave the table untouched:
+            # zeroing it here is what strips live pre-orders off Shopify.
+            log_error(
+                "Pre-order pool could not be computed - SO Quantity Check left untouched",
+                "update_pre_order_qty",
+                "Error",
+            )
+            return False
+
+        company_qty = get_company_qty_pools(settings)
+
+        if company_qty is None:
+            # Same reasoning as the pool: without the gate we cannot say which
+            # configurations may be shown, so hold everything as it is.
+            log_error(
+                "Company quantity could not be computed - SO Quantity Check left untouched",
+                "update_pre_order_qty",
+                "Error",
+            )
+            return False
+
+        # Imported here: shopify_inventory imports this module at load time.
+        from nj_features.nj_features.api.shopify_inventory import get_inventory_sync_flags
+        threshold = get_inventory_sync_flags()["pre_order_threshold"]
+
+        # machines-per-exact-item-code, for the tie-break below
+        exact_counts = get_pre_order_exact_counts(settings)
+
+        # item code -> its exact configuration, for every row we might fill
+        config_rows = frappe.db.sql("""
+            SELECT
+                t.name AS soqc_name,
+                t.item_code,
+                t.pending_allocation_qty,
+                CONCAT(
+                    COALESCE(i.variant_of, ''), '|',
+                    COALESCE(proc.attribute_value, '')
+                ) AS config_key
+            FROM `tabSO Quantity Check` t
+            INNER JOIN `tabItem` i ON i.item_code = t.item_code
+            LEFT JOIN `tabItem Variant Attribute` proc
+                ON proc.parent = i.name AND proc.attribute = 'Processor Type1'
+        """, as_dict=True)
+
+        def backlog(row):
+            """Waiting demand on this row, as a positive number."""
+            try:
+                pending = int(float(row.get("pending_allocation_qty") or 0))
+            except (TypeError, ValueError):
+                pending = 0
+            return abs(pending) if pending < 0 else 0
+
+        # group the candidate rows by configuration
+        candidates = {}
+        for row in config_rows:
+            key = row.get("config_key")
+            if key in pools:
+                candidates.setdefault(key, []).append(row)
+
+        allocations = {}
+        collisions = 0
+        gated_configs = 0
+        gated_units = 0
+        for key, rows in candidates.items():
+            free_qty = pools.get(key, 0)
+            if free_qty <= 0:
+                continue
+            if company_qty.get(key, 0) <= threshold:
+                # Not enough of this configuration company-wide: push 0.
+                gated_configs += 1
+                gated_units += free_qty
+                continue
+            if len(rows) > 1:
+                collisions += 1
+
+            def claimable(row):
+                """What this row would be allowed to advertise.
+
+                A row carrying a waiting backlog is capped at that backlog -
+                the rule inherited from the original implementation.
+                """
+                waiting = backlog(row)
+                return min(waiting, free_qty) if waiting else free_qty
+
+            # Claim by how much can actually be advertised, not by who is
+            # waiting most. Picking the largest backlog caps the whole
+            # configuration at that row's backlog, so a pool of 38 behind a
+            # single row with a backlog of 1 would advertise 1 and strand 37.
+            #
+            # Among rows that can advertise the same amount - the usual case,
+            # since siblings with no backlog all claim the full pool - prefer
+            # the variant that the machines in the pool ACTUALLY are. Falling
+            # through to item_code order picked a spec at random: the 7420(PIR)
+            # listing went live as 16 GB/256 GB while all 32 machines were
+            # 16 GB/512 GB. exact_match_qty is how many pooled machines carry
+            # that row's own item code, so the advertised listing is the one
+            # needing the least rework.
+            rows.sort(key=lambda r: (
+                -claimable(r),
+                -exact_counts.get(r.get("item_code"), 0),
+                str(r.get("item_code") or ""),
+            ))
+            winner = rows[0]
+            allocations[winner["soqc_name"]] = claimable(winner)
+
+        # One transaction: reset then allocate, so no reader ever observes the
+        # table half-filled. Committing between the two is what produced the
+        # all-zero window that stripped pre-orders off Shopify.
+        frappe.db.sql("UPDATE `tabSO Quantity Check` SET pre_order_qty = 0 WHERE pre_order_qty != 0")
+
+        for soqc_name, qty in allocations.items():
+            frappe.db.sql(
+                "UPDATE `tabSO Quantity Check` SET pre_order_qty = %s WHERE name = %s",
+                (int(qty), soqc_name),
+            )
+
+        frappe.db.commit()
+
+        allocated_units = sum(allocations.values())
+        pool_units = sum(pools.values())
+        log_error(
+            f"Pre-order allocation complete: {len(allocations)} rows, "
+            f"{allocated_units} units allocated from a pool of {pool_units} "
+            f"machines across {len(pools)} configurations "
+            f"({collisions} configurations had competing item codes; "
+            f"{gated_configs} configurations / {gated_units} machines zeroed because "
+            f"company quantity was not above the threshold of {threshold})",
             "update_pre_order_qty",
             "Info",
         )
+
+        if allocated_units > pool_units:
+            # Should be impossible by construction; shout if it ever happens.
+            log_error(
+                f"Pre-order allocation exceeded the physical pool "
+                f"({allocated_units} > {pool_units}) - Shopify push must be held",
+                "update_pre_order_qty",
+                "Error",
+            )
+            return False
+
         return True
 
     except pymysql.err.OperationalError:
+        # Previously swallowed silently, which left the whole table at zero for
+        # a cycle with nothing in the logs to explain it.
+        frappe.db.rollback()
+        log_error(
+            f"Database error while updating pre-order quantities:\n{frappe.get_traceback()}",
+            "update_pre_order_qty",
+            "Error",
+        )
         return False
 
     except Exception:
-        log_error(frappe.get_traceback(), "update_pre_order_qty")
+        frappe.db.rollback()
+        log_error(frappe.get_traceback(), "update_pre_order_qty", "Error")
         return False
 
 
@@ -920,7 +1463,7 @@ def update_minimum_qty_after_proportional() -> bool:
                 log_error(
                     f"[MIN-QTY] Skipped parent={parent1}: need={total_deficit}, reducible={reducible_total}",
                     "update_minimum_qty_after_proportional",
-                    "Warning",
+                    "Error",
                 )
                 continue
 

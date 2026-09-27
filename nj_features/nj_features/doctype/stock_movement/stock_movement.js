@@ -313,9 +313,16 @@ frappe.ui.form.on('Stock Movement', {
                         //     showProductionPlanningConfirmDialog();
                         // }
 
-                        frappe.validated = false; 
-                        return; 
+                        frappe.validated = false;
+                        return;
                     }
+
+                    // Department Count Limit warnings are intentionally not shown here.
+                    // validate() fires on every Save AND again on Submit (submit does
+                    // its own save+validate first), so surfacing them here would show
+                    // the same warning multiple times per actual crossing. They're
+                    // shown once, as a confirmation the user must acknowledge, in
+                    // before_submit below -- which only fires on an actual Submit.
                 }
             }
         });
@@ -361,6 +368,37 @@ frappe.ui.form.on('Stock Movement', {
                 })(i);
             }
         }
+    },
+
+    before_submit: function (frm) {
+        // Runs once, right after the "Permanently Submit?" confirmation and
+        // before the actual submit request is sent (see Frappe's form.js
+        // savesubmit(): confirm -> before_submit -> save('Submit')). Returning
+        // a Promise here makes Frappe wait for it, so the department count
+        // limit warning -- if any -- is shown before the submission goes
+        // through (see nj_lib.utils.stock_entry.stock_entry_using_nj_lib,
+        // which skips its own post-submit warning for Stock Movement
+        // specifically because this already covers it). Informational only,
+        // same as everywhere else this check runs (see
+        // nj_features.overrides.stock_entry.get_department_restriction_violation)
+        // -- shown as a plain msgprint, not a Yes/No gate, so it never blocks
+        // the actual submit.
+        return new Promise((resolve) => {
+            frappe.call({
+                method: "nj_features.nj_features.doctype.stock_movement.stock_movement.validate_stock_movement_for_grade",
+                args: { doc: frm.doc },
+                callback: function (r) {
+                    if (r && r.message && r.message.warnings && r.message.warnings.length) {
+                        frappe.msgprint({
+                            title: __("Warning"),
+                            message: __(r.message.warnings.join("<br>")),
+                            indicator: "orange",
+                        });
+                    }
+                    resolve();
+                }
+            });
+        });
     }
 })
 

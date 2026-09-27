@@ -767,7 +767,41 @@ frappe.ui.form.on("NJQCA", {
             if (Array.isArray(r.message.changes)) {
               applyChangesNoDuplicates(frm, r.message.changes);
               frm.refresh_field("njqca_result_parameters");
-              return;
+            }
+            // Fill Performance Failure Details
+            if (Array.isArray(r.message.performance_failures)) {
+              frm.clear_table("performance_failure_parameters");
+
+              r.message.performance_failures.forEach((row) => {
+                let child = frm.add_child("performance_failure_parameters");
+
+                child.check_name = row.check_name;
+                child.item_group = row.item_group;
+                child.parameter = row.parameter;
+                child.criteria_value = row.criteria_value;
+                child.actual_value = row.actual_value;
+                child.failure_reason = row.failure_reason;
+              });
+
+              frm.refresh_field("performance_failure_parameters");
+            }
+
+            // Fill Heavy Load Failure Details
+            if (Array.isArray(r.message.heavyload_failures)) {
+              frm.clear_table("heavyload_failure_parameters");
+
+              r.message.heavyload_failures.forEach((row) => {
+                let child = frm.add_child("heavyload_failure_parameters");
+
+                child.check_name = row.check_name;
+                child.item_group = row.item_group;
+                child.parameter = row.parameter;
+                child.criteria_value = row.criteria_value;
+                child.actual_value = row.actual_value;
+                child.failure_reason = row.failure_reason;
+              });
+
+              frm.refresh_field("heavyload_failure_parameters");
             }
 
             if (r.message.parameter) {

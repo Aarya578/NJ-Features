@@ -77,7 +77,11 @@
   "pwd",
   "amended_from",
   "execution_check_status_section",
-  "execution_check_status"
+  "execution_check_status",
+  "performance_failure_details_section",
+  "performance_failure_parameters",
+  "heavy_load_failure_details_section",
+  "heavyload_failure_parameters"
  ],
  "fields": [
   {
@@ -546,11 +550,37 @@
    "label": "Model Changed Using Change Model",
    "no_copy": 1,
    "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "performance_failure_details_section",
+   "fieldtype": "Section Break",
+   "label": "Performance Failure Details"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "performance_failure_parameters",
+   "fieldtype": "Table",
+   "label": "Performance Failure Parameters",
+   "options": "NJQCA Performance Failure Detail"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "heavy_load_failure_details_section",
+   "fieldtype": "Section Break",
+   "label": "Heavy Load Failure Details"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "heavyload_failure_parameters",
+   "fieldtype": "Table",
+   "label": "Heavy Load Failure Parameters",
+   "options": "NJQCA Heavy Load Failure Detail"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-09-17 18:31:21.289315",
+ "modified": "2026-09-27 17:43:08.928267",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

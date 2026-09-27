@@ -27,6 +27,7 @@ STORES_STOCK_EXCLUDED_WAREHOUSES = {
     "Procurement - NJ",
     "WK-Santosh Kumar-EMP01180",
     "WK-Amit Kumar Sah-EMP02051 - NJ",
+    "WK-Shwetha S-NJVEN0157 - NJ",
 }
 
 MR_EXCLUDED_ITEM_GROUPS = {
@@ -333,22 +334,31 @@ class PartAllocationRun:
         self.stock_snapshot["warehouses"] = sorted(warehouses)
         if not warehouses:
             return {}
-        params = {"warehouses": tuple(warehouses)}
-        # Match the Google Sheet stock query: serialized items are counted from
-        # tabSerial No, while non-serialized items are summed from positive Bin
-        # quantities.  Do not substitute Bin quantity for serialized stock;
-        # that can make ERP allocate a part which the sheet considers absent.
+        params = {
+            "warehouses": tuple(warehouses),
+            "excluded_warehouses": tuple(sorted(STORES_STOCK_EXCLUDED_WAREHOUSES)),
+        }
+        # Match the Sheet stock rule: serialized items are counted from
+        # Serial No records, while non-serialized items are summed from
+        # positive Bin quantities.  Keep the sources separate so stale Bin
+        # quantities cannot inflate serialized stock.
         serialized_rows = frappe.db.sql("""
             SELECT
                 sn.item_code,
                 sn.warehouse,
-                COUNT(sn.serial_no) AS qty
+                COUNT(*) AS qty
             FROM `tabSerial No` sn
             JOIN `tabItem` i ON i.item_code = sn.item_code
+            JOIN `tabWarehouse` w ON w.name = sn.warehouse
             WHERE sn.warehouse IN %(warehouses)s
+                AND w.department = 'Stores - NJ'
+                AND sn.department = 'Stores - NJ'
+                AND sn.status = 'Active'
                 AND i.has_serial_no = 1
                 AND sn.warehouse IS NOT NULL
+                AND sn.status = 'Active'
                 AND sn.warehouse <> ''
+                AND sn.warehouse NOT IN %(excluded_warehouses)s
             GROUP BY sn.item_code, sn.warehouse
         """, params, as_dict=True)
         bins = frappe.db.sql("""
@@ -359,9 +369,12 @@ class PartAllocationRun:
                 IFNULL(i.has_serial_no, 0) AS has_serial_no
             FROM `tabBin` b
             JOIN `tabItem` i ON i.name = b.item_code
+            JOIN `tabWarehouse` w ON w.name = b.warehouse
             WHERE b.warehouse IN %(warehouses)s
+                AND w.department = 'Stores - NJ'
                 AND i.has_serial_no = 0
                 AND b.actual_qty > 0
+                AND b.warehouse NOT IN %(excluded_warehouses)s
             GROUP BY b.item_code, b.warehouse
         """, params, as_dict=True)
         stock = defaultdict(float)
@@ -381,7 +394,7 @@ class PartAllocationRun:
             details[code]["initial_available_qty"] = stock[code]
         self.stock_snapshot["warehouse_scope"] = "Stores - NJ enabled warehouses minus Google Sheet exclusion list"
         self.stock_snapshot["serialized_qty_scope"] = "Count of tabSerial No rows in eligible Stores - NJ warehouses"
-        self.stock_snapshot["bin_qty_scope"] = "Positive tabBin.actual_qty rows are counted only for non-serialized items"
+        self.stock_snapshot["bin_qty_scope"] = "Positive tabBin.actual_qty rows counted only for non-serialized items"
         self.stock_snapshot["bag_exclusion_scope"] = "Skipped global Bag List deduction from pooled Stores quantity"
         return dict(stock)
 
@@ -436,8 +449,13 @@ class PartAllocationRun:
                     MRI.qty AS mr_qty, MRI.stock_qty, MRI.uom, MRI.stock_uom, MRI.conversion_factor,
                     MR.docstatus AS mr_docstatus, MR.status AS mr_status,
                     MRI.docstatus AS row_docstatus, MRI.post_order_status AS row_post_order_status,
-                    MR.post_order_status AS mr_post_order_status, MRI.modified
-                FROM `tabMaterial Request Item` MRI JOIN `tabMaterial Request` MR ON MR.name=MRI.parent
+                    MR.post_order_status AS mr_post_order_status, MRI.modified,
+                    Sr.item_group AS serial_item_group, Sr.warehouse AS serial_warehouse,
+                    WH.department AS serial_warehouse_department
+                FROM `tabMaterial Request Item` MRI
+                JOIN `tabMaterial Request` MR ON MR.name=MRI.parent
+                LEFT JOIN `tabSerial No` Sr ON Sr.serial_no=MRI.serial_no
+                LEFT JOIN `tabWarehouse` WH ON WH.name=Sr.warehouse
                 WHERE MRI.serial_no IN %(serials)s ORDER BY MRI.modified DESC, MRI.name
             """, {"serials": tuple(batch)}, as_dict=True)
             for row in rows:
@@ -454,6 +472,29 @@ class PartAllocationRun:
                 component_default = component_defaults[0] if component_defaults else None
                 entry["mr_item_code"] = row.item_code
                 entry["requirement_source"] = "Material Request Item"
+
+                # Keep MR eligibility identical to the Google Sheet dump.  The
+                # NJ PP department is not the physical stock location: the
+                # sheet only considers serials whose current Serial No
+                # warehouse belongs to Part Waiting, and excludes BG L1/L2
+                # warehouses.  Apply this gate before Item Wizard/component
+                # matching so these rows cannot consume Stores stock.
+                serial_group = normalized(row.get("serial_item_group"))
+                warehouse = str(row.get("serial_warehouse") or "")
+                warehouse_upper = warehouse.upper()
+                warehouse_department = normalized(row.get("serial_warehouse_department"))
+                if serial_group not in {"LAPTOPS", "CHROMEBOOKS"}:
+                    entry["allocation_exclusion_reason"] = (
+                        "Serial item group is outside Google Sheet scope"
+                    )
+                elif "PART WAITING" not in warehouse_department:
+                    entry["allocation_exclusion_reason"] = (
+                        "Serial warehouse department is not Part Waiting"
+                    )
+                elif "BG - L2-" in warehouse_upper or "BG - L1-" in warehouse_upper:
+                    entry["allocation_exclusion_reason"] = (
+                        "Serial warehouse is excluded by Google Sheet warehouse rules"
+                    )
                 if component_default:
                     entry["item_code"] = component_default.get("grade_a_item_code")
                     entry["wizard_default_item_code"] = component_default.get("default_item_code")
@@ -463,7 +504,8 @@ class PartAllocationRun:
                 else:
                     entry["requirement_item_replaced_from_mr"] = 0
                     entry["wizard_component_candidates"] = []
-                    entry["allocation_exclusion_reason"] = "Material Request item group does not match any Item Wizard Component group"
+                    if not entry.get("allocation_exclusion_reason"):
+                        entry["allocation_exclusion_reason"] = "Material Request item group does not match any Item Wizard Component group"
                 self.mrs[row.serial_no].append(entry)
 
             for row in frappe.get_all("Bag List", filters={"parent": ["in", batch]}, fields=["name", "parent", "item", "item_group", "serial_no", "quantity", "is_available"]):
@@ -611,7 +653,7 @@ class PartAllocationRun:
                 "plan_row": plan_row.get("row_name"),
                 "planning_reason": event.get("planning_reason") or plan_row.get("reason"),
                 "target_item_code": event.get("target_item_code") or plan_row.get("item_code_to_make"),
-                "part_allocation": 1 if event.get("result") in ("ALLOCATED", "ALREADY_ALLOCATED") else 0,
+                "part_allocation": 1 if event.get("result") in ("ALLOCATED", "ALREADY_ALLOCATED", "NO_PENDING_REQUIREMENTS") else 0,
                 "allocation_result": event.get("result") or audit.get("result") or "NOT_CHECKED",
                 "allocation_reason": event.get("reason") or audit.get("reason"),
                 "required_items_count": len(requirements),

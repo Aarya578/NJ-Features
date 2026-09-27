@@ -106,7 +106,206 @@ def get_inventory_sync_flags():
         "parent_threshold": get_setting_int("parent_override_threshold", 1),
         "enable_warranty": get_setting_int("enable_warranty_rule", 1),
         "warranty_threshold": get_setting_int("warranty_threshold", 2),
+        "pre_order_threshold": get_setting_int("pre_order_threshold", 4),
     }
+
+
+def _effective_live_qty(rows, flags, parent_qty_dict):
+    """Live quantity each variant will actually end up with.
+
+    Mirrors Rule 1 (Parent Override) from the staging loop, which can lift a
+    variant's quantity above zero. The Warranty Rule is deliberately NOT
+    mirrored: it drives a quantity down to zero to hide a variant, and a
+    variant being hidden should not then be handed a pre-order pool.
+    """
+    effective = {}
+    for row in rows:
+        variant_id = str(row.shopify_variant_id or "").strip()
+        live_qty = safe_float(row.total_actual_qty) or 0
+
+        if flags["enable_parent_override"] and live_qty <= flags["parent_threshold"]:
+            parent_keys = [
+                key.strip().lower()
+                for key in (getattr(row, "parent_keys", "") or "").split("||")
+                if key.strip()
+            ]
+            if not parent_keys and row.parent1:
+                parent_keys = [f"{row.parent1} {row.processor or ''}".strip().lower()]
+            combined = sum(parent_qty_dict.get(k, 0.0) or 0.0 for k in set(parent_keys))
+            if combined > flags["parent_threshold"]:
+                live_qty = combined
+
+        effective[variant_id] = live_qty
+    return effective
+
+
+def clear_orphaned_pre_order_flags():
+    """Drop shopify_pre_order_enabled on rows that staging can no longer reach.
+
+    A sync row is only rewritten while its Product Bundle still produces it. Once
+    a listing is deactivated (is_active=0) the row is never visited again, so a
+    flag left at 1 stays at 1 indefinitely - it keeps claiming pre-order in
+    resolve_pre_order_claims and keeps reporting a pre-order listing that nobody
+    can buy. Measured 2026-09-22: 3 rows frozen since 2026-09-17.
+
+    Only touches deactivated rows. An active row with a real pre-order quantity
+    whose push failed is a DIFFERENT problem (status='Error') and is left alone.
+    """
+    try:
+        affected = frappe.db.sql("""
+            UPDATE `tabNJ Inventory Sync Main`
+            SET shopify_pre_order_enabled = 0,
+                shopify_pre_order_qty = 0
+            WHERE shopify_pre_order_enabled = 1
+              AND COALESCE(is_active, 0) = 0
+        """)
+        frappe.db.commit()
+        cleared = frappe.db._cursor.rowcount if hasattr(frappe.db, "_cursor") else 0
+        if cleared:
+            log_error(
+                f"Cleared shopify_pre_order_enabled on {cleared} deactivated sync "
+                f"row(s) that staging can no longer reach",
+                "clear_orphaned_pre_order_flags",
+                "Info",
+            )
+        return True
+    except Exception:
+        frappe.db.rollback()
+        log_error(frappe.get_traceback(), "clear_orphaned_pre_order_flags", "Error")
+        return False
+
+
+def resolve_pre_order_claims(rows, allocations=None, effective_live=None):
+    """Advertise each physical machine on exactly one Shopify variant.
+
+    update_pre_order_qty() already guarantees that a configuration's pool is
+    claimed by a single SO Quantity Check row, so the ERP side never counts a
+    machine twice. That alone is not enough: one item code can sit in several
+    Product Bundles, so several Shopify variants inherit the same allocation
+    and the pool would be advertised once per variant.
+
+    This pass gives each allocated item code to one variant and zeroes the
+    rest. The variant already advertising it keeps it, so a claim does not hop
+    between variants from run to run; otherwise the lowest variant id wins,
+    which is arbitrary but stable.
+
+    Mutates row.total_pre_order_qty in place.
+    """
+    stats = {
+        "allocated_codes": 0, "contested_codes": 0,
+        "variants_zeroed": 0, "unsellable_codes": 0,
+    }
+
+    if allocations is None:
+        allocations = {
+            r["item_code"]: safe_float(r["pre_order_qty"]) or 0
+            for r in frappe.db.sql(
+                "SELECT item_code, pre_order_qty FROM `tabSO Quantity Check` WHERE pre_order_qty > 0",
+                as_dict=True,
+            )
+        }
+
+    if not allocations:
+        for row in rows:
+            row.total_pre_order_qty = 0
+        return stats
+
+    stats["allocated_codes"] = len(allocations)
+    codes = list(allocations)
+    placeholders = ", ".join(["%s"] * len(codes))
+
+    claimants = {}
+    for r in frappe.db.sql(f"""
+        SELECT DISTINCT pb.shopify_variant_id, pbi.item_code
+        FROM `tabProduct Bundle` pb
+        JOIN `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
+        WHERE COALESCE(pb.disable, 0) = 0
+          AND pbi.item_code IN ({placeholders})
+    """, tuple(codes), as_dict=True):
+        variant_id = str(r["shopify_variant_id"] or "").strip()
+        if variant_id:
+            claimants.setdefault(r["item_code"], set()).add(variant_id)
+
+    # is_active=0 rows are deactivated listings. Staging never revisits them,
+    # so a flag left at 1 there is frozen forever - and as an incumbent it would
+    # keep winning the claim ahead of a variant that can actually be sold.
+    incumbents = {
+        str(r["shopify_variant_id"] or "").strip()
+        for r in frappe.get_all(
+            "NJ Inventory Sync Main",
+            filters={"shopify_pre_order_enabled": 1, "is_active": 1},
+            fields=["shopify_variant_id"],
+        )
+    }
+
+    # A variant that already has stock on the shelf will never show the
+    # pre-order figure, so giving it the claim throws the allocation away.
+    #
+    # A targeted run only holds the variants in its own batch, so stock for
+    # everything else is read from the staged record. Without that, a narrow
+    # sync would rank every variant outside its batch as unsellable and pull
+    # claims towards itself, and the claim would hop on the next full run.
+    live_by_variant = dict(effective_live) if effective_live else {
+        str(row.shopify_variant_id or "").strip(): safe_float(row.total_actual_qty) or 0
+        for row in rows
+    }
+    unknown = {
+        variant_id
+        for variant_ids in claimants.values()
+        for variant_id in variant_ids
+        if variant_id not in live_by_variant
+    }
+    if unknown:
+        for staged in frappe.get_all(
+            "NJ Inventory Sync Main",
+            filters={"shopify_variant_id": ["in", sorted(unknown)]},
+            fields=["shopify_variant_id", "actual_qty"],
+        ):
+            live_by_variant.setdefault(
+                str(staged.shopify_variant_id or "").strip(),
+                safe_float(staged.actual_qty) or 0,
+            )
+
+    sellable = {
+        variant_id
+        for variant_id, live_qty in live_by_variant.items()
+        if live_qty <= 0
+    }
+
+    winner_by_code = {}
+    for code, variant_ids in claimants.items():
+        if len(variant_ids) > 1:
+            stats["contested_codes"] += 1
+
+        candidates = [v for v in variant_ids if v in sellable]
+        if not candidates:
+            # Every variant of this configuration has stock on the shelf, so
+            # none of them would ever display the pre-order figure - the
+            # staging loop takes the live_qty branch. Handing the pool to one
+            # anyway strands it and, worse, zeroes whichever variant held it
+            # last, which the customer sees as the listing flipping.
+            stats["unsellable_codes"] += 1
+            continue
+
+        # An incumbent keeps its claim. Recomputing the winner from scratch
+        # every run is what pushed one variant to 32 and then straight back to
+        # 0: the claim hopped to a sibling, the old holder was zeroed, and the
+        # new holder was in a batch that never got pushed.
+        held = [v for v in candidates if v in incumbents]
+        winner_by_code[code] = sorted(held or candidates, key=lambda v: (len(v), v))[0]
+
+    for row in rows:
+        variant_id = str(row.shopify_variant_id or "").strip()
+        won = 0.0
+        for code in (row.item_codes or "").split(", "):
+            code = code.strip()
+            if code in allocations and winner_by_code.get(code) == variant_id:
+                won += allocations[code]
+        if (safe_float(row.total_pre_order_qty) or 0) and not won:
+            stats["variants_zeroed"] += 1
+        row.total_pre_order_qty = won
+
+    return stats
 
 
 def post_shopify_api(url, headers, payload=None, json_payload=None, max_retries=5):
@@ -410,8 +609,21 @@ def _create_rq_doc(variant_ids=None):
     if not run_stage(3, "update_proportional_qty_and_updt_qty", update_proportional_qty_and_updt_qty):
         return {"run_id": run_id, "status": "failed", "stage": "update_proportional_qty_and_updt_qty"}
 
-    if not run_stage(4, "update_pre_order_qty", lambda: update_pre_order_qty(settings)):
-        return {"run_id": run_id, "status": "failed", "stage": "update_pre_order_qty"}
+    # A pre-order failure must NOT abort the stock sync, and must NOT be read
+    # as "there are no pre-orders". It trips a breaker: pre-order figures are
+    # left exactly as they are and Shopify is not touched on that axis.
+    pre_order_data_ok = run_stage(4, "update_pre_order_qty", lambda: update_pre_order_qty(settings))
+    if not pre_order_data_ok:
+        log_error(
+            "Pre-order staging failed - pre-order quantities held at their last "
+            "known values and the Shopify pre-order push is skipped for this run",
+            "Pre-Order Circuit Breaker",
+            "Error",
+        )
+
+    # Frozen flags on deactivated listings are cleared every cycle, whether or
+    # not the pre-order stage succeeded - a stale claim is wrong either way.
+    clear_orphaned_pre_order_flags()
 
     if not run_stage(5, "updting_sla_department", updting_sla_department):
         return {"run_id": run_id, "status": "failed", "stage": "updting_sla_department"}
@@ -487,6 +699,7 @@ def _create_rq_doc(variant_ids=None):
 
         results = frappe.db.sql(query, query_params, as_dict=True) if query_params else frappe.db.sql(query, as_dict=True)
         stats["total"] = len(results)
+
         logger.info(f"[{run_id}] aggregation completed: {stats['total']} variants to process")
 
         # =========================================================
@@ -506,6 +719,20 @@ def _create_rq_doc(variant_ids=None):
             for row in parent_qty_map
         }
         logger.debug(f"parent_qty_dict================== {parent_qty_dict}")
+
+        # One machine, one variant. Without this the same allocation is
+        # inherited by every bundle the item code appears in.
+        #
+        # Run AFTER parent quantities are loaded: Parent Override can raise a
+        # variant's quantity above zero further down, and a variant with stock
+        # never displays the pre-order figure. Claiming on the raw rollup would
+        # hand the pool to a variant that is about to gain stock, stranding the
+        # allocation and zeroing whoever held it before.
+        if pre_order_data_ok:
+            claim_stats = resolve_pre_order_claims(
+                results, effective_live=_effective_live_qty(results, flags, parent_qty_dict)
+            )
+            logger.info(f"[{run_id}] pre-order claims resolved: {claim_stats}")
 
         updated_doc_names = set()
         all_product_ids = [
@@ -636,11 +863,30 @@ def _create_rq_doc(variant_ids=None):
                 safe_float(shopify_row.get("location_quantity"))
                 if shopify_row else None
             )
-            desired_qty = float(row.total_actual_qty)
-            quantity_matches = (
-                fresh_shopify_qty is not None
-                and desired_qty == fresh_shopify_qty
-            )
+            live_qty = safe_float(row.total_actual_qty) or 0
+            pre_order_qty = safe_float(row.total_pre_order_qty) or 0
+
+            # hold_pre_order means "we do not know", which is a different thing
+            # from "there are none" - resolved once the current record is read.
+            hold_pre_order = False
+
+            if live_qty > 0:
+                desired_qty = float(live_qty)
+                is_pre_order = 0
+            elif pre_order_qty > 0:
+                # The threshold was already applied upstream in update_pre_order_qty
+                # (against company quantity); anything still > 0 has passed it.
+                desired_qty = float(pre_order_qty)
+                is_pre_order = 1
+                update_status += f"[PreOrderSynced→{desired_qty:g}] "
+            elif not pre_order_data_ok:
+                hold_pre_order = True
+                desired_qty = None
+                is_pre_order = None
+                update_status += "[PreOrderHeld] "
+            else:
+                desired_qty = 0.0
+                is_pre_order = 0
 
             if not variant_id.isdigit():
                 lookup_error = "Invalid or missing Shopify variant ID mapping"
@@ -664,13 +910,31 @@ def _create_rq_doc(variant_ids=None):
                 params.append(f"%{code.strip()}%")
 
             existing = frappe.db.sql(f"""
-                SELECT name, actual_qty, status, sync_error, shopify_quantity
+                SELECT name, actual_qty, updated_qty, status, sync_error, shopify_quantity,
+                       shopify_pre_order_qty, shopify_pre_order_enabled
                 FROM `tabNJ Inventory Sync Main`
                 WHERE shopify_variant_id = %s 
                 AND ({' OR '.join(item_code_like_clauses)})
                 ORDER BY modified DESC
             """, tuple(params), as_dict=True)
             logger.debug(f"existing================== {existing}")
+
+            # Breaker tripped: keep whatever this variant already advertises.
+            # With no prior record there is nothing live on Shopify to protect,
+            # so zero is safe.
+            if hold_pre_order:
+                if existing:
+                    desired_qty = safe_float(existing[0].get("updated_qty")) or 0.0
+                    pre_order_qty = safe_float(existing[0].get("shopify_pre_order_qty")) or 0
+                    is_pre_order = int(existing[0].get("shopify_pre_order_enabled") or 0)
+                else:
+                    desired_qty = 0.0
+                    is_pre_order = 0
+
+            quantity_matches = (
+                fresh_shopify_qty is not None
+                and desired_qty == fresh_shopify_qty
+            )
 
             if existing:
                 existing_doc = existing[0]
@@ -679,9 +943,10 @@ def _create_rq_doc(variant_ids=None):
 
                 values = {
                     "is_active": 1,
-                    "actual_qty": row.total_actual_qty,
-                    "updated_qty": row.total_actual_qty,
-                    "shopify_pre_order_qty": row.total_pre_order_qty,
+                    "actual_qty": live_qty,
+                    "updated_qty": desired_qty,
+                    "shopify_pre_order_qty": pre_order_qty,
+                    "shopify_pre_order_enabled": is_pre_order,
                     "estimated_time_of_dispatch": getattr(row, "estimated_time_of_dispatch", "") or "",
                     "modified": frappe.utils.now(),
                 }
@@ -724,12 +989,11 @@ def _create_rq_doc(variant_ids=None):
                 doc = frappe.new_doc("NJ Inventory Sync Main")
                 logger.debug(f"doc================== {doc}")
 
-                qty = safe_float(row.total_actual_qty)
-                logger.debug(f"qty================== {qty}")
+                logger.debug(f"live_qty================== {live_qty}")
 
                 doc.is_active = 1
                 logger.debug(f"doc.is_active================== {doc.is_active}")
-                doc.actual_qty = qty
+                doc.actual_qty = live_qty
                 logger.debug(f"doc.actual_qty================== {doc.actual_qty}")
                 doc.status = (
                     "Error" if lookup_error
@@ -737,10 +1001,12 @@ def _create_rq_doc(variant_ids=None):
                     else "Queued"
                 )
                 logger.debug(f"doc.status================== {doc.status}")
-                doc.updated_qty = qty
+                doc.updated_qty = desired_qty
                 logger.debug(f"doc.updated_qty================== {doc.updated_qty}")
-                doc.shopify_pre_order_qty = row.total_pre_order_qty
+                doc.shopify_pre_order_qty = pre_order_qty
                 logger.debug(f"doc.shopify_pre_order_qty================== {doc.shopify_pre_order_qty}")
+                doc.shopify_pre_order_enabled = is_pre_order
+                logger.debug(f"doc.shopify_pre_order_enabled================== {doc.shopify_pre_order_enabled}")
                 doc.estimated_time_of_dispatch = getattr(row, "estimated_time_of_dispatch", "") or ""
                 doc.item_code = row.item_codes
                 logger.debug(f"doc.item_code================== {doc.item_code}")
@@ -817,6 +1083,7 @@ def _create_rq_doc(variant_ids=None):
                         "actual_qty": 0,
                         "updated_qty": 0,
                         "shopify_pre_order_qty": 0,
+                        "shopify_pre_order_enabled": 0,
                         "estimated_time_of_dispatch": "",
                         "status": "Queued",
                         "is_active": 1,
@@ -828,6 +1095,7 @@ def _create_rq_doc(variant_ids=None):
                         "actual_qty": 0,
                         "updated_qty": 0,
                         "shopify_pre_order_qty": 0,
+                        "shopify_pre_order_enabled": 0,
                         "estimated_time_of_dispatch": "",
                         "status": "Completed",
                         "is_active": 0,
@@ -841,7 +1109,17 @@ def _create_rq_doc(variant_ids=None):
         # =========================================================
         # 🔹 Shopify Pre-Order Policy & ETD Metafield Sync (independent from stock)
         # =========================================================
-        if shopify_data:
+        if shopify_data and not pre_order_data_ok:
+            logger.warning(
+                f"[{run_id}] pre-order breaker tripped - holding pre-order "
+                f"state; ETD sync still runs"
+            )
+            # ETD has nothing to do with pre-order and must not be held back.
+            sync_shopify_etd_metafields(
+                shopify_data, settings["shop"], settings["token"],
+            )
+
+        if shopify_data and pre_order_data_ok:
             # Pre-order policy sync is intentionally independent from stock sync.
             # A policy error must not block inventory quantity processing.
             pre_order_policy_result = sync_shopify_pre_order_policies(
@@ -863,6 +1141,17 @@ def _create_rq_doc(variant_ids=None):
             logger.info(
                 f"[{run_id}] Shopify ETD metafield sync completed: "
                 f"{etd_metafield_result}"
+            )
+
+            # Synchronize pre-order status metafields and tags to Shopify
+            pre_order_metafield_result = sync_shopify_pre_order_metafields_and_tags(
+                shopify_data,
+                settings["shop"],
+                settings["token"],
+            )
+            logger.info(
+                f"[{run_id}] Shopify pre-order metafield & tag sync completed: "
+                f"{pre_order_metafield_result}"
             )
 
         if variant_ids is not None and product_ids:
@@ -1321,7 +1610,7 @@ def sync_shopify_pre_order_policies(shopify_data, shop, token):
         sync_rows = frappe.get_all(
             "NJ Inventory Sync Main",
             filters={"shopify_variant_id": ["in", variant_ids]},
-            fields=["name", "shopify_variant_id", "shopify_pre_order_qty"],
+            fields=["name", "shopify_variant_id", "actual_qty", "shopify_pre_order_qty"],
         )
         sync_row_by_variant = {
             str(row.shopify_variant_id).strip(): row for row in sync_rows
@@ -1340,14 +1629,18 @@ def sync_shopify_pre_order_policies(shopify_data, shop, token):
 
             stats["checked"] += 1
             pre_order_qty = safe_float(sync_row.shopify_pre_order_qty) or 0
-            desired_policy = "CONTINUE" if pre_order_qty > 2 else "DENY"
+            live_qty = safe_float(sync_row.actual_qty) or 0
+            # Pre-order quantity is now synced directly to Shopify as available inventory.
+            # We set policy to DENY so Shopify strictly sells up to the synced quantity and prevents overselling.
+            desired_policy = "DENY"
+            is_pre = 1 if (live_qty <= 0 and pre_order_qty > 0) else 0
 
             if current_policy == desired_policy:
                 frappe.db.set_value(
                     "NJ Inventory Sync Main",
                     sync_row.name,
                     "shopify_pre_order_enabled",
-                    1 if current_policy == "CONTINUE" else 0,
+                    is_pre,
                     update_modified=False,
                 )
                 stats["unchanged"] += 1
@@ -1440,11 +1733,15 @@ def sync_shopify_pre_order_policies(shopify_data, shop, token):
                 if not sync_row or confirmed_policy not in ("CONTINUE", "DENY"):
                     continue
 
+                live_qty = safe_float(sync_row.actual_qty) or 0
+                pre_order_qty = safe_float(sync_row.shopify_pre_order_qty) or 0
+                is_pre = 1 if (live_qty <= 0 and pre_order_qty > 0) else 0
+
                 frappe.db.set_value(
                     "NJ Inventory Sync Main",
                     sync_row.name,
                     "shopify_pre_order_enabled",
-                    1 if confirmed_policy == "CONTINUE" else 0,
+                    is_pre,
                     update_modified=False,
                 )
                 updated_variant_ids.add(variant_id)
@@ -1614,6 +1911,562 @@ def sync_shopify_etd_metafields(shopify_data, shop=None, token=None):
         return stats
 
 
+def _shopify_graphql(url, headers, query, variables, context):
+    """POST a GraphQL document and hand back its data block, or None on failure."""
+    try:
+        response = post_shopify_api(
+            url, headers=headers,
+            json_payload={"query": query, "variables": variables},
+        )
+    except Exception:
+        log_error(f"{context}: request failed\n{frappe.get_traceback()}", context)
+        return None
+
+    if response.status_code != 200:
+        log_error(f"{context}: HTTP {response.status_code} {response.text}", context)
+        return None
+
+    body = response.json()
+    if body.get("errors"):
+        log_error(f"{context}: GraphQL errors {body['errors']}", context)
+        return None
+
+    return body.get("data") or {}
+
+
+# Definitions only have to exist once per store. Remembering that for the life
+# of the worker keeps a steady state at zero API calls.
+_PRE_ORDER_DEFINITIONS_READY = False
+
+PRE_ORDER_METAFIELD_OWNERS = ("PRODUCTVARIANT", "PRODUCT")
+
+
+def ensure_pre_order_metafield_definitions(shop, token, force=False):
+    """Make sure custom.pre_order_status is a DEFINED field, not just a value.
+
+    metafieldsSet happily writes a value with no definition behind it: the
+    value is stored and Liquid can read it, but Shopify's admin shows nothing,
+    it is not searchable or filterable, and the theme editor will not offer it
+    as a dynamic source. Creating the definition is a separate mutation that
+    nothing else calls.
+
+    Definitions adopt values that were written before they existed, so this is
+    safe to run against a store that already has pre-order values on it -
+    nothing needs re-pushing.
+
+    Idempotent: existing definitions are left untouched.
+    """
+    global _PRE_ORDER_DEFINITIONS_READY
+    stats = {"existing": 0, "created": 0, "failed": 0}
+
+    if _PRE_ORDER_DEFINITIONS_READY and not force:
+        return stats
+
+    url = f"{shop}/admin/api/2026-10/graphql.json"
+    headers = {"X-Shopify-Access-Token": token, "Content-Type": "application/json"}
+
+    # Ask for this one key rather than listing the namespace: Products already
+    # carry 68 definitions in "custom", so a first:50 listing silently misses
+    # it and we would try to create a definition that already exists.
+    lookup = """
+        query ExistingDefinition($owner: MetafieldOwnerType!) {
+            metafieldDefinitions(
+                first: 5, ownerType: $owner,
+                namespace: "custom", key: "pre_order_status"
+            ) {
+                nodes { key }
+            }
+        }
+    """
+    create = """
+        mutation CreatePreOrderDefinition($definition: MetafieldDefinitionInput!) {
+            metafieldDefinitionCreate(definition: $definition) {
+                createdDefinition { id key ownerType }
+                userErrors { field message code }
+            }
+        }
+    """
+
+    for owner in PRE_ORDER_METAFIELD_OWNERS:
+        data = _shopify_graphql(
+            url, headers, lookup, {"owner": owner},
+            "Shopify Pre-Order Metafield Definition",
+        )
+        if data is None:
+            stats["failed"] += 1
+            continue
+
+        keys = {
+            node.get("key")
+            for node in ((data.get("metafieldDefinitions") or {}).get("nodes") or [])
+        }
+        if "pre_order_status" in keys:
+            stats["existing"] += 1
+            continue
+
+        definition = {
+            "name": "Pre Order Status",
+            "namespace": "custom",
+            "key": "pre_order_status",
+            "type": "single_line_text_field",
+            "ownerType": owner,
+            "description": (
+                "Set by the ERP inventory sync: 'pre_order' when the item is "
+                "sold from machines still in the build pipeline, 'ready_stock' "
+                "when it ships from shelf stock."
+            ),
+            "access": {"storefront": "PUBLIC_READ"},
+        }
+
+        data = _shopify_graphql(
+            url, headers, create, {"definition": definition},
+            "Shopify Pre-Order Metafield Definition",
+        )
+
+        # Older stores reject the access block; the definition itself is still
+        # worth having, so fall back to the default visibility.
+        if data is not None:
+            errors = (data.get("metafieldDefinitionCreate") or {}).get("userErrors") or []
+            if errors and any("access" in str(e.get("field") or "").lower() for e in errors):
+                definition.pop("access", None)
+                data = _shopify_graphql(
+                    url, headers, create, {"definition": definition},
+                    "Shopify Pre-Order Metafield Definition",
+                )
+
+        if data is None:
+            stats["failed"] += 1
+            continue
+
+        payload = data.get("metafieldDefinitionCreate") or {}
+        errors = payload.get("userErrors") or []
+
+        if errors:
+            # A definition someone added by hand in the meantime is not a failure.
+            if any(str(e.get("code") or "") == "TAKEN" for e in errors):
+                stats["existing"] += 1
+                continue
+            stats["failed"] += 1
+            log_error(
+                f"Could not create {owner} custom.pre_order_status definition: {errors}",
+                "Shopify Pre-Order Metafield Definition",
+            )
+            continue
+
+        if payload.get("createdDefinition"):
+            stats["created"] += 1
+            log_error(
+                f"Created metafield definition custom.pre_order_status on {owner}",
+                "Shopify Pre-Order Metafield Definition",
+                "Info",
+            )
+
+    if not stats["failed"]:
+        _PRE_ORDER_DEFINITIONS_READY = True
+
+    return stats
+
+
+# The value published to Shopify. Kept as a constant because it is compared
+# against what the store already holds - a literal typed twice would silently
+# republish every variant on every run.
+PRE_ORDER_STATUS_VALUE = "pre-order"
+READY_STOCK_STATUS_VALUE = "ready_stock"
+
+
+VARIANT_PAGE_QUERY = """
+    query ProductVariantPage($id: ID!, $after: String!) {
+        product(id: $id) {
+            variants(first: 100, after: $after) {
+                pageInfo { hasNextPage endCursor }
+                nodes {
+                    id
+                    metafield(namespace: "custom", key: "pre_order_status") { value }
+                }
+            }
+        }
+    }
+"""
+
+
+def fetch_product_pre_order_state(product_ids, shop, token):
+    """Read what Shopify currently holds for a set of products.
+
+    Returns {product_id: {"tags": [...], "status": "...",
+                          "variant_status": {variant_id: "..."}}}.
+
+    This exists so a targeted sync can decide a product's tag from every one
+    of its variants. Deciding from the handful of variants in the batch is
+    what strips the tag off products whose other variants are still on
+    pre-order.
+    """
+    state = {}
+    product_ids = [str(p).strip() for p in product_ids if str(p or "").strip()]
+    if not product_ids:
+        return state
+
+    query = """
+        query ProductPreOrderState($ids: [ID!]!) {
+            nodes(ids: $ids) {
+                ... on Product {
+                    id
+                    tags
+                    metafield(namespace: "custom", key: "pre_order_status") { value }
+                    variants(first: 100) {
+                        pageInfo { hasNextPage endCursor }
+                        nodes {
+                            id
+                            metafield(namespace: "custom", key: "pre_order_status") { value }
+                        }
+                    }
+                }
+            }
+        }
+    """
+    url = f"{shop}/admin/api/2026-10/graphql.json"
+    headers = {"X-Shopify-Access-Token": token, "Content-Type": "application/json"}
+
+    for i in range(0, len(product_ids), 25):
+        batch = product_ids[i:i + 25]
+        data = _shopify_graphql(
+            url, headers, query,
+            {"ids": [f"gid://shopify/Product/{p}" for p in batch]},
+            "Shopify Pre-Order Product State",
+        )
+        if not data:
+            continue
+        for node in data.get("nodes") or []:
+            if not node or not node.get("id"):
+                continue
+            product_id = str(node["id"]).split("/")[-1]
+            variant_status = {}
+            variants = node.get("variants") or {}
+            for variant in (variants.get("nodes") or []):
+                variant_id = str(variant.get("id") or "").split("/")[-1]
+                if variant_id:
+                    variant_status[variant_id] = (variant.get("metafield") or {}).get("value") or ""
+
+            # A product with more than 100 variants would otherwise be judged on
+            # its first 100 only, and a pre-order variant past the cut-off would
+            # be invisible - the tag would come off a product that still has one.
+            page = variants.get("pageInfo") or {}
+            cursor = page.get("endCursor")
+            while page.get("hasNextPage") and cursor:
+                more = _shopify_graphql(
+                    url, headers, VARIANT_PAGE_QUERY,
+                    {"id": node["id"], "after": cursor},
+                    "Shopify Pre-Order Product State",
+                )
+                if not more:
+                    break
+                page_variants = ((more.get("product") or {}).get("variants") or {})
+                for variant in (page_variants.get("nodes") or []):
+                    variant_id = str(variant.get("id") or "").split("/")[-1]
+                    if variant_id:
+                        variant_status[variant_id] = (variant.get("metafield") or {}).get("value") or ""
+                page = page_variants.get("pageInfo") or {}
+                cursor = page.get("endCursor")
+
+            state[product_id] = {
+                "tags": node.get("tags") or [],
+                "status": (node.get("metafield") or {}).get("value") or "",
+                "variant_status": variant_status,
+            }
+
+    return state
+
+
+@frappe.whitelist()
+def sync_shopify_pre_order_metafields_and_tags(shopify_data, shop=None, token=None):
+    """Publish pre-order status to Shopify as variant/product metafields and a product tag.
+
+    Everything here is a diff against what Shopify already holds, which the
+    inventory read brings back with it, so a run where nothing moved costs no
+    API calls at all.
+
+    Three things this deliberately does NOT do:
+
+      * push a blank metafield value - Shopify rejects a blank
+        single_line_text_field, so clearing one means metafieldsDelete;
+      * re-publish a status that is already live;
+      * decide a product's tag from the variants in the current batch - a
+        targeted sync sees one variant, and removing the tag on that basis
+        strips it from products whose other variants are still on pre-order.
+    """
+    stats = {
+        "checked": 0, "unchanged": 0, "metafields_set": 0,
+        "metafields_cleared": 0, "products_updated": 0, "failed": 0,
+    }
+
+    try:
+        if not shop or not token:
+            settings = get_shopify_settings()
+            if not settings:
+                log_error("Shopify settings not found", "sync_shopify_pre_order_metafields_and_tags")
+                return stats
+            shop = settings["shop"]
+            token = settings["token"]
+
+        variant_ids = [
+            str(data.get("variant_id") or "").strip()
+            for data in shopify_data
+            if data.get("variant_id")
+        ]
+        if not variant_ids:
+            return stats
+
+        sync_rows = frappe.get_all(
+            "NJ Inventory Sync Main",
+            filters={"shopify_variant_id": ["in", variant_ids]},
+            fields=["name", "shopify_variant_id", "actual_qty", "shopify_pre_order_qty"],
+        )
+        sync_row_by_variant = {
+            str(row.shopify_variant_id).strip(): row for row in sync_rows
+        }
+
+        def status_for(row):
+            """Pre-order status derived from quantities only.
+
+            The stored shopify_pre_order_enabled flag is deliberately not
+            consulted: it is written earlier in the same run, so it cannot say
+            what was previously published, and when it is a run behind it
+            labels a variant that has stock on the shelf as a pre-order.
+            """
+            live_qty = safe_float(row.get("actual_qty")) or 0
+            pre_order_qty = safe_float(row.get("shopify_pre_order_qty")) or 0
+            if live_qty <= 0 and pre_order_qty > 0:
+                return PRE_ORDER_STATUS_VALUE
+            if live_qty > 0:
+                return READY_STOCK_STATUS_VALUE
+            return ""
+
+        url = f"{shop}/admin/api/2026-10/graphql.json"
+        headers = {"X-Shopify-Access-Token": token, "Content-Type": "application/json"}
+
+        # The field has to exist before values mean anything in the admin.
+        ensure_pre_order_metafield_definitions(shop, token)
+
+        metafields_to_set = []
+        metafields_to_clear = []
+        desired_by_variant = {}
+        products_by_variant = {}
+        changed_product_ids = set()
+
+        for data in shopify_data:
+            variant_id = str(data.get("variant_id") or "").strip()
+            sync_row = sync_row_by_variant.get(variant_id)
+            if not variant_id or not sync_row:
+                continue
+
+            stats["checked"] += 1
+
+            product_id = str(data.get("product_id") or "").strip()
+            if product_id:
+                products_by_variant[variant_id] = product_id
+
+            desired = status_for(sync_row)
+            published = str(data.get("pre_order_status") or "")
+            desired_by_variant[variant_id] = desired
+
+            if desired == published:
+                stats["unchanged"] += 1
+                continue
+
+            if product_id:
+                changed_product_ids.add(product_id)
+
+            identifier = {
+                "ownerId": f"gid://shopify/ProductVariant/{variant_id}",
+                "namespace": "custom",
+                "key": "pre_order_status",
+            }
+            if desired:
+                metafields_to_set.append(
+                    dict(identifier, type="single_line_text_field", value=desired)
+                )
+            else:
+                metafields_to_clear.append(identifier)
+
+        # ---- variant metafields ------------------------------------------
+        set_mutation = """
+            mutation SetPreOrderMetafields($metafields: [MetafieldsSetInput!]!) {
+                metafieldsSet(metafields: $metafields) {
+                    metafields { id }
+                    userErrors { field message code }
+                }
+            }
+        """
+        for i in range(0, len(metafields_to_set), 25):
+            batch = metafields_to_set[i:i + 25]
+            data = _shopify_graphql(
+                url, headers, set_mutation, {"metafields": batch},
+                "Shopify Pre-Order Metafield Sync",
+            )
+            if data is None:
+                stats["failed"] += len(batch)
+                continue
+            payload = data.get("metafieldsSet") or {}
+            if payload.get("userErrors"):
+                stats["failed"] += len(payload["userErrors"])
+                log_error(
+                    f"Shopify pre-order metafield userErrors: {payload['userErrors']}",
+                    "Shopify Pre-Order Metafield Sync",
+                )
+            stats["metafields_set"] += len(payload.get("metafields") or [])
+
+        clear_mutation = """
+            mutation ClearPreOrderMetafields($metafields: [MetafieldIdentifierInput!]!) {
+                metafieldsDelete(metafields: $metafields) {
+                    deletedMetafields { ownerId }
+                    userErrors { field message }
+                }
+            }
+        """
+        for i in range(0, len(metafields_to_clear), 25):
+            batch = metafields_to_clear[i:i + 25]
+            data = _shopify_graphql(
+                url, headers, clear_mutation, {"metafields": batch},
+                "Shopify Pre-Order Metafield Sync",
+            )
+            if data is None:
+                stats["failed"] += len(batch)
+                continue
+            payload = data.get("metafieldsDelete") or {}
+            if payload.get("userErrors"):
+                log_error(
+                    f"Shopify pre-order metafield delete userErrors: {payload['userErrors']}",
+                    "Shopify Pre-Order Metafield Sync",
+                )
+            stats["metafields_cleared"] += len(payload.get("deletedMetafields") or [])
+
+        if not changed_product_ids:
+            return stats
+
+        # ---- product metafield + tag ---------------------------------------
+        # Only products whose variants actually moved, and decided across ALL
+        # of their variants: the ones this run knows about carry their new
+        # status, the rest are read back from Shopify.
+        product_state = fetch_product_pre_order_state(changed_product_ids, shop, token)
+
+        for product_id in sorted(changed_product_ids):
+            state = product_state.get(product_id)
+            if not state:
+                continue
+
+            statuses = dict(state["variant_status"])
+            for variant_id, desired in desired_by_variant.items():
+                if products_by_variant.get(variant_id) == product_id:
+                    statuses[variant_id] = desired
+
+            is_pre = any(value == PRE_ORDER_STATUS_VALUE for value in statuses.values())
+            desired_status = PRE_ORDER_STATUS_VALUE if is_pre else ""
+            # Shopify preserves whatever casing a tag was first created with
+            # and dedupes case-insensitively. This store already carries
+            # "Pre-Order", so a case-sensitive check reports the tag missing on
+            # every run: tagsAdd fires forever as a no-op, and - worse - a
+            # product that should LOSE the tag never does, because is_pre and
+            # has_tag both read False and the branch is skipped.
+            existing_tags = state["tags"] or []
+            matching_tags = [t for t in existing_tags if str(t).strip().lower() == "pre-order"]
+            has_tag = bool(matching_tags)
+            product_gid = f"gid://shopify/Product/{product_id}"
+            touched = False
+
+            if desired_status != str(state["status"] or ""):
+                if desired_status:
+                    data = _shopify_graphql(
+                        url, headers, set_mutation,
+                        {"metafields": [{
+                            "ownerId": product_gid,
+                            "namespace": "custom",
+                            "key": "pre_order_status",
+                            "type": "single_line_text_field",
+                            "value": desired_status,
+                        }]},
+                        "Shopify Pre-Order Product Metafield",
+                    )
+                else:
+                    data = _shopify_graphql(
+                        url, headers, clear_mutation,
+                        {"metafields": [{
+                            "ownerId": product_gid,
+                            "namespace": "custom",
+                            "key": "pre_order_status",
+                        }]},
+                        "Shopify Pre-Order Product Metafield",
+                    )
+                if data is None:
+                    stats["failed"] += 1
+                else:
+                    touched = True
+
+            # Shopify keeps whatever casing a tag was first created with and
+            # dedupes case-insensitively, so tagsAdd("pre-order") on a product
+            # already carrying "Pre-Order" silently does nothing. To publish the
+            # canonical lowercase form the old casing has to be removed first.
+            PRE_ORDER_TAG = "pre-order"
+            stale_casing = [t for t in matching_tags if str(t) != PRE_ORDER_TAG]
+
+            tag_ops = []
+            if is_pre:
+                if stale_casing:
+                    tag_ops.append(("tagsRemove", stale_casing))
+                if stale_casing or not has_tag:
+                    tag_ops.append(("tagsAdd", [PRE_ORDER_TAG]))
+            elif has_tag:
+                # Remove every casing present, not just our canonical one.
+                tag_ops.append(("tagsRemove", matching_tags))
+
+            for op, tag_values in tag_ops:
+                tag_mutation = """
+                    mutation AddProductTags($id: ID!, $tags: [String!]!) {
+                        tagsAdd(id: $id, tags: $tags) {
+                            node { id }
+                            userErrors { field message }
+                        }
+                    }
+                """ if op == "tagsAdd" else """
+                    mutation RemoveProductTags($id: ID!, $tags: [String!]!) {
+                        tagsRemove(id: $id, tags: $tags) {
+                            node { id }
+                            userErrors { field message }
+                        }
+                    }
+                """
+                data = _shopify_graphql(
+                    url, headers, tag_mutation,
+                    {"id": product_gid, "tags": tag_values},
+                    "Shopify Pre-Order Tag Sync",
+                )
+                if data is None:
+                    stats["failed"] += 1
+                    continue
+                # userErrors here were previously ignored, so a rejected tag
+                # change looked like a success.
+                errors = (data.get(op) or {}).get("userErrors") or []
+                if errors:
+                    stats["failed"] += 1
+                    log_error(
+                        f"Shopify {op} rejected for {product_id}: {errors}",
+                        "Shopify Pre-Order Tag Sync",
+                    )
+                else:
+                    touched = True
+
+            if touched:
+                stats["products_updated"] += 1
+
+        return stats
+
+    except Exception:
+        stats["failed"] += 1
+        log_error(
+            f"Error syncing Shopify pre-order metafields and tags: {frappe.get_traceback()}",
+            "Shopify Pre-Order Metafield Sync",
+        )
+        return stats
+
+
 @frappe.whitelist()
 def get_shopify_variants(
     product_ids,
@@ -1680,8 +2533,15 @@ def get_shopify_variants(
                     id
                     {inventory_level_fields}
                 }}
+                metafield(namespace: "custom", key: "pre_order_status") {{
+                    value
+                }}
                 product {{
                     id
+                    tags
+                    metafield(namespace: "custom", key: "pre_order_status") {{
+                        value
+                    }}
                 }}
                 }}
             }}
@@ -1722,7 +2582,8 @@ def get_shopify_variants(
                     inventory_item_gid.split("/")[-1]
                     if inventory_item_gid else None
                 )
-                product_gid = node.get("product", {}).get("id", "")
+                product = node.get("product") or {}
+                product_gid = product.get("id", "")
                 product_id = product_gid.split("/")[-1] if product_gid else None
                 location_quantity = None
                 location_on_hand_quantity = None
@@ -1742,6 +2603,9 @@ def get_shopify_variants(
                     "location_on_hand_quantity": location_on_hand_quantity,
                     "inventory_policy": node.get("inventoryPolicy"),
                     "product_id": product_id,
+                    "pre_order_status": (node.get("metafield") or {}).get("value") or "",
+                    "product_pre_order_status": (product.get("metafield") or {}).get("value") or "",
+                    "product_tags": product.get("tags") or [],
                 })
 
             return batch_result

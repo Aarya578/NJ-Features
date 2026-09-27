@@ -308,7 +308,7 @@ scheduler_events = {
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.enqueue_unified_production_plan",
         ],
  
-        "15 0 * * *": [
+        "0 * * * *": [
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.run_latest_production_plan_part_allocation",
         ],
 

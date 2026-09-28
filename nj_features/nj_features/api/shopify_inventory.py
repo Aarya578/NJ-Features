@@ -87,6 +87,27 @@ def safe_float(value):
     except (ValueError, TypeError):
         return None
 
+def log_shopify_push(source, variant_id, from_qty, to_qty, result, reason=""):
+    """One NJ Log row per Shopify quantity push (method 'shopify_inventory_push').
+
+    Nothing else keeps history: NJ Inventory Sync Main is overwritten every run,
+    so without this a listing that moved 2 -> 0 -> 2 cannot be explained after
+    the fact. source is 'hourly' or the Sales Order that triggered the push;
+    reason carries the staging tags ([ParentOverride...], [WarrantyApplied] ...).
+    """
+    try:
+        from_txt = "?" if from_qty is None else f"{safe_float(from_qty) or 0:g}"
+        log_error(
+            f"variant={variant_id} qty {from_txt} -> {to_qty} source={source} "
+            f"result={result} reason={(reason or '').strip()[:400]}",
+            "shopify_inventory_push",
+            "Info",
+        )
+    except Exception:
+        # An audit line must never break the push itself.
+        pass
+
+
 def get_inventory_sync_flags():
     """
     Safely retrieves the inventory sync rule configuration flags from NJ Settings.
@@ -105,9 +126,27 @@ def get_inventory_sync_flags():
         "enable_parent_override": get_setting_int("enable_parent_override", 1),
         "parent_threshold": get_setting_int("parent_override_threshold", 1),
         "enable_warranty": get_setting_int("enable_warranty_rule", 1),
-        "warranty_threshold": get_setting_int("warranty_threshold", 2),
+        "warranty_threshold": get_setting_int("warranty_threshold", 1),
         "pre_order_threshold": get_setting_int("pre_order_threshold", 4),
+        # 0 = every variant of a parent+Processor shows the whole pool
+        # (business decision 2026-09-25; can oversell). 1 = one variant claims
+        # the pool, siblings get 0.
+        "pre_order_claim": get_setting_int("pre_order_claim", 0),
+        # Business rule 2026-09-28: a variant is offered as pre-order only when
+        # its ETD (SO Quantity Check.sla, in days) is MORE than this. At or
+        # below it, or with no ETD at all, the pre-order quantity is not pushed.
+        "pre_order_min_etd_days": get_setting_int("pre_order_min_etd_days", 3),
     }
+
+
+def pre_order_etd_allows(row, flags):
+    """True when the variant's ETD is long enough to be sold as pre-order.
+
+    row.etd_days is MIN(NULLIF(sla, 0)) across the variant's item codes - the
+    same figure shown as estimated_time_of_dispatch. None means no ETD.
+    """
+    etd_days = safe_float(getattr(row, "etd_days", None)) or 0
+    return etd_days > flags["pre_order_min_etd_days"]
 
 
 def _effective_live_qty(rows, flags, parent_qty_dict):
@@ -657,7 +696,8 @@ def _create_rq_doc(variant_ids=None):
                 GROUP_CONCAT(DISTINCT v.item_group ORDER BY v.item_group SEPARATOR ', ') AS item_groups,
                 CAST(SUM(v.update_qty2) AS DECIMAL(10, 2)) AS total_actual_qty,
                 CAST(SUM(COALESCE(v.pre_order_qty, 0)) AS DECIMAL(10, 2)) AS total_pre_order_qty,
-                CASE 
+                MIN(NULLIF(v.sla, 0)) AS etd_days,
+                CASE
                     WHEN MIN(NULLIF(v.sla, 0)) IS NULL THEN ''
                     WHEN MIN(NULLIF(v.sla, 0)) = 1 THEN '1 Day'
                     ELSE CONCAT(MIN(NULLIF(v.sla, 0)), ' Days')
@@ -728,7 +768,7 @@ def _create_rq_doc(variant_ids=None):
         # never displays the pre-order figure. Claiming on the raw rollup would
         # hand the pool to a variant that is about to gain stock, stranding the
         # allocation and zeroing whoever held it before.
-        if pre_order_data_ok:
+        if pre_order_data_ok and flags["pre_order_claim"]:
             claim_stats = resolve_pre_order_claims(
                 results, effective_live=_effective_live_qty(results, flags, parent_qty_dict)
             )
@@ -873,12 +913,23 @@ def _create_rq_doc(variant_ids=None):
             if live_qty > 0:
                 desired_qty = float(live_qty)
                 is_pre_order = 0
-            elif pre_order_qty > 0:
+            elif pre_order_qty > 0 and pre_order_etd_allows(row, flags):
                 # The threshold was already applied upstream in update_pre_order_qty
                 # (against company quantity); anything still > 0 has passed it.
                 desired_qty = float(pre_order_qty)
                 is_pre_order = 1
                 update_status += f"[PreOrderSynced→{desired_qty:g}] "
+            elif pre_order_qty > 0:
+                # ETD too short (or missing) to be offered as pre-order. The staged
+                # shopify_pre_order_qty is zeroed too: the policy and tag syncs
+                # read that field, not is_pre_order.
+                update_status += (
+                    f"[PreOrderSkipped ETD={safe_float(getattr(row, 'etd_days', None)) or 0:g}"
+                    f"<={flags['pre_order_min_etd_days']}] "
+                )
+                pre_order_qty = 0
+                desired_qty = 0.0
+                is_pre_order = 0
             elif not pre_order_data_ok:
                 hold_pre_order = True
                 desired_qty = None
@@ -1475,6 +1526,10 @@ def _create_shopify_inventory_sync(variant_ids=None):
 
                 for result, row, available, verified_qty, record_error in verified_results:
                     variant_id = variant_id_by_doc[row.name]
+                    log_shopify_push(
+                        "hourly", variant_id, row.shopify_quantity, available, result,
+                        row.sync_error if result == "completed" else record_error,
+                    )
                     result_details = {
                         "result": result,
                         "inventory_item_id": str(row.inventory_item_id),

@@ -789,7 +789,14 @@ def validate_stock_movement_for_grade(doc):
         "success": "Validation passed without errors."
     }
 
-def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_messages=None, qty_check_cache=None):
+def validate_serial_no_and_department(
+    row,
+    doc,
+    error_messages,
+    model_mismatch_messages=None,
+    qty_check_cache=None,
+    legacy_source_warehouse=None,
+):
     
     
     has_serialized = frappe.db.get_value(

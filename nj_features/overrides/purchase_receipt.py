@@ -1131,6 +1131,13 @@ def get_pr_item_material_requests(item):
 
 def generate_batch_no(doc, method=None):
     start = time.perf_counter()
+    # This function is invoked both by CustomPurchaseReceipt.before_save and
+    # the Purchase Receipt before_save hook. Frappe runs both against the same
+    # document instance, so avoid doing registry/batch queries twice.
+    if getattr(doc.flags, "nj_generate_batch_no_done", False):
+        log_pr_time("generate_batch_no (duplicate skipped)", doc.name, start, doc.is_return)
+        return
+
     try:
         for item in doc.items:
             set_registry_no(item)
@@ -1148,20 +1155,47 @@ def generate_batch_no(doc, method=None):
                     batch_doc.batch_id = batch_id
                     batch_doc.item = item.item_code
                     batch_doc.save()
+        doc.flags.nj_generate_batch_no_done = True
     finally:
         log_pr_time("generate_batch_no", doc.name, start, doc.is_return)
                                 
 def get_batch(doc, method=None):
     start = time.perf_counter()
+    # CustomPurchaseReceipt.on_submit calls get_batch directly and the
+    # Purchase Receipt on_submit hook calls it again. QR generation and full
+    # Serial No saves are expensive, so execute them once per submit request.
+    if getattr(doc.flags, "nj_get_batch_done", False):
+        log_pr_time("get_batch (duplicate skipped)", doc.name, start, doc.is_return)
+        return
+
     try:
+        supplier_name = frappe.db.get_value(
+            'Supplier', doc.supplier, 'supplier_name'
+        ) if doc.supplier else None
+        has_warranty = bool(doc.get('has_warranty'))
+        warranty_cache = {}
+
         for item in doc.items:
             qr_code_mappings = []
 
             if item.item_code and item.qty and is_serialized(item.item_code) == 1:
+                warranty_key = (item.purchase_order, item.item_group)
+                if warranty_key not in warranty_cache:
+                    warranty_cache[warranty_key] = get_purchase_warranty_data(
+                        item, item.purchase_order
+                    )
+
                 serial_nos = item.serial_no.split('\n') if item.serial_no else []
                 for serial_no in serial_nos:
                     if serial_no.strip():
-                        update_serial_no(serial_no.strip(), doc, item)
+                        update_serial_no(
+                            serial_no.strip(),
+                            doc,
+                            item,
+                            supplier_name=supplier_name,
+                            purchase_warranty_data=warranty_cache[warranty_key],
+                            has_warranty=has_warranty,
+                        )
 
             if item.serial_no:
                 for serial in item.serial_no.split('\n'):
@@ -1177,6 +1211,7 @@ def get_batch(doc, method=None):
                 SET qr_code_mapping = %s 
                 WHERE name = %s
             """, (qr_code_mapping_str, item.name))
+        doc.flags.nj_get_batch_done = True
     finally:
         log_pr_time("get_batch", doc.name, start, doc.is_return)
 
@@ -1438,14 +1473,32 @@ def update_serial_no_part_list_grade_a_from_po(serial_no_doc, item):
             title="Grade A Item Code Missing"
         )
 
-def update_serial_no(serial_no, doc, item):
+def update_serial_no(
+    serial_no,
+    doc,
+    item,
+    supplier_name=None,
+    purchase_warranty_data=None,
+    has_warranty=None,
+):
     serial_no_doc = frappe.get_doc('Serial No', serial_no, for_update=True)
-    supplier_name = frappe.db.get_value('Supplier', {'name': doc.supplier}, 'supplier_name')
+    if supplier_name is None and doc.supplier:
+        supplier_name = frappe.db.get_value(
+            'Supplier', doc.supplier, 'supplier_name'
+        )
     
     if serial_no_doc:
-        get_purc_warranty_data = get_purchase_warranty_data(item, item.purchase_order)
+        get_purc_warranty_data = (
+            purchase_warranty_data
+            if purchase_warranty_data is not None
+            else get_purchase_warranty_data(item, item.purchase_order)
+        )
 
-        has_warrenty = frappe.db.get_value('Purchase Receipt', {'name': doc.name}, 'has_warranty')
+        has_warrenty = (
+            bool(doc.get('has_warranty'))
+            if has_warranty is None
+            else has_warranty
+        )
         if has_warrenty:
            serial_no_doc.vendor_warranty_expiry_date = get_purc_warranty_data.get('vendor_warranty_expiry_date') if get_purc_warranty_data.get('vendor_warranty_expiry_date') else doc.warrenty_till_date
         else:

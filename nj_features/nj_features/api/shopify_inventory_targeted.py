@@ -12,6 +12,7 @@ from nj_features.nj_features.api.shopify_inventory import (
     safe_float,
     post_shopify_api,
     get_inventory_sync_flags,
+    log_shopify_push,
 )
 
 logger = frappe.logger("NEW SHOPIFY INVENTORY SYNC LOG", allow_site=True, file_count=10)
@@ -108,6 +109,24 @@ def create_rq_doc_by_item_codes(item_codes, sales_order=None):
         # Already logged in get_affected_variant_ids
         return
 
+    # Copy mode (pre_order_claim = 0): the ordered parent + Processor
+    # configurations are recounted in Step 4c. Their sibling variants are
+    # already in variant_ids (see get_affected_variant_ids), so all of them are
+    # pushed the fresh figure.
+    from nj_features.nj_features.api.shopify_inventory import get_inventory_sync_flags
+    from nj_features.nj_features.doctype.so_quantity_check.so_quantity_check import (
+        get_pre_order_config_keys,
+        update_pre_order_qty_for_configs,
+    )
+    copy_mode = not get_inventory_sync_flags()["pre_order_claim"]
+    pre_order_configs = set()
+    if copy_mode:
+        try:
+            pre_order_configs = get_pre_order_config_keys(list(item_codes))
+        except Exception:
+            log_error(frappe.get_traceback(), "create_rq_doc_by_item_codes - pre-order configs")
+            pre_order_configs = set()
+
     logger.debug(f"[Targeted Sync] Affected variant IDs: {variant_ids}")
 
     # Step 2: Targeted SO Quantity Check
@@ -131,24 +150,28 @@ def create_rq_doc_by_item_codes(item_codes, sales_order=None):
     except Exception:
         log_error(frappe.get_traceback(), "create_rq_doc_by_item_codes - updting_sla_department")
 
-    # Step 4c: Pre-order quantities are deliberately NOT recomputed here.
+    # Step 4c: Pre-order.
     #
-    # update_pre_order_qty() reallocates the pool across the WHOLE table, but a
-    # targeted run only re-stages and re-pushes the handful of variants it was
-    # called for. Running it from a Sales Order submit therefore moves claims
-    # globally while only the batch gets pushed: the variant that lost its
-    # claim is zeroed on Shopify and the variant that won it is never pushed at
-    # all, so a listing goes from 32 units to 0 and nothing takes its place.
+    # Claim mode (pre_order_claim = 1): NOT recomputed here. update_pre_order_qty()
+    # reallocates claims across the WHOLE table, but a targeted run only pushes
+    # its own batch, so the variant that lost a claim would be zeroed and the
+    # winner never pushed (a listing went 32 -> 0). The hourly run owns it.
     #
-    # The hourly staging run owns pre-order allocation. A targeted run holds
-    # whatever is already staged and only moves live stock.
+    # Copy mode (default since 2026-09-25): there are no claims to move, so the
+    # ordered configurations are recounted now and pushed to every sibling
+    # variant (already in variant_ids). Before 2026-09-26 this step always held the
+    # last hourly figure, which put the machine just sold straight back on sale
+    # (Shopify order #34095: 2 -> 1 on the order, then pushed back to 2).
+    # If the recount fails, the staged figures are held exactly as before.
     pre_order_data_ok = False
+    if copy_mode and pre_order_configs:
+        pre_order_data_ok = update_pre_order_qty_for_configs(settings, pre_order_configs)
 
     # Step 5: Stage into NJ Inventory Sync Main
     shopify_data = stage_targeted_variants(variant_ids, settings, pre_order_data_ok=pre_order_data_ok)
 
     # Step 6: Immediate Push to Shopify
-    push_targeted_variants_to_shopify(variant_ids, settings)
+    push_targeted_variants_to_shopify(variant_ids, settings, source=sales_order)
 
     # Step 7: Push Pre-Order Policies & ETD / Pre-Order Metafields to Shopify
     try:
@@ -198,6 +221,27 @@ def get_affected_variant_ids(item_codes, sales_order=None):
     Logs missing mappings to sales_order_shopify_push.
     """
     try:
+        if not item_codes:
+            return []
+
+        # Only hardware drives stock. Add-ons on the order ('Additional 6 Months
+        # warranty', 'Folding Laptop Stand', ...) sit in hundreds of bundles, so
+        # looking them up here pulled every listing that carries them into this
+        # "targeted" sync and re-pushed them all. Seen 2026-09-27: a Chromebox
+        # order and a MacBook order each re-pushed a T460 listing (0, then 2).
+        # Same item-group scope the hourly sync stages, so nothing it covers is
+        # skipped here.
+        from nj_features.nj_features.doctype.so_quantity_check.so_quantity_check import SOQC_ITEM_GROUPS
+        settings_groups = [
+            g.strip() for g in (frappe.db.get_single_value("NJ Inventory Settings", "item_groups") or "").split(",")
+            if g.strip()
+        ]
+        hardware_groups = list(dict.fromkeys(settings_groups + SOQC_ITEM_GROUPS))
+        item_codes = frappe.db.sql_list(f"""
+            SELECT item_code FROM `tabItem`
+            WHERE item_code IN ({', '.join(['%s'] * len(item_codes))})
+              AND item_group IN ({', '.join(['%s'] * len(hardware_groups))})
+        """, tuple(item_codes) + tuple(hardware_groups))
         if not item_codes:
             return []
 
@@ -788,7 +832,8 @@ def stage_targeted_variants(variant_ids, settings, pre_order_data_ok=True):
                 GROUP_CONCAT(DISTINCT v.item_group ORDER BY v.item_group SEPARATOR ', ') AS item_groups,
                 CAST(SUM(v.update_qty2) AS DECIMAL(10, 2)) AS total_actual_qty,
                 CAST(SUM(COALESCE(v.pre_order_qty, 0)) AS DECIMAL(10, 2)) AS total_pre_order_qty,
-                CASE 
+                MIN(NULLIF(v.sla, 0)) AS etd_days,
+                CASE
                     WHEN MIN(NULLIF(v.sla, 0)) IS NULL THEN ''
                     WHEN MIN(NULLIF(v.sla, 0)) = 1 THEN '1 Day'
                     ELSE CONCAT(MIN(NULLIF(v.sla, 0)), ' Days')
@@ -822,6 +867,7 @@ def stage_targeted_variants(variant_ids, settings, pre_order_data_ok=True):
             get_inventory_sync_flags,
             resolve_pre_order_claims,
             _effective_live_qty,
+            pre_order_etd_allows,
         )
         flags = get_inventory_sync_flags()
 
@@ -844,7 +890,7 @@ def stage_targeted_variants(variant_ids, settings, pre_order_data_ok=True):
         # targeted batch, so a narrow sync cannot hand itself a claim that a
         # variant outside the batch is already advertising.
         # Run AFTER parent quantities are loaded: mirrors Parent Override.
-        if pre_order_data_ok:
+        if pre_order_data_ok and flags["pre_order_claim"]:
             resolve_pre_order_claims(
                 results, effective_live=_effective_live_qty(results, flags, parent_qty_dict)
             )
@@ -888,7 +934,10 @@ def stage_targeted_variants(variant_ids, settings, pre_order_data_ok=True):
                         LEFT JOIN `tabProduct Bundle Item` pdi ON pdi.parent = pd.name
                         WHERE pd.shopify_variant_id = %s
                         GROUP BY pdi.parent HAVING COUNT(pdi.parent) > 0
-                    ) AND item_code LIKE '%%additional%%';
+                    ) AND item_code LIKE '%%additional%%'
+                    -- Same exclusion as create_rq_doc(); without it this sync
+                    -- zeroed a 1-unit listing the hourly sync then set back to 1.
+                    AND item_code != 'Additional 6 Months warranty';
                 """, (row.shopify_variant_id,), as_dict=True)
 
 
@@ -912,11 +961,20 @@ def stage_targeted_variants(variant_ids, settings, pre_order_data_ok=True):
             if live_qty > 0:
                 desired_qty = float(live_qty)
                 is_pre_order = 0
-            elif pre_order_qty > 0:
+            elif pre_order_qty > 0 and pre_order_etd_allows(row, flags):
                 # Threshold already applied in update_pre_order_qty (company quantity).
                 desired_qty = float(pre_order_qty)
                 is_pre_order = 1
                 update_status += f"[PreOrderSynced→{desired_qty:g}] "
+            elif pre_order_qty > 0:
+                # ETD too short (or missing) - same rule as create_rq_doc().
+                update_status += (
+                    f"[PreOrderSkipped ETD={safe_float(getattr(row, 'etd_days', None)) or 0:g}"
+                    f"<={flags['pre_order_min_etd_days']}] "
+                )
+                pre_order_qty = 0
+                desired_qty = 0.0
+                is_pre_order = 0
             elif not pre_order_data_ok:
                 hold_pre_order = True
                 desired_qty = None
@@ -1077,9 +1135,11 @@ def stage_targeted_variants(variant_ids, settings, pre_order_data_ok=True):
         return []
 
 
-def push_targeted_variants_to_shopify(variant_ids, settings):
+def push_targeted_variants_to_shopify(variant_ids, settings, source=None):
     """
     Step 6: Push the staged quantities for the affected variants directly to Shopify.
+
+    source names what triggered the push (the Sales Order) for the push log.
     """
     try:
         if not variant_ids:
@@ -1093,9 +1153,10 @@ def push_targeted_variants_to_shopify(variant_ids, settings):
         # Fetch the staged records we just updated/inserted
         vp = ', '.join(['%s'] * len(variant_ids))
         queued = frappe.db.sql(f"""
-            SELECT name, updated_qty, inventory_item_id, shopify_variant_id
+            SELECT name, updated_qty, inventory_item_id, shopify_variant_id,
+                   shopify_quantity, sync_error
             FROM `tabNJ Inventory Sync Main`
-            WHERE status = 'Queued' AND is_active = 1 
+            WHERE status = 'Queued' AND is_active = 1
             AND shopify_variant_id IN ({vp})
         """, tuple(variant_ids), as_dict=True)
 
@@ -1145,6 +1206,11 @@ def push_targeted_variants_to_shopify(variant_ids, settings):
 
                 resp = post_shopify_api(update_url, headers, payload)
                 data = resp.json()
+                log_shopify_push(
+                    source or "sales_order", row.shopify_variant_id, row.shopify_quantity,
+                    available, "completed" if resp.status_code == 200 else f"http_{resp.status_code}",
+                    row.sync_error,
+                )
 
                 if resp.status_code == 200:
                     frappe.db.set_value("NJ Inventory Sync Main", row.name, {

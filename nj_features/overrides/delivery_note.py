@@ -18,6 +18,14 @@ from frappe.utils import now
 # Single source of truth for order_source, shared with the Sales Order
 # allocator and the production planner so all three write the same value.
 from nj_features.services.reservation_service import get_effective_order_source
+
+
+def _is_machine_item(item_code):
+    """True when item_code is in a machine item group - the same list Sales Order
+    allocation uses (HARDWARE_ITEM_GROUPS). Components and accessories are never
+    reserved to a Sales Order, returns included."""
+    from nj_features.overrides.sales_order import HARDWARE_ITEM_GROUPS
+    return frappe.db.get_value("Item", item_code, "item_group") in HARDWARE_ITEM_GROUPS
 from contextlib import contextmanager
 #from __future__ import unicode_literals
 from datetime import datetime, timedelta
@@ -898,7 +906,14 @@ class CustomDeliveryNote(DeliveryNote):
                                     break
                             break
 
-                if against_sales_order and item_code:
+                if against_sales_order and item_code and not _is_machine_item(item_code):
+                    # Business rule 2026-09-26: only machines are reserved to a
+                    # Sales Order, returns included. A returned RAM / SSD / adaptor /
+                    # keyboard / monitor is handled by hand, not re-reserved.
+                    frappe.logger().info(
+                        f"Repair return {self.name}: {sn} ({item_code}) is not a machine - not reserved to {against_sales_order}"
+                    )
+                elif against_sales_order and item_code:
                     # order_source must be written alongside the reservation. It is
                     # the only record of where a reservation came from, and on this
                     # path it also carries the return cause (e.g.
@@ -980,7 +995,14 @@ class CustomDeliveryNote(DeliveryNote):
                                         break
                                 break
 
-                    if against_sales_order and item_code:
+                    if against_sales_order and item_code and not _is_machine_item(item_code):
+                        # Business rule 2026-09-26: no replacement is auto-allocated
+                        # from stock for a component (RAM / SSD / adaptor / keyboard /
+                        # monitor ...); only machines are allocated.
+                        frappe.logger().info(
+                            f"Replace return {self.name}: {sn} ({item_code}) is not a machine - no replacement allocated for {against_sales_order}"
+                        )
+                    elif against_sales_order and item_code:
                         from nj_features.overrides.sales_order import create_unallocated_log
 
                         # -- C1 + C1b: exact item_code, or a unit already WIP-reconfiguring

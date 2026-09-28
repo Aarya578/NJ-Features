@@ -27,6 +27,7 @@ STORES_STOCK_EXCLUDED_WAREHOUSES = {
     "Procurement - NJ",
     "WK-Santosh Kumar-EMP01180",
     "WK-Amit Kumar Sah-EMP02051 - NJ",
+    "WK-Shwetha S-NJVEN0157 - NJ",
 }
 
 MR_EXCLUDED_ITEM_GROUPS = {
@@ -482,7 +483,7 @@ class PartAllocationRun:
                 warehouse = str(row.get("serial_warehouse") or "")
                 warehouse_upper = warehouse.upper()
                 warehouse_department = normalized(row.get("serial_warehouse_department"))
-                if serial_group not in {"LAPTOPS", "CHROMEBOOKS"}:
+                if serial_group not in {"LAPTOPS", "CHROMEBOOKS","MACBOOKS"}:
                     entry["allocation_exclusion_reason"] = (
                         "Serial item group is outside Google Sheet scope"
                     )
@@ -652,7 +653,7 @@ class PartAllocationRun:
                 "plan_row": plan_row.get("row_name"),
                 "planning_reason": event.get("planning_reason") or plan_row.get("reason"),
                 "target_item_code": event.get("target_item_code") or plan_row.get("item_code_to_make"),
-                "part_allocation": 1 if event.get("result") in ("ALLOCATED", "ALREADY_ALLOCATED") else 0,
+                "part_allocation": 1 if event.get("result") in ("ALLOCATED", "ALREADY_ALLOCATED", "NO_PENDING_REQUIREMENTS") else 0,
                 "allocation_result": event.get("result") or audit.get("result") or "NOT_CHECKED",
                 "allocation_reason": event.get("reason") or audit.get("reason"),
                 "required_items_count": len(requirements),

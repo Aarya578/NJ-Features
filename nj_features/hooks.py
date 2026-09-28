@@ -278,6 +278,12 @@ scheduler_events = {
             "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
         ],
 
+        # Customer delay mail, resent every 2 days while late. Does nothing
+        # until NJ Settings delay_mail_enabled = 1 (see services/delay_mail.py).
+        "0 11 * * *": [
+            "nj_features.services.delay_mail.send_delay_mails",
+        ],
+
         "05 10 * * *": [
             "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
         ],
@@ -295,6 +301,7 @@ scheduler_events = {
         "0 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.fetch_and_stage_inventory_sync",
             "nj_features.nj_features.api.zoho_sync.sync_customers_to_zoho",
+            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.run_latest_production_plan_part_allocation",
         ],
 
         # Runs every minute
@@ -307,9 +314,12 @@ scheduler_events = {
         "0 */12 * * *": [
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.enqueue_unified_production_plan",
         ],
- 
-        "0 * * * *": [
-            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.run_latest_production_plan_part_allocation",
+
+        # Runs hourly at :30 -- refreshes ONLY the Priority Rank (and the serial's
+        # current department/warehouse) on the latest plan. It never changes the
+        # to make item code. :30 keeps it clear of the hourly jobs at :00.
+        "30 * * * *": [
+            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.enqueue_latest_production_plan_priority_rank",
         ],
 
         "20,40 * * * *": [

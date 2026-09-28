@@ -348,7 +348,7 @@ class CustomSalesOrder(SalesOrder):
                 "Sales Order",
                 {
                     "payment_id": self.payment_id,
-                    "docstatus": 1,
+                    "docstatus": ["!=", 2],
                     "name": ["!=", self.name]
                 },
                 "name"

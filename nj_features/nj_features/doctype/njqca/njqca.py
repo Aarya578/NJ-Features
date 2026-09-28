@@ -7589,8 +7589,15 @@ def _parse_heavyload_summary_from_csv_bytes(
         return {"heavy_load_error": f"CPU package power column not found. Found: {fieldnames[:25]}"}
 
     temp_cols = [c for c in fieldnames if ("temperature" in c.lower() and "cpu core" in c.lower())]
+    temp_cols = [
+    c for c in fieldnames
+        if "temperature" in c.lower()
+    ]
+
     if not temp_cols:
-        return {"heavy_load_error": "No temperature columns like 'Temperature | CPU Core #x' found."}
+        return {
+            "heavy_load_error": "No temperature columns found."
+        }
 
     clock_cols = [c for c in fieldnames if ("clock" in c.lower() and "cpu core" in c.lower())]
     if not clock_cols:

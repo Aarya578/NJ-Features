@@ -5302,6 +5302,7 @@ def evaluate_status_from_criteria(doc, criteria_rows, setting_parameter):
         if not result_row:
             evaluation_results.append({
                 "parameter": parameter,
+                "item_group": criteria_row.get("item_group"),
                 "njqca_value": "",
                 "expected_range": expected_value,
                 "status": "Fail",
@@ -5333,7 +5334,8 @@ def evaluate_status_from_criteria(doc, criteria_rows, setting_parameter):
             "njqca_value": actual_value,
             "expected_range": expected_value,
             "status": "Pass" if is_passing else "Fail",
-            "message": message
+            "message": message,
+            "item_group": result_row.get("item_group")
         })
 
     return evaluation_results
@@ -5532,6 +5534,21 @@ def get_individual_parameter_status_results(evaluation_results, item_group):
 
     return results
 
+def get_criteria_detail_rows(evaluation_results, check_name):
+    rows = []
+
+    for row in evaluation_results or []:
+        rows.append({
+            "check_name": check_name,
+            "item_group": row.get("item_group"),
+            "parameter": row.get("parameter"),
+            "criteria_value": row.get("expected_range"),
+            "actual_value": row.get("njqca_value"),
+            "status": row.get("status"),
+            "failure_reason": row.get("message")
+        })
+
+    return rows
 
 def process_performance_and_heavyload_status(doc, criteria_rows):
     performance_evaluation_results = evaluate_status_from_criteria(
@@ -5605,10 +5622,20 @@ def process_performance_and_heavyload_status(doc, criteria_rows):
     results.extend(performance_individual_results)
     results.extend(heavyload_individual_results)
 
-    return {
-        "changes": results
-    }
 
+    return {
+        "changes": results,
+
+        "performance_criteria": get_criteria_detail_rows(
+            performance_evaluation_results,
+            "Performance_status"
+        ),
+
+        "heavyload_criteria": get_criteria_detail_rows(
+            heavyload_evaluation_results,
+            "heavy_load_status"
+        )
+    }
 def get_criteria_child_rows_from_name(criteria_name):
     """
     Load Criteria Child rows from Performance Criteria doctype.

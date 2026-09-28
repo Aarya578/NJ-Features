@@ -5534,20 +5534,17 @@ def get_individual_parameter_status_results(evaluation_results, item_group):
 
     return results
 
-def get_failure_detail_rows(evaluation_results, check_name):
+def get_criteria_detail_rows(evaluation_results, check_name):
     rows = []
 
     for row in evaluation_results or []:
-
-        if row.get("status") != "Fail":
-            continue
-
         rows.append({
             "check_name": check_name,
             "item_group": row.get("item_group"),
             "parameter": row.get("parameter"),
             "criteria_value": row.get("expected_range"),
             "actual_value": row.get("njqca_value"),
+            "status": row.get("status"),
             "failure_reason": row.get("message")
         })
 
@@ -5628,17 +5625,17 @@ def process_performance_and_heavyload_status(doc, criteria_rows):
 
     return {
         "changes": results,
-        "performance_failures": get_failure_detail_rows(
+
+        "performance_criteria": get_criteria_detail_rows(
             performance_evaluation_results,
             "Performance_status"
         ),
 
-        "heavyload_failures": get_failure_detail_rows(
+        "heavyload_criteria": get_criteria_detail_rows(
             heavyload_evaluation_results,
             "heavy_load_status"
         )
     }
-
 def get_criteria_child_rows_from_name(criteria_name):
     """
     Load Criteria Child rows from Performance Criteria doctype.

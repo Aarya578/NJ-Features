@@ -483,7 +483,7 @@ class PartAllocationRun:
                 warehouse = str(row.get("serial_warehouse") or "")
                 warehouse_upper = warehouse.upper()
                 warehouse_department = normalized(row.get("serial_warehouse_department"))
-                if serial_group not in {"LAPTOPS", "CHROMEBOOKS"}:
+                if serial_group not in {"LAPTOPS", "CHROMEBOOKS","MACBOOKS"}:
                     entry["allocation_exclusion_reason"] = (
                         "Serial item group is outside Google Sheet scope"
                     )

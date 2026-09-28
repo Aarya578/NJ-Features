@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from frappe.model.document import Document
 from nj_lib.utils.common_utils import get_active_emp
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
+from nj_lib.utils.grade_valuation import is_grade_conversion
 # from nj_p1_features.nj_p1_features.doctype.machine_part_changes.machine_part_changes import get_part_ledger_entry
 logger = frappe.logger('Shopifys', allow_site=True, file_count=1)
 
@@ -78,7 +79,7 @@ class StockMovement(Document):
     def on_submit(self):
         try:
             # self.deparement_qty_check()
-            check_warehouse_qty(self.name)
+            # check_warehouse_qty(self.name)
             self.time_stamp_update()
             if self.get("make_supplier_return"):
                 self.validate_supplier_return()
@@ -146,6 +147,17 @@ class StockMovement(Document):
         - Checks if scanned serial item matches purchase receipt item
         - If they don't match, create a stock entry using make_stock_entry_using_nj_lib
         """
+        if self.make_supplier_return != 1:
+            return
+
+        restricted_item_groups = {
+            value.strip().lower()
+            for value in get_nj_settings_comma_separated_values(
+                "make_suppliers_return_item_groups"
+            )
+        }
+        requires_repack = False
+
         if self.make_supplier_return == 1: 
             for item in self.items:
                 if item.serial_no:
@@ -154,6 +166,19 @@ class StockMovement(Document):
                         if serial_no:
                             serial_doc = frappe.get_doc("Serial No", serial_no)
                             serial_item_code = serial_doc.item_code
+
+                            serial_item_group = serial_doc.item_group or frappe.db.get_value(
+                                "Item", serial_item_code, "item_group"
+                            )
+                            if (
+                                (serial_item_group or "").strip().lower()
+                                in restricted_item_groups
+                            ):
+                                frappe.throw(
+                                    f"Core Item Group <b>{serial_item_group}</b> is not allowed "
+                                    f"when <b>Make Supplier Return</b> is checked. "
+                                    f"Serial No: <b>{serial_no}</b>."
+                                )
 
                             # ✅ Correct field from Serial No
                             purchase_receipt = serial_doc.purchase_receipt
@@ -164,7 +189,10 @@ class StockMovement(Document):
                                 )
                                 
                                 if serial_item_code != purchase_item_code:
-                                    self.make_stock_entry_using_nj_lib()
+                                    requires_repack = True
+
+        if requires_repack:
+            self.make_stock_entry_using_nj_lib()
 
     def updating_mr_qty_with_status(self):
         
@@ -469,7 +497,11 @@ class StockMovement(Document):
                     'unpack_serial_no': serial_no_value,
                     'unpack_item_code': purchase_item_code,
                     'unpack_item_target_warehouse': item.t_warehouse,
-                    'is_finished_item': 1
+                    'is_finished_item': 1,
+                    'apply_grade_valuation': is_grade_conversion(
+                        serial_item_code,
+                        purchase_item_code,
+                    ),
                 }
                 return_unpack_items_data.append(unpack_item)
 

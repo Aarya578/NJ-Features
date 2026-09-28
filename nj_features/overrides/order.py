@@ -22,12 +22,64 @@ from ecommerce_integrations.utils.price_list import get_dummy_price_list
 from nj_features.overrides.customer import ShopifyCustomer
 
 logger = frappe.logger('SHopifyNJOrder', allow_site=True, file_count=1)
+
+
+def _lock_shopify_sales_order_creation():
+    """Serialize Shopify Sales Order creation until the DB transaction ends.
+
+    Shopify can deliver the same order more than once while the first worker is
+    still processing it. A normal existence check cannot see another worker's
+    uncommitted Sales Order, so both workers may otherwise create the order.
+    Locking one stable Shopify Setting row makes the second worker wait for the
+    first transaction to commit or roll back before running duplicate checks.
+    """
+    frappe.db.sql(
+        """
+        SELECT `field`
+        FROM `tabSingles`
+        WHERE `doctype` = %s
+        ORDER BY `field`
+        LIMIT 1
+        FOR UPDATE
+        """,
+        (SETTING_DOCTYPE,),
+    )
+
+
+def _get_existing_shopify_sales_order(shopify_order):
+    """Return an existing non-cancelled Sales Order for this Shopify order."""
+    shopify_order_id = cstr(shopify_order.get("id"))
+    shopify_order_name = cstr(shopify_order.get("name"))
+
+    # The numeric Shopify ID is stored in ORDER_NUMBER_FIELD and the display
+    # order name (for example #34017) is stored in ORDER_ID_FIELD.
+    if shopify_order_id:
+        existing_so = frappe.db.get_value(
+            "Sales Order",
+            {ORDER_NUMBER_FIELD: shopify_order_id, "docstatus": ["!=", 2]},
+            "name",
+        )
+        if existing_so:
+            return existing_so
+
+    if shopify_order_name:
+        return frappe.db.get_value(
+            "Sales Order",
+            {ORDER_ID_FIELD: shopify_order_name, "docstatus": ["!=", 2]},
+            "name",
+        )
+
+
 def sync_sales_order(payload, request_id=None):
     order = payload
     frappe.set_user("Administrator")
     frappe.flags.request_id = request_id
 
-    if frappe.db.get_value("Sales Order", filters={ORDER_ID_FIELD: cstr(order["id"])}):
+    # Acquire the lock before customer/item writes so concurrent deliveries of
+    # the same Shopify order cannot overlap during any part of synchronization.
+    _lock_shopify_sales_order_creation()
+
+    if _get_existing_shopify_sales_order(order):
         shopify_utils.create_shopify_log(status="Invalid", message="Sales order already exists, not synced")
         return
     try:
@@ -262,17 +314,17 @@ def create_sales_order(shopify_order, setting, company=None):
 
     logger.info(f"shopify_order ====from njfeatures====316======{shopify_order}")
 
+    # The row lock is released automatically by the request commit/rollback.
+    # It makes concurrent Shopify jobs run their duplicate checks in sequence.
+    _lock_shopify_sales_order_creation()
+
     customer = setting.default_customer
 
     if customer_id := shopify_order.get("customer", {}).get("id"):
         customer = frappe.db.get_value("Customer", {CUSTOMER_ID_FIELD: customer_id}, "name")
 
     # Check if Shopify order already exists
-    existing_so = frappe.db.get_value(
-        "Sales Order",
-        {ORDER_ID_FIELD: str(shopify_order.get("id"))},
-        "name"
-    )
+    existing_so = _get_existing_shopify_sales_order(shopify_order)
 
     if existing_so:
         return frappe.get_doc("Sales Order", existing_so)
@@ -341,20 +393,20 @@ def create_sales_order(shopify_order, setting, company=None):
 
     logger.info(f"Payment ID used for Sales Order: {payment_id}")
 
-    # Check duplicate payment_id only for submitted documents
+    # Check every non-cancelled document, including Draft Sales Orders.
     if payment_id:
 
         existing_payment_so = frappe.db.exists(
             "Sales Order",
             {
                 "payment_id": payment_id,
-                "docstatus": 1
+                "docstatus": ["!=", 2]
             }
         )
 
         if existing_payment_so:
             frappe.throw(
-                f"Payment ID '{payment_id}' already used in Submitted Sales Order: {existing_payment_so}"
+                f"Payment ID '{payment_id}' is already used in Sales Order: {existing_payment_so}"
             )
 
     latest_addresses = get_latest_customer_addresses(customer)

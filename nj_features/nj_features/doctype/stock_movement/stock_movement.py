@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from frappe.model.document import Document
 from nj_lib.utils.common_utils import get_active_emp
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
+from nj_lib.utils.grade_valuation import is_grade_conversion
 # from nj_p1_features.nj_p1_features.doctype.machine_part_changes.machine_part_changes import get_part_ledger_entry
 logger = frappe.logger('Shopifys', allow_site=True, file_count=1)
 
@@ -78,7 +79,7 @@ class StockMovement(Document):
     def on_submit(self):
         try:
             # self.deparement_qty_check()
-            check_warehouse_qty(self.name)
+            # check_warehouse_qty(self.name)
             self.time_stamp_update()
             if self.get("make_supplier_return"):
                 self.validate_supplier_return()
@@ -146,6 +147,17 @@ class StockMovement(Document):
         - Checks if scanned serial item matches purchase receipt item
         - If they don't match, create a stock entry using make_stock_entry_using_nj_lib
         """
+        if self.make_supplier_return != 1:
+            return
+
+        restricted_item_groups = {
+            value.strip().lower()
+            for value in get_nj_settings_comma_separated_values(
+                "make_suppliers_return_item_groups"
+            )
+        }
+        requires_repack = False
+
         if self.make_supplier_return == 1: 
             for item in self.items:
                 if item.serial_no:
@@ -154,6 +166,19 @@ class StockMovement(Document):
                         if serial_no:
                             serial_doc = frappe.get_doc("Serial No", serial_no)
                             serial_item_code = serial_doc.item_code
+
+                            serial_item_group = serial_doc.item_group or frappe.db.get_value(
+                                "Item", serial_item_code, "item_group"
+                            )
+                            if (
+                                (serial_item_group or "").strip().lower()
+                                in restricted_item_groups
+                            ):
+                                frappe.throw(
+                                    f"Core Item Group <b>{serial_item_group}</b> is not allowed "
+                                    f"when <b>Make Supplier Return</b> is checked. "
+                                    f"Serial No: <b>{serial_no}</b>."
+                                )
 
                             # ✅ Correct field from Serial No
                             purchase_receipt = serial_doc.purchase_receipt
@@ -164,7 +189,10 @@ class StockMovement(Document):
                                 )
                                 
                                 if serial_item_code != purchase_item_code:
-                                    self.make_stock_entry_using_nj_lib()
+                                    requires_repack = True
+
+        if requires_repack:
+            self.make_stock_entry_using_nj_lib()
 
     def updating_mr_qty_with_status(self):
         
@@ -469,7 +497,11 @@ class StockMovement(Document):
                     'unpack_serial_no': serial_no_value,
                     'unpack_item_code': purchase_item_code,
                     'unpack_item_target_warehouse': item.t_warehouse,
-                    'is_finished_item': 1
+                    'is_finished_item': 1,
+                    'apply_grade_valuation': is_grade_conversion(
+                        serial_item_code,
+                        purchase_item_code,
+                    ),
                 }
                 return_unpack_items_data.append(unpack_item)
 
@@ -1659,16 +1691,26 @@ def validate_serial_no_in_latest_nj_production_plan(
         return True
 
     target_warehouse = transfer_row.get("t_warehouse") if transfer_row else None
-    target_warehouse_type = (
-        frappe.db.get_value("Warehouse", target_warehouse, "warehouse_type")
+    target_warehouse_values = (
+        frappe.db.get_value(
+            "Warehouse",
+            target_warehouse,
+            ["warehouse_type", "department"],
+            as_dict=True,
+        )
         if target_warehouse
-        else None
-    )
+        else {}
+    ) or {}
+    target_warehouse_type = target_warehouse_values.get("warehouse_type")
+    target_department = target_warehouse_values.get("department")
+    same_department = bool(s_department) and s_department == target_department
 
-    # Stock leaving an Operation Warehouse must still pass all NJ Production
-    # Plan presence/missing-serial checks. Only Priority Rank and Part Allocation
-    # rank validation is skipped for the supported target warehouse types.
+    # NJ Production Plan presence/missing-serial checks still run. Only Priority
+    # Rank and Part Allocation rank validation is skipped when both warehouses
+    # belong to the same department, or for the existing Operation Warehouse flow.
     skip_rank_validation = (
+        same_department
+    ) or (
         source_warehouse_type == "Operation Warehouse"
         and target_warehouse_type in ("Rack", "Transit", "Operation Warehouse")
     )
@@ -1695,15 +1737,23 @@ def validate_serial_no_in_latest_nj_production_plan(
     )
 
     if production_plan_row:
+        serial_department = serial_doc.get("department")
+        if production_plan_row.get("current_department") != serial_department:
+            # The Serial No has moved away from the department recorded in this
+            # NJPP row, so it no longer participates in that department's rank.
+            return True
+
         if skip_rank_validation:
             return True
 
         return _validate_production_plan_rank_for_transfer(
             serial_no=serial_no,
+            serial_item_group=serial_item_group,
             production_plan_name=nj_production_name,
             production_plan_row=production_plan_row,
             transfer_row=transfer_row,
             transfer_doc=doc,
+            target_department=target_department,
             core_item_groups=stock_movement_item_groups,
             error_messages=error_messages,
         )
@@ -1758,10 +1808,12 @@ def _get_transfer_serial_nos(transfer_doc):
 
 def _validate_production_plan_rank_for_transfer(
     serial_no,
+    serial_item_group,
     production_plan_name,
     production_plan_row,
     transfer_row,
     transfer_doc,
+    target_department,
     core_item_groups,
     error_messages,
 ):
@@ -1839,7 +1891,8 @@ def _validate_production_plan_rank_for_transfer(
             FPPD.serial_no,
             FPPD.priority_rank,
             IFNULL(FPPD.part_allocation, 0) AS part_allocation,
-            SN.warehouse
+            SN.warehouse,
+            SN.item_group
         FROM `tabFinal Production Planning Data` FPPD
         INNER JOIN `tabSerial No` SN ON SN.name = FPPD.serial_no
         INNER JOIN `tabWarehouse` WH ON WH.name = SN.warehouse
@@ -1848,11 +1901,41 @@ def _validate_production_plan_rank_for_transfer(
           AND FPPD.parentfield = 'lines'
           AND SN.warehouse IS NOT NULL
           AND SN.item_group IN %(core_item_groups)s
+          AND SN.department = FPPD.current_department
           {scope_condition}
         """,
         query_filters,
         as_dict=True,
     )
+
+    # Fetch the complete NJPP rank scope first, then filter that result using
+    # the Target Department's SLA Item Groups before allocation/rank checks.
+    target_sla_item_groups_value = (
+        frappe.db.get_value("Department", target_department, "sla_item_groups")
+        if target_department
+        else None
+    )
+    target_sla_item_groups = {
+        item_group.strip()
+        for item_group in (target_sla_item_groups_value or "").split(",")
+        if item_group and item_group.strip()
+    }
+
+    if target_sla_item_groups:
+        if serial_item_group not in target_sla_item_groups:
+            error_messages.append(
+                f"Serial No <b>{serial_no}</b> belongs to Item Group "
+                f"<b>{serial_item_group or 'Not Set'}</b>, which is not configured in "
+                f"SLA Item Groups for Target Department <b>{target_department}</b>. "
+                f"Movement is not allowed."
+            )
+            return False
+
+        available_rows = [
+            row
+            for row in available_rows
+            if row.get("item_group") in target_sla_item_groups
+        ]
 
     selected_serial_nos = _get_transfer_serial_nos(transfer_doc)
     selected_part_allocation = bool(int(flt(production_plan_row.get("part_allocation") or 0)))

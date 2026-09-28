@@ -77,7 +77,11 @@
   "pwd",
   "amended_from",
   "execution_check_status_section",
-  "execution_check_status"
+  "execution_check_status",
+  "performance_criteria_details_section",
+  "performance_criteria_parameters",
+  "heavy_load_criteria_details_section",
+  "heavyload_criteria_details"
  ],
  "fields": [
   {
@@ -546,11 +550,37 @@
    "label": "Model Changed Using Change Model",
    "no_copy": 1,
    "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "performance_criteria_details_section",
+   "fieldtype": "Section Break",
+   "label": "Performance Criteria Details"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "performance_criteria_parameters",
+   "fieldtype": "Table",
+   "label": "Performance Criteria Details",
+   "options": "NJQCA Performance Criteria Detail"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "heavy_load_criteria_details_section",
+   "fieldtype": "Section Break",
+   "label": "Heavy Load Criteria Details"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "heavyload_criteria_details",
+   "fieldtype": "Table",
+   "label": "Heavy Load Criteria Details",
+   "options": "NJQCA Heavy Load Criteria Detail"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-09-17 18:31:21.289315",
+ "modified": "2026-09-28 14:53:17.656028",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

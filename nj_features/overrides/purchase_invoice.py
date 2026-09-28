@@ -74,8 +74,24 @@ def on_submit_purchase_invoice(doc, method):
         if cint(doc.is_return) != 1:
             return
 
-        frappe.logger().info(f"Calling reconcile for supplier: {doc.supplier}")
-        _reconcile_supplier_with_elevated_access(doc.supplier)
+        # Supplier reconciliation scans all unreconciled invoices/payments for
+        # the supplier and can take minutes. The submitted Debit Note is
+        # already part of the surrounding transaction, so run this independent
+        # maintenance step only after that transaction commits.
+        frappe.enqueue(
+            "nj_features.overrides.purchase_invoice."
+            "_reconcile_supplier_with_elevated_access",
+            queue="long",
+            timeout=1800,
+            enqueue_after_commit=True,
+            job_name=f"supplier_payment_reconcile_{doc.name}",
+            supplier=doc.supplier,
+        )
+        frappe.logger().info(
+            "Queued supplier reconciliation for %s after submitting %s",
+            doc.supplier,
+            doc.name,
+        )
     finally:
         log_pi_time("on_submit_purchase_invoice", doc.name, start)
 

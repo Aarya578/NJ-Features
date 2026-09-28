@@ -789,10 +789,10 @@ frappe.ui.form.on("NJQCA", {
 
             // Fill Heavy Load Criteria Details
             if (Array.isArray(r.message.heavyload_criteria)) {
-              frm.clear_table("heavyload_criteria_parameters");
+              frm.clear_table("heavyload_criteria_details");
 
               r.message.heavyload_criteria.forEach((row) => {
-                let child = frm.add_child("heavyload_criteria_parameters");
+                let child = frm.add_child("heavyload_criteria_details");
 
                 child.check_name = row.check_name;
                 child.item_group = row.item_group;
@@ -803,7 +803,7 @@ frappe.ui.form.on("NJQCA", {
                 child.failure_reason = row.failure_reason;
               });
 
-              frm.refresh_field("heavyload_criteria_parameters");
+              frm.refresh_field("heavyload_criteria_details");
             }
 
             if (r.message.parameter) {

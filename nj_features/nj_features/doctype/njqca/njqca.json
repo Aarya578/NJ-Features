@@ -81,7 +81,7 @@
   "performance_criteria_details_section",
   "performance_criteria_parameters",
   "heavy_load_criteria_details_section",
-  "heavyload_criteria_parameters"
+  "heavyload_criteria_details"
  ],
  "fields": [
   {
@@ -565,22 +565,22 @@
    "options": "NJQCA Performance Criteria Detail"
   },
   {
-   "allow_on_submit": 1,
-   "fieldname": "heavyload_criteria_parameters",
-   "fieldtype": "Table",
-   "label": "Heavy Load Criteria Parameters",
-   "options": "NJQCA Heavy Load Criteria Detail"
-  },
-  {
    "collapsible": 1,
    "fieldname": "heavy_load_criteria_details_section",
    "fieldtype": "Section Break",
-   "label": "Heavy Load Criteria Parameters"
+   "label": "Heavy Load Criteria Details"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "heavyload_criteria_details",
+   "fieldtype": "Table",
+   "label": "Heavy Load Criteria Details",
+   "options": "NJQCA Heavy Load Criteria Detail"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-09-28 14:46:32.730415",
+ "modified": "2026-09-28 14:53:17.656028",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

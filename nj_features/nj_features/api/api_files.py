@@ -5,6 +5,15 @@ from nj_lib.utils.common_utils import get_item_wizard
 from nj_lib.utils.common_utils import latest_repacked_battery_serialno
 from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 
+
+def encrypted_serial_scan_error(serial_no, is_encrypted, from_mapping=False):
+    if is_encrypted and not from_mapping:
+        return (
+            f"Serial No {serial_no} already has an encrypted barcode. "
+            "Please scan its encrypted barcode; the direct NJ Series Serial No barcode is not allowed."
+        )
+    return None
+
 @frappe.whitelist()
 def on_submit(doc, handler=""):
     crt_amzsl_inv(doc.name)
@@ -39,10 +48,12 @@ def crt_amzsl_inv(sales_order_name):
         pass
 
 @frappe.whitelist()
-def search_for_serial_or_batch_or_barcode_no(search_value, raise_exp=True):
+def search_for_serial_or_batch_or_barcode_no(search_value, raise_exp=True, enforce_encrypted=True):
 
     if isinstance(raise_exp, str):
         raise_exp = raise_exp.lower() in ['true', '1', 'yes']
+    if isinstance(enforce_encrypted, str):
+        enforce_encrypted = enforce_encrypted.lower() in ['true', '1', 'yes']
     
     serial_no_data = ''
 
@@ -72,18 +83,44 @@ def search_for_serial_or_batch_or_barcode_no(search_value, raise_exp=True):
     )
     
     if serial_no_data:
+        scan_error = encrypted_serial_scan_error(
+            serial_no_data.get("serial_no"), serial_no_data.get("is_encrypted")
+        ) if enforce_encrypted else None
+        if scan_error:
+            frappe.throw(scan_error)
         if (serial_no_data.get("delivery_document_type") or serial_no_data.get("delivery_document_no")):
             if raise_exp:
                 frappe.throw("Delivered items can't be moved")
                 return
-            
-        # if serial_no_data.get("is_encrypted"):
-        #     frappe.throw("Use correct Serial No. barcode.")
-        #     return
         
         return {"serial_no": serial_no_data.get("serial_no"), "item_code": serial_no_data.item_code, "warehouse": serial_no_data.warehouse, "scan": 0}
 
     return {"scan": 1}
+
+
+@frappe.whitelist()
+def search_for_serial_or_batch_or_barcode_number(search_value):
+    """Apply the encrypted Serial No rule to ERPNext's standard barcode scanner."""
+    from erpnext.selling.page.point_of_sale.point_of_sale import (
+        search_for_serial_or_batch_or_barcode_number as standard_search,
+    )
+
+    result = standard_search(search_value)
+    if result.get("serial_no"):
+        is_encrypted = frappe.db.get_value("Serial No", result["serial_no"], "is_encrypted")
+        scan_error = encrypted_serial_scan_error(result["serial_no"], is_encrypted)
+        if scan_error:
+            frappe.throw(scan_error)
+        return result
+
+    mapping = frappe.db.get_value(
+        "QR Code Mapping", {"name": search_value, "doctype1": "Serial No"}, "serial_no"
+    )
+    if mapping:
+        item_code = frappe.db.get_value("Serial No", mapping, "item_code")
+        if item_code:
+            return {"serial_no": mapping, "item_code": item_code}
+    return result
 
 # Barcode Printing in Purchase Receipt:
 

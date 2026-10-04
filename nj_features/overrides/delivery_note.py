@@ -3381,8 +3381,14 @@ def shiprocket_awb_number(doc):
                     frappe.throw(f"API request failed with status {response.status_code}: {response.text}")
                     
         except Exception as e:
-            frappe.log_error(f"Consignment API Failed for {doc.name}: {str(e)}", frappe.get_traceback())
-            frappe.throw(f"Failed to send data to ShipRocket API. Error: {str(e)}")
+            frappe.log_error(
+                message=frappe.get_traceback(),
+                title=f"Shiprocket consignment failed: {doc.name}",
+            )
+            frappe.throw(
+                f"Failed to send Delivery Note {doc.name} to Shiprocket. "
+                f"Error: {str(e) or type(e).__name__}"
+            )
 
         if not doc.shiprocket_shipment_id:
             frappe.throw("Shipment ID not found on the document after consignment creation.")
@@ -3690,8 +3696,27 @@ def shiprocket_awb_number(doc):
             "gst_transporter_id": transporter_id,
         }
     except Exception as e:
-        frappe.log_error(f"Error in shiprocket_awb_number: {str(e)}", frappe.get_traceback())
-        raise
+        doc_name = "Unknown"
+        if isinstance(doc, dict):
+            doc_name = doc.get("name") or doc_name
+        elif getattr(doc, "name", None):
+            doc_name = doc.name
+
+        frappe.log_error(
+            message=frappe.get_traceback(),
+            title=f"Shiprocket error: {doc_name}",
+        )
+
+        # Preserve messages deliberately raised with frappe.throw(). For all
+        # other exceptions, return a readable validation error instead of an
+        # empty HTTP 500 response.
+        if isinstance(e, frappe.ValidationError):
+            raise
+
+        frappe.throw(
+            f"Shiprocket processing failed for Delivery Note {doc_name}. "
+            f"Error: {str(e) or type(e).__name__}"
+        )
 
 @frappe.whitelist()
 def fetch_shiprocket_details(doc):

@@ -221,6 +221,7 @@ const DISPATCH_SCANNER_MAX_KEY_GAP = 350;
 const DISPATCH_SCANNER_IDLE_DELAY = 600;
 
 function setupDispatchScannerOnly(frm, fieldname) {
+    if (!window.njScannerAccess || !window.njScannerAccess.isEnabled()) return;
     const field = frm.get_field(fieldname);
     if (!field || !field.$input || frm.doc.docstatus !== 0) return;
 
@@ -397,6 +398,7 @@ function acceptDispatchScannerValue(frm, fieldname, value, state) {
 }
 
 function isDispatchValueFromScanner(frm, fieldname) {
+    if (!window.njScannerAccess || !window.njScannerAccess.isEnabled()) return true;
     const value = (frm.doc[fieldname] || "").trim();
     const state = frm[`__dispatch_scanner_${fieldname}`];
     if (!value) return true;

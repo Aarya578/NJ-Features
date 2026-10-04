@@ -32,7 +32,7 @@ def get_api_data():
 
 def get_data(filters):
     data = []
-    nj_serial_no = search_for_serial_or_batch_or_barcode_no(filters.get("barcode"), raise_exp=False)
+    nj_serial_no = search_for_serial_or_batch_or_barcode_no(filters.get("barcode"), raise_exp=False, enforce_encrypted=False)
 
     if nj_serial_no is not None and nj_serial_no.get("serial_no"):
         serial_no = nj_serial_no.get('serial_no')

@@ -374,19 +374,26 @@ def create_sales_order(shopify_order, setting, company=None):
     # Shopify product properties normally belong to individual line items.
     # Set the Sales Order checkbox only when at least one property explicitly
     # identifies the purchase as an NM pre-order.
-    property_groups = [shopify_order.get("properties") or []]
-    property_groups.extend(
-        line_item.get("properties") or []
-        for line_item in (shopify_order.get("line_items") or [])
-    )
-    is_pre_order = int(any(
-        str(prop.get("name") or "").strip() == "_purchase_type"
-        and str(prop.get("value") or "").strip() == "NM-preorder"
-        for properties in property_groups
-        for prop in properties
-        if isinstance(prop, dict)
-    ))
+    # property_groups = [shopify_order.get("properties") or []]
+    # property_groups.extend(
+    #     line_item.get("properties") or []
+    #     for line_item in (shopify_order.get("line_items") or [])
+    # )
+    # is_pre_order = int(any(
+    #     str(prop.get("name") or "").strip() == "_purchase_type"
+    #     and str(prop.get("value") or "").strip() == "NM-preorder"
+    #     for properties in property_groups
+    #     for prop in properties
+    #     if isinstance(prop, dict)
+    # ))
+    note_attributes = shopify_order.get("note_attributes") or []
 
+    is_pre_order = int(any(
+        str(attribute.get("name") or "").strip() == "custom.pre_order_status"
+        and str(attribute.get("value") or "").strip().lower() == "pre-order"
+        for attribute in note_attributes
+        if isinstance(attribute, dict)
+    ))
 
     if is_snapmint and snapmint_id:
         payment_id = snapmint_id

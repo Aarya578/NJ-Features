@@ -17,6 +17,59 @@ INVENTORY_SYNC_LOCK_TIMEOUT = 3600
 INVENTORY_ORDER_SYNC_TIMEOUT = 3000
 INVENTORY_SYNC_LOCK_WAIT = 1200
 
+# Order-triggered syncs (shopify_inventory_targeted.create_rq_doc_by_item_codes)
+# do not take the lock above, so they can land in the middle of an hourly run.
+# The hourly run reads ERP stock at ~:00 but writes the staging rows minutes
+# later, so without a check it overwrites the order's fresh figure with its own
+# older one and the :20 push sends it. 2026-09-29: SAL-ORD-2026-09418 reserved
+# the only Dell 5310(IR) at 14:01:57, the order sync set Shopify 1 -> 0 at 14:02,
+# and the hourly run (stock read before 14:01:57) pushed it back 0 -> 1 at 14:20.
+# Each order sync records when it started, per variant; an hourly run leaves a
+# variant alone if an order sync started after the hourly run's own snapshot.
+TARGETED_SYNC_MARKS_KEY = "nj_shopify_targeted_sync_started_at"
+TARGETED_SYNC_MARK_TTL = 2 * 3600
+
+
+def mark_targeted_sync(variant_ids, started_at):
+    """Record that an order-triggered sync read fresh data for these variants at started_at (epoch)."""
+    try:
+        cache = frappe.cache()
+        for variant_id in variant_ids:
+            cache.hset(TARGETED_SYNC_MARKS_KEY, str(variant_id).strip(), started_at)
+    except Exception:
+        logger.exception("Unable to record targeted sync marks")
+
+
+def get_targeted_sync_marks(since):
+    """{variant_id: epoch} for order-triggered syncs that started after `since`.
+
+    Marks older than TARGETED_SYNC_MARK_TTL are pruned. On a cache failure this
+    returns {} - the hourly run then behaves as it did before the check existed.
+    """
+    try:
+        cache = frappe.cache()
+        marks = cache.hgetall(TARGETED_SYNC_MARKS_KEY) or {}
+    except Exception:
+        logger.exception("Unable to read targeted sync marks")
+        return {}
+
+    now = time.time()
+    recent = {}
+    for key, started_at in marks.items():
+        variant_id = key.decode() if isinstance(key, bytes) else str(key)
+        try:
+            started_at = float(started_at)
+        except (TypeError, ValueError):
+            started_at = 0
+        if now - started_at > TARGETED_SYNC_MARK_TTL:
+            try:
+                cache.hdel(TARGETED_SYNC_MARKS_KEY, variant_id)
+            except Exception:
+                pass
+        elif started_at > since:
+            recent[variant_id] = started_at
+    return recent
+
 
 def inventory_sync_execution_lock(func=None, *, wait=False):
     """Prevent staging and Shopify inventory writes from overlapping."""
@@ -87,6 +140,27 @@ def safe_float(value):
     except (ValueError, TypeError):
         return None
 
+def log_shopify_push(source, variant_id, from_qty, to_qty, result, reason=""):
+    """One NJ Log row per Shopify quantity push (method 'shopify_inventory_push').
+
+    Nothing else keeps history: NJ Inventory Sync Main is overwritten every run,
+    so without this a listing that moved 2 -> 0 -> 2 cannot be explained after
+    the fact. source is 'hourly' or the Sales Order that triggered the push;
+    reason carries the staging tags ([ParentOverride...], [WarrantyApplied] ...).
+    """
+    try:
+        from_txt = "?" if from_qty is None else f"{safe_float(from_qty) or 0:g}"
+        log_error(
+            f"variant={variant_id} qty {from_txt} -> {to_qty} source={source} "
+            f"result={result} reason={(reason or '').strip()[:400]}",
+            "shopify_inventory_push",
+            "Info",
+        )
+    except Exception:
+        # An audit line must never break the push itself.
+        pass
+
+
 def get_inventory_sync_flags():
     """
     Safely retrieves the inventory sync rule configuration flags from NJ Settings.
@@ -105,9 +179,27 @@ def get_inventory_sync_flags():
         "enable_parent_override": get_setting_int("enable_parent_override", 1),
         "parent_threshold": get_setting_int("parent_override_threshold", 1),
         "enable_warranty": get_setting_int("enable_warranty_rule", 1),
-        "warranty_threshold": get_setting_int("warranty_threshold", 2),
+        "warranty_threshold": get_setting_int("warranty_threshold", 1),
         "pre_order_threshold": get_setting_int("pre_order_threshold", 4),
+        # 0 = every variant of a parent+Processor shows the whole pool
+        # (business decision 2026-09-25; can oversell). 1 = one variant claims
+        # the pool, siblings get 0.
+        "pre_order_claim": get_setting_int("pre_order_claim", 0),
+        # Business rule 2026-09-28: a variant is offered as pre-order only when
+        # its ETD (SO Quantity Check.sla, in days) is MORE than this. At or
+        # below it, or with no ETD at all, the pre-order quantity is not pushed.
+        "pre_order_min_etd_days": get_setting_int("pre_order_min_etd_days", 3),
     }
+
+
+def pre_order_etd_allows(row, flags):
+    """True when the variant's ETD is long enough to be sold as pre-order.
+
+    row.etd_days is MIN(NULLIF(sla, 0)) across the variant's item codes - the
+    same figure shown as estimated_time_of_dispatch. None means no ETD.
+    """
+    etd_days = safe_float(getattr(row, "etd_days", None)) or 0
+    return etd_days > flags["pre_order_min_etd_days"]
 
 
 def _effective_live_qty(rows, flags, parent_qty_dict):
@@ -543,6 +635,9 @@ def _create_rq_doc(variant_ids=None):
 
     run_id = frappe.generate_hash(length=8)
     started_at = time.monotonic()
+    # Wall-clock time before any ERP stock is read - compared against the
+    # order-sync marks (see TARGETED_SYNC_MARKS_KEY).
+    snapshot_started_at = time.time()
     stats = {
         "total": 0,
         "processed": 0,
@@ -550,6 +645,7 @@ def _create_rq_doc(variant_ids=None):
         "updated": 0,
         "unchanged": 0,
         "skipped": 0,
+        "held_for_order_sync": 0,
         "failed": 0,
         "shopify_found": 0,
         "shopify_missing": 0,
@@ -657,7 +753,8 @@ def _create_rq_doc(variant_ids=None):
                 GROUP_CONCAT(DISTINCT v.item_group ORDER BY v.item_group SEPARATOR ', ') AS item_groups,
                 CAST(SUM(v.update_qty2) AS DECIMAL(10, 2)) AS total_actual_qty,
                 CAST(SUM(COALESCE(v.pre_order_qty, 0)) AS DECIMAL(10, 2)) AS total_pre_order_qty,
-                CASE 
+                MIN(NULLIF(v.sla, 0)) AS etd_days,
+                CASE
                     WHEN MIN(NULLIF(v.sla, 0)) IS NULL THEN ''
                     WHEN MIN(NULLIF(v.sla, 0)) = 1 THEN '1 Day'
                     ELSE CONCAT(MIN(NULLIF(v.sla, 0)), ' Days')
@@ -728,7 +825,7 @@ def _create_rq_doc(variant_ids=None):
         # never displays the pre-order figure. Claiming on the raw rollup would
         # hand the pool to a variant that is about to gain stock, stranding the
         # allocation and zeroing whoever held it before.
-        if pre_order_data_ok:
+        if pre_order_data_ok and flags["pre_order_claim"]:
             claim_stats = resolve_pre_order_claims(
                 results, effective_live=_effective_live_qty(results, flags, parent_qty_dict)
             )
@@ -783,6 +880,9 @@ def _create_rq_doc(variant_ids=None):
             f"[{run_id}] fresh Shopify lookup completed: "
             f"found={stats['shopify_found']}, missing={stats['shopify_missing']}"
         )
+
+        # Read as late as possible, just before the staging rows are written.
+        recent_order_syncs = get_targeted_sync_marks(snapshot_started_at)
 
         # =========================================================
         # 🔁 MAIN LOOP
@@ -866,19 +966,35 @@ def _create_rq_doc(variant_ids=None):
             live_qty = safe_float(row.total_actual_qty) or 0
             pre_order_qty = safe_float(row.total_pre_order_qty) or 0
 
-            # hold_pre_order means "we do not know", which is a different thing
-            # from "there are none" - resolved once the current record is read.
             hold_pre_order = False
+            etd_is_pre = pre_order_etd_allows(row, flags)
 
             if live_qty > 0:
                 desired_qty = float(live_qty)
-                is_pre_order = 0
-            elif pre_order_qty > 0:
+                if etd_is_pre:
+                    is_pre_order = 1
+                    # Save what Shopify actually gets (the shelf qty), not the pool qty.
+                    pre_order_qty = live_qty
+                    update_status += f"[PreOrderLiveSynced→{desired_qty:g}] "
+                else:
+                    is_pre_order = 0
+            elif pre_order_qty > 0 and etd_is_pre:
                 # The threshold was already applied upstream in update_pre_order_qty
                 # (against company quantity); anything still > 0 has passed it.
                 desired_qty = float(pre_order_qty)
                 is_pre_order = 1
                 update_status += f"[PreOrderSynced→{desired_qty:g}] "
+            elif pre_order_qty > 0:
+                # ETD too short (or missing) to be offered as pre-order. The staged
+                # shopify_pre_order_qty is zeroed too: the policy and tag syncs
+                # read that field, not is_pre_order.
+                update_status += (
+                    f"[PreOrderSkipped ETD={safe_float(getattr(row, 'etd_days', None)) or 0:g}"
+                    f"<={flags['pre_order_min_etd_days']}] "
+                )
+                pre_order_qty = 0
+                desired_qty = 0.0
+                is_pre_order = 0
             elif not pre_order_data_ok:
                 hold_pre_order = True
                 desired_qty = None
@@ -918,6 +1034,31 @@ def _create_rq_doc(variant_ids=None):
                 ORDER BY modified DESC
             """, tuple(params), as_dict=True)
             logger.debug(f"existing================== {existing}")
+
+            # An order sync read fresher stock for this variant after this run's
+            # snapshot: keep its staging row as it is. Registering the row in
+            # updated_doc_names stops the stale-record pass below zeroing it.
+            # The next hourly run picks the variant up normally. A row the order
+            # sync left in Error is not held: nothing fresher reached Shopify, so
+            # this run's figure is the best one available and should be retried.
+            held_variant = str(row.shopify_variant_id or "").strip()
+            if (
+                existing
+                and held_variant in recent_order_syncs
+                and existing[0].get("status") != "Error"
+            ):
+                updated_doc_names.add(existing[0].name)
+                stats["held_for_order_sync"] += 1
+                log_error(
+                    f"variant={held_variant} hourly staging skipped: order sync started "
+                    f"{recent_order_syncs[held_variant] - snapshot_started_at:.0f}s after this "
+                    f"run's stock snapshot; would have staged ERP={desired_qty}, "
+                    f"keeping ERP={existing[0].get('updated_qty')} "
+                    f"Shopify={existing[0].get('shopify_quantity')} run={run_id}",
+                    "shopify_inventory_push_held",
+                    "Info",
+                )
+                continue
 
             # Breaker tripped: keep whatever this variant already advertises.
             # With no prior record there is nothing live on Shopify to protect,
@@ -1336,71 +1477,96 @@ def _create_shopify_inventory_sync(variant_ids=None):
 
             if valid_rows:
                 totals["batches"] += 1
-                batch_error = None
-                batch_updated_at = None
-                indexed_user_errors = {}
 
-                try:
-                    response = post_shopify_api(
-                        graphql_url,
-                        headers=headers,
-                        json_payload={
-                            "query": mutation,
-                            "variables": {
-                                "idempotencyKey": batch_id,
-                                "input": {
-                                    # "available" is correct here: the quantity we
-                                    # stage (updated_qty) already excludes serials
-                                    # reserved to a sales order, so it is a
-                                    # SELLABLE number, not a physical on-hand one.
-                                    # Pushing it as on_hand would double-count the
-                                    # reservation (once in our exclusion, once in
-                                    # Shopify's committed) and drive available
-                                    # negative.
-                                    "name": "available",
-                                    "reason": "correction",
-                                    "quantities": quantities,
-                                }
+                def send_quantities(batch_quantities, idempotency_key):
+                    """One inventorySetQuantities call.
+
+                    Returns (batch_error, updated_at, {index in batch_quantities: [userErrors]}).
+                    """
+                    call_error = None
+                    call_updated_at = None
+                    call_indexed = {}
+                    try:
+                        response = post_shopify_api(
+                            graphql_url,
+                            headers=headers,
+                            json_payload={
+                                "query": mutation,
+                                "variables": {
+                                    "idempotencyKey": idempotency_key,
+                                    "input": {
+                                        # "available" is correct here: the quantity we
+                                        # stage (updated_qty) already excludes serials
+                                        # reserved to a sales order, so it is a
+                                        # SELLABLE number, not a physical on-hand one.
+                                        # Pushing it as on_hand would double-count the
+                                        # reservation (once in our exclusion, once in
+                                        # Shopify's committed) and drive available
+                                        # negative.
+                                        "name": "available",
+                                        "reason": "correction",
+                                        "quantities": batch_quantities,
+                                    }
+                                },
                             },
-                        },
+                        )
+
+                        if response.status_code != 200:
+                            call_error = f"Shopify GraphQL HTTP {response.status_code}: {response.text}"
+                        else:
+                            response_data = response.json()
+                            graphql_errors = response_data.get("errors") or []
+                            payload = (
+                                response_data.get("data", {})
+                                .get("inventorySetQuantities")
+                            ) or {}
+                            user_errors = payload.get("userErrors") or []
+                            adjustment_group = payload.get("inventoryAdjustmentGroup") or {}
+                            call_updated_at = adjustment_group.get("createdAt")
+
+                            for user_error in user_errors:
+                                field_path = user_error.get("field") or []
+                                if isinstance(field_path, str):
+                                    field_path = field_path.split(".")
+                                quantity_index = next(
+                                    (
+                                        int(part) for part in field_path
+                                        if str(part).isdigit()
+                                    ),
+                                    None,
+                                )
+                                if quantity_index is not None:
+                                    call_indexed.setdefault(quantity_index, []).append(user_error)
+
+                            if graphql_errors or user_errors:
+                                call_error = (
+                                    f"Shopify GraphQL errors={graphql_errors}; "
+                                    f"userErrors={user_errors}"
+                                )
+                    except requests.exceptions.Timeout:
+                        call_error = "Timeout while updating inventory batch to Shopify (200+ sec)"
+                    except Exception as exc:
+                        call_error = f"Unknown error while updating inventory batch to Shopify: {exc}"
+                    return call_error, call_updated_at, call_indexed
+
+                batch_error, batch_updated_at, indexed_user_errors = send_quantities(quantities, batch_id)
+
+                # inventorySetQuantities is all-or-nothing: one bad item (e.g. an
+                # inventory item deleted on Shopify, INVALID_INVENTORY_ITEM) rejects
+                # the whole batch. Measured 2026-09-28/29: one dead HP 445R G6 item
+                # failed ~51 good listings every hour (739 failed pushes in 15h),
+                # leaving them on stale Shopify figures that only moved when the
+                # batch happened to be composed without it. Resend once without the
+                # items Shopify named; they keep their own error below.
+                if batch_error and indexed_user_errors and len(indexed_user_errors) < len(quantities):
+                    retry_indices = [i for i in range(len(quantities)) if i not in indexed_user_errors]
+                    retry_error, retry_updated_at, retry_indexed = send_quantities(
+                        [quantities[i] for i in retry_indices], f"{batch_id}-retry"
                     )
-
-                    if response.status_code != 200:
-                        batch_error = f"Shopify GraphQL HTTP {response.status_code}: {response.text}"
-                    else:
-                        response_data = response.json()
-                        graphql_errors = response_data.get("errors") or []
-                        payload = (
-                            response_data.get("data", {})
-                            .get("inventorySetQuantities")
-                        ) or {}
-                        user_errors = payload.get("userErrors") or []
-                        adjustment_group = payload.get("inventoryAdjustmentGroup") or {}
-                        batch_updated_at = adjustment_group.get("createdAt")
-
-                        for user_error in user_errors:
-                            field_path = user_error.get("field") or []
-                            if isinstance(field_path, str):
-                                field_path = field_path.split(".")
-                            quantity_index = next(
-                                (
-                                    int(part) for part in field_path
-                                    if str(part).isdigit()
-                                ),
-                                None,
-                            )
-                            if quantity_index is not None:
-                                indexed_user_errors.setdefault(quantity_index, []).append(user_error)
-
-                        if graphql_errors or user_errors:
-                            batch_error = (
-                                f"Shopify GraphQL errors={graphql_errors}; "
-                                f"userErrors={user_errors}"
-                            )
-                except requests.exceptions.Timeout:
-                    batch_error = "Timeout while updating inventory batch to Shopify (200+ sec)"
-                except Exception as exc:
-                    batch_error = f"Unknown error while updating inventory batch to Shopify: {exc}"
+                    for retry_i, errors in retry_indexed.items():
+                        indexed_user_errors.setdefault(retry_indices[retry_i], []).extend(errors)
+                    batch_error = retry_error
+                    batch_updated_at = retry_updated_at or batch_updated_at
 
                 # Verify every record against Shopify after the mutation. This
                 # makes the final status per-record even when Shopify returns a
@@ -1475,6 +1641,10 @@ def _create_shopify_inventory_sync(variant_ids=None):
 
                 for result, row, available, verified_qty, record_error in verified_results:
                     variant_id = variant_id_by_doc[row.name]
+                    log_shopify_push(
+                        "hourly", variant_id, row.shopify_quantity, available, result,
+                        row.sync_error if result == "completed" else record_error,
+                    )
                     result_details = {
                         "result": result,
                         "inventory_item_id": str(row.inventory_item_id),
@@ -1610,7 +1780,10 @@ def sync_shopify_pre_order_policies(shopify_data, shop, token):
         sync_rows = frappe.get_all(
             "NJ Inventory Sync Main",
             filters={"shopify_variant_id": ["in", variant_ids]},
-            fields=["name", "shopify_variant_id", "actual_qty", "shopify_pre_order_qty"],
+            fields=[
+                "name", "shopify_variant_id", "actual_qty", "shopify_pre_order_qty",
+                "shopify_pre_order_enabled", "estimated_time_of_dispatch"
+            ],
         )
         sync_row_by_variant = {
             str(row.shopify_variant_id).strip(): row for row in sync_rows
@@ -1633,7 +1806,7 @@ def sync_shopify_pre_order_policies(shopify_data, shop, token):
             # Pre-order quantity is now synced directly to Shopify as available inventory.
             # We set policy to DENY so Shopify strictly sells up to the synced quantity and prevents overselling.
             desired_policy = "DENY"
-            is_pre = 1 if (live_qty <= 0 and pre_order_qty > 0) else 0
+            is_pre = int(sync_row.get("shopify_pre_order_enabled") or 0) or (1 if (live_qty <= 0 and pre_order_qty > 0) else 0)
 
             if current_policy == desired_policy:
                 frappe.db.set_value(
@@ -1735,7 +1908,7 @@ def sync_shopify_pre_order_policies(shopify_data, shop, token):
 
                 live_qty = safe_float(sync_row.actual_qty) or 0
                 pre_order_qty = safe_float(sync_row.shopify_pre_order_qty) or 0
-                is_pre = 1 if (live_qty <= 0 and pre_order_qty > 0) else 0
+                is_pre = int(sync_row.get("shopify_pre_order_enabled") or 0) or (1 if (live_qty <= 0 and pre_order_qty > 0) else 0)
 
                 frappe.db.set_value(
                     "NJ Inventory Sync Main",
@@ -2218,23 +2391,39 @@ def sync_shopify_pre_order_metafields_and_tags(shopify_data, shop=None, token=No
         sync_rows = frappe.get_all(
             "NJ Inventory Sync Main",
             filters={"shopify_variant_id": ["in", variant_ids]},
-            fields=["name", "shopify_variant_id", "actual_qty", "shopify_pre_order_qty"],
+            fields=[
+                "name", "shopify_variant_id", "actual_qty", "shopify_pre_order_qty",
+                "shopify_pre_order_enabled", "estimated_time_of_dispatch",
+            ],
         )
         sync_row_by_variant = {
             str(row.shopify_variant_id).strip(): row for row in sync_rows
         }
 
-        def status_for(row):
-            """Pre-order status derived from quantities only.
+        # get_setting_int only exists inside get_inventory_sync_flags; calling
+        # it here raised NameError and killed this whole sync every run.
+        min_etd_days = get_inventory_sync_flags()["pre_order_min_etd_days"]
 
-            The stored shopify_pre_order_enabled flag is deliberately not
-            consulted: it is written earlier in the same run, so it cannot say
-            what was previously published, and when it is a run behind it
-            labels a variant that has stock on the shelf as a pre-order.
+        def status_for(row):
+            """Pre-order status derived from quantities and ETD.
+
+            If ETD > 3 (pre_order_min_etd_days), the variant is marked as
+            pre-order even when there is actual live inventory on the shelf.
             """
             live_qty = safe_float(row.get("actual_qty")) or 0
             pre_order_qty = safe_float(row.get("shopify_pre_order_qty")) or 0
-            if live_qty <= 0 and pre_order_qty > 0:
+            is_pre_enabled = int(row.get("shopify_pre_order_enabled") or 0)
+
+            etd_str = str(row.get("estimated_time_of_dispatch") or "").strip()
+            etd_days = 0
+            if etd_str:
+                try:
+                    etd_days = float(etd_str.split()[0])
+                except (ValueError, IndexError):
+                    etd_days = 0
+
+            has_stock = (live_qty > 0 or pre_order_qty > 0)
+            if is_pre_enabled == 1 or (etd_days > min_etd_days and has_stock):
                 return PRE_ORDER_STATUS_VALUE
             if live_qty > 0:
                 return READY_STOCK_STATUS_VALUE
@@ -2270,6 +2459,13 @@ def sync_shopify_pre_order_metafields_and_tags(shopify_data, shop=None, token=No
 
             if desired == published:
                 stats["unchanged"] += 1
+                # The variant is already right, but its product may not be
+                # (e.g. product status left blank while this sync was failing).
+                # Queue the product for re-evaluation; the product block decides
+                # from all variants and only writes on a real mismatch.
+                product_status = str(data.get("product_pre_order_status") or "")
+                if product_id and (desired == PRE_ORDER_STATUS_VALUE) != (product_status == PRE_ORDER_STATUS_VALUE):
+                    changed_product_ids.add(product_id)
                 continue
 
             if product_id:

@@ -1559,8 +1559,10 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
 
     No filtering on soi.delivery_date.
     """
-    LOOKBACK_DAYS_B2C = 100
-    LOOKBACK_DAYS_B2B = 100
+    # Keep in step with the hourly allocator's window in
+    # overrides/sales_order.py get_open_sales_orders().
+    LOOKBACK_DAYS_B2C = 200
+    LOOKBACK_DAYS_B2B = 200
 
     rows = frappe.db.sql(
         """
@@ -3484,10 +3486,29 @@ def _get_priority_rank_sort_key(row: Dict) -> tuple:
         parsed_delivery_date.isoformat() if parsed_delivery_date else PP_RANK_FAR_FUTURE_DATE
     )
 
+    # Forecast/Reconfig rows were chosen lowest DOI first (ties to the higher sales
+    # rate) by _allocate_forecast_to_balance_doi; without this the hourly re-rank
+    # collapsed them to pure serial age. Order rows are always written with doi 0
+    # and sales_rate 1, so this leaves their order untouched.
+    if row.get("reason") == "Order":
+        doi_key, sales_rate_key = 0.0, 0.0
+    else:
+        doi_key = flt(row.get("doi"))
+        sales_rate_key = -flt(row.get("sales_rate"))
+
     # FIFO tiebreak: the oldest serial (largest age in days) moves first.
     age_days = int(flt(row.get("serial_age_days") or 0))
 
-    return (dead, part_allocated, reason_order, delivery_key, -age_days, row.get("serial_no") or "")
+    return (
+        dead,
+        part_allocated,
+        reason_order,
+        delivery_key,
+        doi_key,
+        sales_rate_key,
+        -age_days,
+        row.get("serial_no") or "",
+    )
 
 
 @frappe.whitelist()
@@ -3530,6 +3551,8 @@ def refresh_latest_production_plan_priority_rank(plan_name: Optional[str] = None
             pp.current_warehouse,
             pp.reason,
             pp.delivery_date,
+            pp.doi,
+            pp.sales_rate,
             pp.serial_age_days,
             CAST(IFNULL(NULLIF(pp.priority_rank, ''), '0') AS UNSIGNED) AS priority_rank,
             IFNULL(pp.part_allocation, 0) AS part_allocation,

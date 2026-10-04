@@ -5312,14 +5312,6 @@ def evaluate_status_from_criteria(doc, criteria_rows, setting_parameter):
 
         actual_value = ""
 
-        if key == "average_restart_time":
-            avg_time = convert_to_seconds(result_row.get("value"), parameter)
-
-            for result_param in doc.get("njqca_result_parameters") or []:
-                if result_param.get("parameter") in ["Restart_1", "Restart_2", "Restart_3"]:
-                    if avg_time > convert_to_seconds(result_param.get("value"), result_param.get("parameter")):
-                        actual_value = result_param.get("value")
-
         if not actual_value:
             actual_value = result_row.get("value") or result_row.get("score", "")
 

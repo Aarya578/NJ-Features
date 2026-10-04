@@ -429,13 +429,13 @@ def updting_sla_department():
         if not depts_data:
             return True
 
-        # Override in code: Packing & Dispatch = 1, Sales = 1, Inward = 45, intermediate depts capped at 15
+        # Override in code: Packing & Dispatch = 1, Sales = 1, Inward = 1, intermediate depts capped at 15
         for d in depts_data:
             d_name = (d.get("name") or "").lower()
             if "packing & dispatch" in d_name or "sales" in d_name:
                 d["department_sla"] = 1
             elif "inward" in d_name:
-                d["department_sla"] = 45
+                d["department_sla"] = 1
             else:
                 d["department_sla"] = min(max(int(d.get("department_sla") or 0), 0), 15)
 
@@ -455,8 +455,13 @@ def updting_sla_department():
             d_name_lower = (cand_dept_name or "").lower()
             if "packing & dispatch" in d_name_lower or "sales" in d_name_lower:
                 return 1
-            if "inward" in d_name_lower:
-                return 45
+            # No early return for Inward. Inward's OWN SLA is 1 day (set above),
+            # but a machine in Inward still has the whole line ahead of it, so it
+            # takes the normal path: Inward's 1 day + every later department.
+            # A `return 1` here (2026-09-28) made "machine just arrived" and "no
+            # machine at all" (the fallback below starts from Inward) both read
+            # as 1-day dispatch: 5,663 zero-stock listings showed "1 Day" and the
+            # ETD > 3 pre-order gate switched off on that false figure.
 
             cand_sla = 0
             for d in depts_data:
@@ -863,7 +868,7 @@ def _pre_order_config_filters(settings):
     return warehouses_list, item_groups_list
 
 
-def get_pre_order_pools(settings):
+def get_pre_order_pools(settings, parents=None):
     """Count free machines per parent + Processor.
 
     The pool is keyed on parent + Processor deliberately. RAM and storage are
@@ -968,17 +973,24 @@ def get_pre_order_pools(settings):
         )
         return None
 
-    return _count_free_machines_by_config(depts_list, item_groups_list, warehouses_list)
+    return _count_free_machines_by_config(depts_list, item_groups_list, warehouses_list, parents=parents)
 
 
-def _count_free_machines_by_config(depts_list, item_groups_list, warehouses_list=None):
+def _count_free_machines_by_config(depts_list, item_groups_list, warehouses_list=None, parents=None):
     """Free machines per parent + Processor across the given departments.
 
     Shared by the pre-order pool and the company quantity so that both are
     counted with exactly the same idea of "free" - only the department scope
     differs. Returns {config_key: free_qty}.
+
+    parents limits the count to those parent models (Item.variant_of) - used by
+    the Sales Order sync to recount only what an order can have changed.
     """
     warehouses_list = warehouses_list or []
+    parents = list(parents or [])
+    parent_clause = (
+        f"AND i.variant_of IN ({', '.join(['%s'] * len(parents))})" if parents else ""
+    )
 
     item_group_placeholders = ", ".join(["%s"] * len(item_groups_list))
     department_placeholders = ", ".join(["%s"] * len(depts_list))
@@ -1044,14 +1056,15 @@ def _count_free_machines_by_config(depts_list, item_groups_list, warehouses_list
             AND proc.attribute_value IS NOT NULL
             AND TRIM(proc.attribute_value) != ''
             AND UPPER(TRIM(proc.attribute_value)) NOT IN ('NO PROCESSOR', 'UNKNOWN PROCESSOR')
+            {parent_clause}
         GROUP BY config_key
         HAVING COUNT(b.name) > 0
-    """, tuple(item_groups_list + depts_list + warehouses_list), as_dict=True)
+    """, tuple(item_groups_list + depts_list + warehouses_list + parents), as_dict=True)
 
     return {r["config_key"]: int(r["free_qty"] or 0) for r in rows}
 
 
-def get_company_qty_pools(settings):
+def get_company_qty_pools(settings, parents=None):
     """Free machines per parent + Processor across the whole company.
 
     This is the GATE for pre-order, not the quantity advertised. Business rule
@@ -1107,7 +1120,7 @@ def get_company_qty_pools(settings):
         )
         return None
 
-    return _count_free_machines_by_config(depts_list, item_groups_list)
+    return _count_free_machines_by_config(depts_list, item_groups_list, parents=parents)
 
 
 def get_pre_order_exact_counts(settings):
@@ -1224,7 +1237,12 @@ def update_pre_order_qty(settings):
 
         # Imported here: shopify_inventory imports this module at load time.
         from nj_features.nj_features.api.shopify_inventory import get_inventory_sync_flags
-        threshold = get_inventory_sync_flags()["pre_order_threshold"]
+        sync_flags = get_inventory_sync_flags()
+        threshold = sync_flags["pre_order_threshold"]
+        # pre_order_claim=0 (default since 2026-09-25): every row of the
+        # configuration is given the pool, as before 2026-09-22. The invariant
+        # in the docstring holds only when it is 1.
+        claim_pool = bool(sync_flags["pre_order_claim"])
 
         # machines-per-exact-item-code, for the tie-break below
         exact_counts = get_pre_order_exact_counts(settings)
@@ -1285,6 +1303,12 @@ def update_pre_order_qty(settings):
                 waiting = backlog(row)
                 return min(waiting, free_qty) if waiting else free_qty
 
+            if not claim_pool:
+                # Business rule: same pool on every variant of this config.
+                for row in rows:
+                    allocations[row["soqc_name"]] = claimable(row)
+                continue
+
             # Claim by how much can actually be advertised, not by who is
             # waiting most. Picking the largest backlog caps the whole
             # configuration at that row's backlog, so a pool of 38 behind a
@@ -1332,8 +1356,9 @@ def update_pre_order_qty(settings):
             "Info",
         )
 
-        if allocated_units > pool_units:
+        if claim_pool and allocated_units > pool_units:
             # Should be impossible by construction; shout if it ever happens.
+            # In copy mode (claim_pool off) exceeding the pool is the intent.
             log_error(
                 f"Pre-order allocation exceeded the physical pool "
                 f"({allocated_units} > {pool_units}) - Shopify push must be held",
@@ -1508,4 +1533,96 @@ def update_minimum_qty_after_proportional() -> bool:
 
     except Exception:
         log_error(frappe.get_traceback(), "update_minimum_qty_after_proportional")
+        return False
+
+
+def get_pre_order_config_keys(item_codes):
+    """parent + Processor key ("variant_of|processor") for each item code that has one."""
+    item_codes = [c for c in (item_codes or []) if c]
+    if not item_codes:
+        return set()
+    placeholders = ", ".join(["%s"] * len(item_codes))
+    rows = frappe.db.sql_list(f"""
+        SELECT DISTINCT CONCAT(i.variant_of, '|', proc.attribute_value)
+        FROM `tabItem` i
+        INNER JOIN `tabItem Variant Attribute` proc
+            ON proc.parent = i.name AND proc.attribute = 'Processor Type1'
+        WHERE i.item_code IN ({placeholders})
+          AND COALESCE(i.variant_of, '') != ''
+          AND COALESCE(proc.attribute_value, '') != ''
+    """, tuple(item_codes))
+    return set(rows)
+
+
+def update_pre_order_qty_for_configs(settings, config_keys):
+    """Recompute pre_order_qty for only these parent + Processor configurations.
+
+    Used by the Sales Order sync (business rule 2026-09-26). Without it the
+    order's sync re-pushed the LAST HOURLY pre-order figure, putting the
+    machine just sold back on sale until the next hourly run (Shopify order
+    #34095: available 2 -> 1 on the order, then straight back to 2).
+
+    Same rules as update_pre_order_qty in copy mode (pre_order_claim = 0):
+    the configuration is shown only when company qty is above
+    pre_order_threshold, and then EVERY row of it gets the build-window pool
+    (capped at its own backlog). Must not be used in claim mode - claims are
+    global and belong to the hourly run.
+
+    Returns True when the figures were recomputed and saved, False when they
+    could not be computed (the caller must then keep the staged figures).
+    """
+    config_keys = {k for k in (config_keys or []) if k and "|" in k}
+    if not config_keys:
+        return True
+    parents = sorted({k.split("|", 1)[0] for k in config_keys})
+
+    try:
+        from nj_features.nj_features.api.shopify_inventory import get_inventory_sync_flags
+        flags = get_inventory_sync_flags()
+        if flags["pre_order_claim"]:
+            return False
+
+        pools = get_pre_order_pools(settings, parents=parents)
+        company_qty = get_company_qty_pools(settings, parents=parents)
+        if pools is None or company_qty is None:
+            return False
+
+        placeholders = ", ".join(["%s"] * len(parents))
+        rows = frappe.db.sql(f"""
+            SELECT
+                t.name AS soqc_name,
+                t.pending_allocation_qty,
+                CONCAT(COALESCE(i.variant_of, ''), '|', COALESCE(proc.attribute_value, '')) AS config_key
+            FROM `tabSO Quantity Check` t
+            INNER JOIN `tabItem` i ON i.item_code = t.item_code
+            LEFT JOIN `tabItem Variant Attribute` proc
+                ON proc.parent = i.name AND proc.attribute = 'Processor Type1'
+            WHERE i.variant_of IN ({placeholders})
+        """, tuple(parents), as_dict=True)
+
+        for row in rows:
+            key = row.get("config_key")
+            if key not in config_keys:
+                continue
+            free_qty = pools.get(key, 0)
+            qty = 0
+            if free_qty > 0 and company_qty.get(key, 0) > flags["pre_order_threshold"]:
+                # Same backlog cap as update_pre_order_qty.
+                try:
+                    pending = int(float(row.get("pending_allocation_qty") or 0))
+                except (TypeError, ValueError):
+                    pending = 0
+                waiting = abs(pending) if pending < 0 else 0
+                qty = min(waiting, free_qty) if waiting else free_qty
+            frappe.db.sql(
+                "UPDATE `tabSO Quantity Check` SET pre_order_qty = %s WHERE name = %s",
+                (int(qty), row["soqc_name"]),
+            )
+
+        frappe.db.commit()
+        return True
+
+    except Exception:
+        frappe.db.rollback()
+        log_error(frappe.get_traceback(), "update_pre_order_qty_for_configs", "Error")
         return False

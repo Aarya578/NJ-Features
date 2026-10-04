@@ -24,7 +24,7 @@ from datetime import date
 #
 # _get_dept_effective_sla() and get_dept_warehouses() are also imported —
 # using the SAME SLA-resolution rules as Sales Order (Packing & Dispatch
-# hardcoded to 1 day, Inward hardcoded to 45 days, everything else clamped
+# hardcoded to 1 day, Inward hardcoded to 1 day, everything else clamped
 # to a 1-15 day range) instead of raw dept.min_aging_days, which could be
 # 0 or unset and silently produce a same-day ETA that wasn't accurate.
 from nj_features.overrides.sales_order import (
@@ -62,8 +62,8 @@ def calculate_item_eta_for_quotation(item_code, required_qty, departments):
     the zero-stock case.
 
     Uses the SAME SLA-resolution rules as Sales Order via
-    _get_dept_effective_sla() (Packing & Dispatch = 1 day, Inward = 45
-    days, everything else clamped to 1-15 days) instead of raw
+    _get_dept_effective_sla() (Packing & Dispatch = 1 day, Inward = 1
+    day, everything else clamped to 1-15 days) instead of raw
     dept.min_aging_days, which could be 0/unset and produce a misleading
     same-day ETA.
     """

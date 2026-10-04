@@ -250,12 +250,29 @@ class CustomSalesOrder(SalesOrder):
         self.sale_type_validation()
 
         # Provisional committed_delivery_date, BEFORE allocation runs (allocation
-        # reads it). Replaced by the department-SLA promise right after
-        # allocation - see [PROMISE] below.
+        # reads it to pick its starting department). Next working day unless the
+        # customer asked for a later date. Replaced by the department-SLA promise
+        # right after allocation - see [PROMISE] below.
         is_first_commit = False
         target_committed = None
+        inherited_promise = None
         if frappe.db.has_column("Sales Order", "committed_delivery_date"):
             committed_val = frappe.db.get_value("Sales Order", self.name, "committed_delivery_date")
+
+            # An amended order arrives with the original's promise copied onto it.
+            # That promise was worked out for the original's items and stock, and
+            # allocation reads it to decide how far upstream to search - so a
+            # far-out copy sends the amendment to the back of the factory.
+            # SO-2026-09-00314-1 (2026-09-29): amended from 7420 TOUCH(PIR), which
+            # was promised 7-Nov off a Part waiting unit, to 7420(PIR); the copied
+            # 7-Nov took a Paint unit while 35 sat free in Packing & Dispatch.
+            # Work the promise out afresh, but never later than the one inherited
+            # (see [PROMISE] below) - an amendment must not worsen what the customer
+            # was already told.
+            if committed_val and self.amended_from:
+                inherited_promise = getdate(committed_val)
+                committed_val = None
+
             if not committed_val:
                 is_first_commit = True
                 std_sla_date = add_working_days(self.transaction_date, 4) if self.transaction_date else add_working_days(nowdate(), 4)
@@ -267,13 +284,30 @@ class CustomSalesOrder(SalesOrder):
                         max_item_dd = max(item_dates)
                 
                 candidate_date = max_item_dd or (getdate(orig_dd) if orig_dd else None)
+                # On the original, an unallocated order has delivery_date set to its
+                # promise by the system. Copied onto the amendment, that is our own
+                # old promise, not a date the customer asked for.
+                if inherited_promise and candidate_date == inherited_promise:
+                    candidate_date = None
                 if candidate_date and candidate_date > getdate(std_sla_date):
                     # This already-set incoming date (e.g. from Shopify checkout) never
                     # passed through add_working_days(), so it can land on a Sunday or
                     # holiday - nudge it forward before locking it in as the promise.
                     target_committed = _snap_to_working_day(candidate_date)
+                    allocation_date = target_committed
                 else:
                     target_committed = std_sla_date
+                    # The placeholder is only for allocation, which reads it to decide
+                    # where to start searching - it must not be the order date + 4.
+                    # That gave a same-day website order ~6 days, so the search began
+                    # at FQC and worked toward dispatch: SAL-ORD-2026-09420 (2026-09-29)
+                    # took FQC NJ-LP-203184 while NJ-LP-312222 sat free in Packing, and
+                    # Shopify re-listed the Packing unit. Next working day makes the
+                    # search Sales -> Packing & Dispatch -> Adaptor QC -> FQC -> ...,
+                    # ready stock first. Not delivery_date: on an amendment that can be
+                    # the inherited promise (see above). The real promise is still set
+                    # after allocation, at [PROMISE] below.
+                    allocation_date = add_working_days(nowdate(), 1)
 
                 # committed_delivery_date is established on this first submit only
                 # (placeholder here, final value at [PROMISE] below) and never
@@ -283,10 +317,10 @@ class CustomSalesOrder(SalesOrder):
                 # whatever the customer / Shopify / the sales team put there stays
                 # there. If a date has to move, a human moves it by hand. The system
                 # expresses its own opinion only through estimated_delivery_date.
-                self.committed_delivery_date = target_committed
+                self.committed_delivery_date = allocation_date
                 frappe.db.set_value(
                     "Sales Order", self.name,
-                    {"committed_delivery_date": target_committed},
+                    {"committed_delivery_date": allocation_date},
                     update_modified=False,
                 )
             else:
@@ -336,6 +370,13 @@ class CustomSalesOrder(SalesOrder):
                 )
                 promise_date = promise_cap
 
+            if inherited_promise and promise_date > inherited_promise:
+                logger.info(
+                    "[PROMISE] %s: %s held to inherited promise %s (amended from %s)",
+                    self.name, promise_date, inherited_promise, self.amended_from
+                )
+                promise_date = inherited_promise
+
             target_committed = promise_date
             self.committed_delivery_date = target_committed
             so_promise = {"committed_delivery_date": target_committed}
@@ -375,14 +416,14 @@ class CustomSalesOrder(SalesOrder):
 
         frappe.db.set_value("Sales Order", self.name, so_updates, update_modified=False)
 
-        if calc_dd:
-            frappe.enqueue(
-                "nj_features.overrides.sales_order.push_delivery_date_to_shopify_order",
-                queue="short",
-                enqueue_after_commit=True,
-                so_name=self.name,
-                delivery_date=str(calc_dd),
-            )
+        # if calc_dd:
+        #     frappe.enqueue(
+        #         "nj_features.overrides.sales_order.push_delivery_date_to_shopify_order",
+        #         queue="short",
+        #         enqueue_after_commit=True,
+        #         so_name=self.name,
+        #         delivery_date=str(calc_dd),
+        #     )
         self.reload()
 
     def total_item_group_sum(self):
@@ -737,10 +778,24 @@ def trim_over_allocated_serials():
                   -- cause was, so every RTO reservation was self-locking. The order
                   -- is no longer demand (RTO_EXCLUSION_SQL), so the hold must be
                   -- releasable or the machine stays stuck forever.
-                  AND (order_source IS NULL OR (
-                      order_source NOT LIKE '%%- Repair%%'
-                      AND order_source NOT LIKE '%%- Replace%%'
-                  ))
+                  --
+                  -- Replace had the same self-lock: every unit reserved to an order
+                  -- with a Replace return is stamped "- Replace", so an over-reserved
+                  -- Replace order could never be trimmed (SO-2026-01-00051 held 2
+                  -- units for 1 owed from 25-Sep). The customer's own returned unit
+                  -- is still protected by return_reason above.
+                  AND (order_source IS NULL OR order_source NOT LIKE '%%- Repair%%')
+                  -- Returned units are still in reserved_count. Hold this item's
+                  -- replacements while a protected return contributes to that
+                  -- count, regardless of their order_source label. Other items
+                  -- on the order can still have their excess reservations trimmed.
+                  AND NOT EXISTS (
+                      SELECT 1 FROM `tabSerial No` ret
+                      WHERE ret.reserved_sales_order = %s
+                        AND COALESCE(NULLIF(ret.to_make, ''), ret.item_code) = %s
+                        AND ret.status = 'Active'
+                        AND ret.return_reason IN ('Repair', 'Replace')
+                  )
                   AND status = 'Active'
                 ORDER BY
                     CASE
@@ -750,7 +805,7 @@ def trim_over_allocated_serials():
                     END ASC,
                     creation DESC
                 LIMIT %s
-            """, (row["so_name"], row["item_code"], excess))
+            """, (row["so_name"], row["item_code"], row["so_name"], row["item_code"], excess))
 
             if excess_serials:
                 frappe.db.sql("""
@@ -807,6 +862,69 @@ def run_daily_eta_drift_reallocation():
     ETAs and must never touch an existing reservation or to_make.
     """
     return calculate_dispatch_eta_for_sales_order(so_name=None, do_commit=True, allow_reallocation=True)
+
+
+@frappe.whitelist()
+def run_b2b_sales_orders_eta_sync(sale_types=None, do_commit=True):
+    """Manually calculate and update estimated delivery dates for all open B2B Sales Orders.
+
+    Can be triggered via:
+        bench --site tushar execute nj_features.overrides.sales_order.run_b2b_sales_orders_eta_sync
+    """
+    if not sale_types:
+        sale_types = (
+            "NJ-Website-B2B",
+            "NJ-Direct-B2B",
+            "Distributor",
+            "Franchisee",
+            "Educational Institutes",
+        )
+    elif isinstance(sale_types, str):
+        sale_types = tuple(s.strip() for s in sale_types.split(","))
+
+    orders = frappe.db.sql("""
+        SELECT name, sale_type, customer, estimated_delivery_date
+        FROM `tabSales Order`
+        WHERE docstatus = 1
+          AND status NOT IN ('Completed', 'Closed', 'Cancelled')
+          AND IFNULL(per_delivered, 0) < 100
+          AND (sale_type IN %(sale_types)s OR sale_type LIKE %(b2b_pattern)s)
+        ORDER BY creation ASC
+    """, {"sale_types": tuple(sale_types), "b2b_pattern": "%B2B%"}, as_dict=True)
+
+    print(f"Found {len(orders)} open B2B Sales Orders to update.")
+    results = []
+    for idx, order in enumerate(orders, 1):
+        so_name = order.name
+        old_eta = order.estimated_delivery_date
+        try:
+            calculate_dispatch_eta_for_sales_order(so_name=so_name, do_commit=do_commit)
+            new_eta = frappe.db.get_value("Sales Order", so_name, "estimated_delivery_date")
+            print(f"[{idx}/{len(orders)}] {so_name} ({order.sale_type}) | Old: {old_eta} -> New: {new_eta}")
+            results.append({
+                "sales_order": so_name,
+                "sale_type": order.sale_type,
+                "customer": order.customer,
+                "old": old_eta,
+                "new": new_eta,
+                "status": "Success",
+            })
+        except Exception as e:
+            frappe.log_error(title=f"Manual B2B ETA sync failed for {so_name}", message=frappe.get_traceback())
+            print(f"[{idx}/{len(orders)}] {so_name} FAILED: {e}")
+            results.append({
+                "sales_order": so_name,
+                "sale_type": order.sale_type,
+                "customer": order.customer,
+                "error": str(e),
+                "status": "Failed",
+            })
+
+    if do_commit:
+        frappe.db.commit()
+
+    print(f"Completed manual B2B ETA sync. Processed {len(results)} orders.")
+    return results
 
 
 @frappe.whitelist(allow_guest=True)
@@ -1187,7 +1305,7 @@ def get_eligible_departments(departments, days_to_deliver):
 
 
 def get_open_sales_orders(so_name=None):
-    """Get all open sales orders with pending items.
+    """Get open orders from the last 200 days, plus reserved/recent-return orders.
     If so_name is passed, return only that Sales Order's items.
     """
     from nj_features.services.reservation_service import REFUND_EXCLUSION_SQL, RTO_EXCLUSION_SQL
@@ -1210,11 +1328,21 @@ def get_open_sales_orders(so_name=None):
     else:
         active_filter = """
             AND (
-                so.creation > CURDATE() - INTERVAL 100 DAY
+                so.creation > CURDATE() - INTERVAL 200 DAY
                 OR so.name IN (
                     SELECT DISTINCT reserved_sales_order
                     FROM `tabSerial No`
                     WHERE reserved_sales_order IS NOT NULL AND reserved_sales_order != ''
+                )
+                -- A Replace return reopens an old order: the replacement is owed
+                -- on the original SO, so its age must not hide it. Same rule as
+                -- so_quantity_check / shopify_inventory_targeted / the planner;
+                -- Repair, Refund and RTO returns are still excluded below.
+                OR so.name IN (
+                    SELECT DISTINCT dni_ret.against_sales_order
+                    FROM `tabDelivery Note Item` dni_ret
+                    INNER JOIN `tabDelivery Note` dn_ret ON dn_ret.name = dni_ret.parent
+                    WHERE dn_ret.docstatus = 1 AND dn_ret.is_return = 1 AND dn_ret.posting_date > CURDATE() - INTERVAL 200 DAY
                 )
             )
             AND so.name NOT IN (
@@ -1781,11 +1909,17 @@ def unassign_serials(so_name, item_code, excess_qty):
             -- SO-2026-04-00203-1; this one was missed.
             AND COALESCE(NULLIF(to_make, ''), item_code) = %s
             AND (return_reason IS NULL OR return_reason NOT IN ('Repair', 'Replace'))
-            -- Repair/Replace only - see trim_over_allocated_serials().
-            AND (order_source IS NULL OR (
-                order_source NOT LIKE '%%- Repair%%'
-                AND order_source NOT LIKE '%%- Replace%%'
-            ))
+            -- Keep Repair holds. A protected return in the same destination-item
+            -- count blocks release regardless of the replacement's source label;
+            -- see trim_over_allocated_serials().
+            AND (order_source IS NULL OR order_source NOT LIKE '%%- Repair%%')
+            AND NOT EXISTS (
+                SELECT 1 FROM `tabSerial No` ret
+                WHERE ret.reserved_sales_order = %s
+                  AND COALESCE(NULLIF(ret.to_make, ''), ret.item_code) = %s
+                  AND ret.status = 'Active'
+                  AND ret.return_reason IN ('Repair', 'Replace')
+            )
             AND NOT EXISTS (
                 SELECT 1
                 FROM `tabDelivery Note Item`
@@ -1800,7 +1934,7 @@ def unassign_serials(so_name, item_code, excess_qty):
             END ASC,
             creation ASC
         LIMIT %s
-    """, (so_name, item_code, int(excess_qty)))
+    """, (so_name, item_code, so_name, item_code, int(excess_qty)))
 
     if excess_serials:
         frappe.db.sql("""
@@ -2529,6 +2663,9 @@ def compute_sales_order_delivery_date(so_name, return_reason=False, for_promise=
 
             # Populate child table tabEstimated Delivery Date Details for allocated serials
             if has_child_table and not for_promise:
+                # Latest estimate first: the grid is shown in idx order, so the top
+                # row is the unit holding the order back.
+                child_rows.sort(key=lambda r: getdate(r["estimated_delivery_date"]), reverse=True)
                 frappe.db.sql("DELETE FROM `tabEstimated Delivery Date Details` WHERE parent = %s", so_name)
                 for idx, r in enumerate(child_rows, 1):
                     frappe.db.sql("""
@@ -2694,14 +2831,14 @@ def update_sales_order_etas(so_eta_map, so_breakdown_map=None, do_commit=True, a
                 update_modified=False
             )
 
-        if reason_text and reason_text != "No Stock" and str(old_est_dd) != str(reason_text):
-            frappe.enqueue(
-                "nj_features.overrides.sales_order.push_delivery_date_to_shopify_order",
-                queue="short",
-                enqueue_after_commit=True,
-                so_name=so_name,
-                delivery_date=str(reason_text),
-            )
+        # if reason_text and reason_text != "No Stock" and str(old_est_dd) != str(reason_text):
+        #     frappe.enqueue(
+        #         "nj_features.overrides.sales_order.push_delivery_date_to_shopify_order",
+        #         queue="short",
+        #         enqueue_after_commit=True,
+        #         so_name=so_name,
+        #         delivery_date=str(reason_text),
+        #     )
 
     if do_commit:
         frappe.db.commit()
@@ -2711,104 +2848,104 @@ def update_sales_order_etas(so_eta_map, so_breakdown_map=None, do_commit=True, a
 # order whose estimated date changed, so anything that moves a lot of dates at once
 # - a department SLA edit, a fix to the ETA ladder - drains the queue faster than
 # that and Shopify starts refusing with "Exceeded 2 calls per second".
-_SHOPIFY_MIN_CALL_INTERVAL = 0.6
-_SHOPIFY_MAX_ATTEMPTS = 4
-_last_shopify_call_at = [0.0]
+# _SHOPIFY_MIN_CALL_INTERVAL = 0.6
+# _SHOPIFY_MAX_ATTEMPTS = 4
+# _last_shopify_call_at = [0.0]
 
 
-def _shopify_throttle():
-    """Space this worker's Shopify calls under the published rate limit.
+# def _shopify_throttle():
+#     """Space this worker's Shopify calls under the published rate limit.
+# 
+#     Per-process, so it is not a global guarantee across the six short workers -
+#     the Retry-After handling in the caller is what actually makes a burst safe.
+#     This just stops a single worker being the one that trips the limit.
+#     """
+#     wait = _SHOPIFY_MIN_CALL_INTERVAL - (time.monotonic() - _last_shopify_call_at[0])
+#     if wait > 0:
+#         time.sleep(wait)
+#     _last_shopify_call_at[0] = time.monotonic()
 
-    Per-process, so it is not a global guarantee across the six short workers -
-    the Retry-After handling in the caller is what actually makes a burst safe.
-    This just stops a single worker being the one that trips the limit.
-    """
-    wait = _SHOPIFY_MIN_CALL_INTERVAL - (time.monotonic() - _last_shopify_call_at[0])
-    if wait > 0:
-        time.sleep(wait)
-    _last_shopify_call_at[0] = time.monotonic()
 
-
-def push_delivery_date_to_shopify_order(so_name, delivery_date):
-    """Push confirmed Estimated Delivery Date back to Shopify Order note attributes.
-
-    Retries on rate limiting. Before this, a refused push was logged once and
-    dropped: the ERP held the new date and Shopify kept the old one, with no second
-    attempt until that order's estimate happened to change again. On 2026-09-17 a
-    single batch lost 109 of them that way, and the same thing had been happening
-    at a trickle long before that.
-    """
-    try:
-        shopify_order_number = frappe.db.get_value("Sales Order", so_name, "shopify_order_number")
-        if not shopify_order_number:
-            return
-
-        from nj_features.nj_features.api.shopify_inventory import get_shopify_settings
-        settings = get_shopify_settings()
-        if not settings:
-            return
-
-        shop = settings.get("shop")
-        token = settings.get("token")
-        if not shop or not token:
-            return
-
-        url = f"{shop}/admin/api/2025-01/orders/{shopify_order_number}.json"
-        headers = {
-            "X-Shopify-Access-Token": token,
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "order": {
-                "id": int(shopify_order_number),
-                "note_attributes": [
-                    {
-                        "name": "Estimated Delivery Date",
-                        "value": str(delivery_date)
-                    }
-                ]
-            }
-        }
-        for attempt in range(_SHOPIFY_MAX_ATTEMPTS):
-            _shopify_throttle()
-            resp = requests.put(url, headers=headers, json=payload, timeout=10)
-
-            if resp.status_code == 200:
-                return
-
-            body = resp.text or ""
-            rate_limited = (
-                resp.status_code == 429
-                or "Exceeded" in body and "calls per second" in body
-            )
-            if not rate_limited:
-                # A 404, a bad token, a malformed order - retrying changes nothing.
-                logger.warning(
-                    "Could not push delivery date to Shopify order %s: %s",
-                    shopify_order_number, body
-                )
-                return
-
-            if attempt == _SHOPIFY_MAX_ATTEMPTS - 1:
-                break
-
-            # Shopify says exactly how long to wait; fall back to exponential.
-            try:
-                delay = float(resp.headers.get("Retry-After") or 0)
-            except (TypeError, ValueError):
-                delay = 0
-            time.sleep(min(delay or (2 ** attempt), 10))
-
-        logger.warning(
-            "[SHOPIFY_DATE_UNPUSHED] Gave up pushing delivery date to Shopify order %s "
-            "for %s after %d attempts (rate limited). ERP holds %s; Shopify does not.",
-            shopify_order_number, so_name, _SHOPIFY_MAX_ATTEMPTS, delivery_date
-        )
-    except Exception as e:
-        frappe.log_error(
-            title=f"push_delivery_date_to_shopify_order failed for {so_name}",
-            message=str(e)
-        )
+# def push_delivery_date_to_shopify_order(so_name, delivery_date):
+#     """Push confirmed Estimated Delivery Date back to Shopify Order note attributes.
+# 
+#     Retries on rate limiting. Before this, a refused push was logged once and
+#     dropped: the ERP held the new date and Shopify kept the old one, with no second
+#     attempt until that order's estimate happened to change again. On 2026-09-17 a
+#     single batch lost 109 of them that way, and the same thing had been happening
+#     at a trickle long before that.
+#     """
+#     try:
+#         shopify_order_number = frappe.db.get_value("Sales Order", so_name, "shopify_order_number")
+#         if not shopify_order_number:
+#             return
+# 
+#         from nj_features.nj_features.api.shopify_inventory import get_shopify_settings
+#         settings = get_shopify_settings()
+#         if not settings:
+#             return
+# 
+#         shop = settings.get("shop")
+#         token = settings.get("token")
+#         if not shop or not token:
+#             return
+# 
+#         url = f"{shop}/admin/api/2025-01/orders/{shopify_order_number}.json"
+#         headers = {
+#             "X-Shopify-Access-Token": token,
+#             "Content-Type": "application/json"
+#         }
+#         payload = {
+#             "order": {
+#                 "id": int(shopify_order_number),
+#                 "note_attributes": [
+#                     {
+#                         "name": "Estimated Delivery Date",
+#                         "value": str(delivery_date)
+#                     }
+#                 ]
+#             }
+#         }
+#         for attempt in range(_SHOPIFY_MAX_ATTEMPTS):
+#             _shopify_throttle()
+#             resp = requests.put(url, headers=headers, json=payload, timeout=10)
+# 
+#             if resp.status_code == 200:
+#                 return
+# 
+#             body = resp.text or ""
+#             rate_limited = (
+#                 resp.status_code == 429
+#                 or "Exceeded" in body and "calls per second" in body
+#             )
+#             if not rate_limited:
+#                 # A 404, a bad token, a malformed order - retrying changes nothing.
+#                 logger.warning(
+#                     "Could not push delivery date to Shopify order %s: %s",
+#                     shopify_order_number, body
+#                 )
+#                 return
+# 
+#             if attempt == _SHOPIFY_MAX_ATTEMPTS - 1:
+#                 break
+# 
+#             # Shopify says exactly how long to wait; fall back to exponential.
+#             try:
+#                 delay = float(resp.headers.get("Retry-After") or 0)
+#             except (TypeError, ValueError):
+#                 delay = 0
+#             time.sleep(min(delay or (2 ** attempt), 10))
+# 
+#         logger.warning(
+#             "[SHOPIFY_DATE_UNPUSHED] Gave up pushing delivery date to Shopify order %s "
+#             "for %s after %d attempts (rate limited). ERP holds %s; Shopify does not.",
+#             shopify_order_number, so_name, _SHOPIFY_MAX_ATTEMPTS, delivery_date
+#         )
+#     except Exception as e:
+#         frappe.log_error(
+#             title=f"push_delivery_date_to_shopify_order failed for {so_name}",
+#             message=str(e)
+#         )
 
 
 """Ending of Laptop Allocations Functions"""

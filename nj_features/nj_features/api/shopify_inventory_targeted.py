@@ -13,6 +13,7 @@ from nj_features.nj_features.api.shopify_inventory import (
     post_shopify_api,
     get_inventory_sync_flags,
     log_shopify_push,
+    mark_targeted_sync,
 )
 
 logger = frappe.logger("NEW SHOPIFY INVENTORY SYNC LOG", allow_site=True, file_count=10)
@@ -97,6 +98,9 @@ def create_rq_doc_by_item_codes(item_codes, sales_order=None):
     6. Push the staged quantities directly to Shopify.
     """
     logger.debug(f"[Targeted Sync] Started for SO={sales_order}, items={item_codes}")
+    # Taken before any stock is read, so an hourly run whose snapshot is older
+    # than this leaves these variants alone - see TARGETED_SYNC_MARKS_KEY.
+    sync_started_at = time.time()
 
     settings = get_shopify_settings()
     if not settings:
@@ -108,6 +112,7 @@ def create_rq_doc_by_item_codes(item_codes, sales_order=None):
     if not variant_ids:
         # Already logged in get_affected_variant_ids
         return
+    mark_targeted_sync(variant_ids, sync_started_at)
 
     # Copy mode (pre_order_claim = 0): the ordered parent + Processor
     # configurations are recounted in Step 4c. Their sibling variants are
@@ -957,11 +962,18 @@ def stage_targeted_variants(variant_ids, settings, pre_order_data_ok=True):
             pre_order_qty = safe_float(row.total_pre_order_qty) or 0
 
             hold_pre_order = False
+            etd_is_pre = pre_order_etd_allows(row, flags)
 
             if live_qty > 0:
                 desired_qty = float(live_qty)
-                is_pre_order = 0
-            elif pre_order_qty > 0 and pre_order_etd_allows(row, flags):
+                if etd_is_pre:
+                    is_pre_order = 1
+                    # Save what Shopify actually gets (the shelf qty), not the pool qty.
+                    pre_order_qty = live_qty
+                    update_status += f"[PreOrderLiveSynced→{desired_qty:g}] "
+                else:
+                    is_pre_order = 0
+            elif pre_order_qty > 0 and etd_is_pre:
                 # Threshold already applied in update_pre_order_qty (company quantity).
                 desired_qty = float(pre_order_qty)
                 is_pre_order = 1

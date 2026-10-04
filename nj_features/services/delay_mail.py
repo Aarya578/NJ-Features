@@ -19,6 +19,7 @@ Switched on/off by NJ Settings `delay_mail_enabled` (1 = on). Off by default.
 """
 
 import frappe
+from frappe.utils import add_to_date, now_datetime
 from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 
 DELAY_NOTIFICATION = "Customer Delay Delivery Notification - Sales Order"
@@ -65,10 +66,14 @@ def get_orders_due_delay_mail():
     # The job runs once a day at a fixed time, so "sent 2 days ago" lands a few
     # seconds either side of exactly 48 hours. The 4-hour margin keeps it on a
     # 2-day rhythm instead of slipping to 3.
+    # The cutoff comes from Frappe's clock, not MySQL NOW(): NJ Log.creation is
+    # stored in IST but the DB server runs in UTC, and NOW() made the window
+    # 5.5h too wide - every resend slipped to day 3.
+    cutoff = add_to_date(now_datetime(), hours=-(RESEND_EVERY_DAYS * 24 - 4))
     recent = set(frappe.db.sql_list("""
         SELECT info FROM `tabNJ Log`
-        WHERE method = %s AND creation > NOW() - INTERVAL %s HOUR
-    """, (SENT_LOG_METHOD, RESEND_EVERY_DAYS * 24 - 4)))
+        WHERE method = %s AND creation > %s
+    """, (SENT_LOG_METHOD, cutoff)))
 
     return [row for row in late if row.name not in recent]
 
@@ -78,15 +83,17 @@ def send_delay_mails():
     if not _is_enabled():
         return
 
-    try:
-        notification = frappe.get_doc("Notification", DELAY_NOTIFICATION)
-    except frappe.DoesNotExistError:
+    if not frappe.db.exists("Notification", DELAY_NOTIFICATION):
         log_error(f"Notification '{DELAY_NOTIFICATION}' not found", "send_delay_mails", "Error")
         return
 
     sent = 0
     for row in get_orders_due_delay_mail():
         try:
+            # Fresh copy per order: Notification.send() renders the CC template
+            # into the row in place, so a reused doc would CC the first order's
+            # owner on every later customer's mail.
+            notification = frappe.get_doc("Notification", DELAY_NOTIFICATION)
             notification.send(frappe.get_doc("Sales Order", row.name))
             # One row per mail: the resend clock reads it, and it is the record
             # of who was told what and when.

@@ -455,8 +455,13 @@ def updting_sla_department():
             d_name_lower = (cand_dept_name or "").lower()
             if "packing & dispatch" in d_name_lower or "sales" in d_name_lower:
                 return 1
-            if "inward" in d_name_lower:
-                return 1
+            # No early return for Inward. Inward's OWN SLA is 1 day (set above),
+            # but a machine in Inward still has the whole line ahead of it, so it
+            # takes the normal path: Inward's 1 day + every later department.
+            # A `return 1` here (2026-09-28) made "machine just arrived" and "no
+            # machine at all" (the fallback below starts from Inward) both read
+            # as 1-day dispatch: 5,663 zero-stock listings showed "1 Day" and the
+            # ETD > 3 pre-order gate switched off on that false figure.
 
             cand_sla = 0
             for d in depts_data:

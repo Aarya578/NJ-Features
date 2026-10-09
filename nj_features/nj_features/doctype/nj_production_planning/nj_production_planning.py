@@ -894,12 +894,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
             eligible_names = {r["name"] for r in rows}
             excluded_rows = _get_return_excluded_serials_for_department(dept_doc, eligible_names)
             for ex in excluded_rows:
-                reason_bits = []
-                if ex.get("return_reason"):
-                    reason_bits.append(f"return_reason={ex['return_reason']}")
-                if int(ex.get("is_replace") or 0) == 1:
-                    reason_bits.append("is_replace=1")
-                reason_text = "Excluded: " + (", ".join(reason_bits) if reason_bits else "not yet reprocessed")
+                reason_text = ex.get("exclusion_reason") or "Excluded from production planning"
                 plan_doc.append("missing_serial_nos", {
                     "serial_no": ex["name"],
                     "current_department": dept_name,
@@ -1564,8 +1559,10 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
 
     No filtering on soi.delivery_date.
     """
-    LOOKBACK_DAYS_B2C = 100
-    LOOKBACK_DAYS_B2B = 100
+    # Keep in step with the hourly allocator's window in
+    # overrides/sales_order.py get_open_sales_orders().
+    LOOKBACK_DAYS_B2C = 200
+    LOOKBACK_DAYS_B2B = 200
 
     rows = frappe.db.sql(
         """
@@ -1734,8 +1731,21 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
             LEFT JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
             WHERE
                 dni.docstatus = 1
-                AND dni.creation >= CURDATE() - INTERVAL %(lookback_max)s DAY
-            GROUP BY dni.against_sales_order, 
+                -- An old order reopened by a recent return needs its original
+                -- delivery counted too, or the -1 return alone makes dn_qty
+                -- negative and pending doubles. Kept to the date window plus
+                -- those orders only: scoping to every open SO triples runtime.
+                AND (
+                    dni.creation >= CURDATE() - INTERVAL %(lookback_max)s DAY
+                    OR dni.against_sales_order IN (
+                        SELECT dni_ret.against_sales_order
+                        FROM `tabDelivery Note Item` dni_ret
+                        INNER JOIN `tabDelivery Note` dn_ret ON dn_ret.name = dni_ret.parent
+                        WHERE dn_ret.docstatus = 1 AND dn_ret.is_return = 1
+                          AND dn_ret.posting_date > CURDATE() - INTERVAL %(lookback_max)s DAY
+                    )
+                )
+            GROUP BY dni.against_sales_order,
                 CASE 
                     WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code
                     ELSE pbi.item_code
@@ -2701,31 +2711,68 @@ def _get_return_excluded_serials_for_department(dept_doc, eligible_names) -> Lis
             sn.item_code,
             sn.warehouse,
             sn.return_reason,
-            sn.is_replace
+            sn.is_replace,
+            sn.order_source,
+            sn.reserved_sales_order,
+            so.status AS reserved_sales_order_status
         FROM `tabSerial No` sn
         INNER JOIN `tabItem` it
             ON sn.item_code = it.name
         INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
         INNER JOIN `tabDepartment` dp ON w.department = dp.name
+        LEFT JOIN `tabSales Order` so ON so.name = sn.reserved_sales_order
         WHERE w.department = %(dept)s
           AND (sn.status IS NULL OR sn.status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
           AND it.item_group IN %(igroups)s
-          AND (sn.reserved_sales_order IS NULL OR sn.reserved_sales_order = '')
           AND IFNULL(dp.department_sequence, 0) != 0
           AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
-          AND (sn.return_reason IS NULL OR sn.return_reason NOT IN ('Repair', 'Replace'))
-          AND (sn.order_source IS NULL OR sn.order_source NOT LIKE '%%- Repair%%')
-          AND NOT (
-              (IFNULL(sn.is_replace, 0) = 0 AND (sn.return_reason IS NULL OR sn.return_reason = ''))
-              OR (sn.sales_order_id IS NOT NULL AND sn.sales_order_id != '')
-              OR IFNULL(dp.department_sequence, 0) >= 10
+          AND (
+              sn.return_reason IN ('Repair', 'Replace')
+              OR sn.order_source LIKE '%%- Repair%%'
+              OR NOT (
+                  (IFNULL(sn.is_replace, 0) = 0 AND (sn.return_reason IS NULL OR sn.return_reason = ''))
+                  OR (sn.sales_order_id IS NOT NULL AND sn.sales_order_id != '')
+                  OR IFNULL(dp.department_sequence, 0) >= 10
+              )
+              OR (
+                  sn.reserved_sales_order IS NOT NULL
+                  AND sn.reserved_sales_order != ''
+                  AND (so.name IS NULL OR so.status IN ('Closed', 'Cancelled', 'Completed'))
+              )
           )
           {extra_where}
         """,
         params,
         as_dict=True,
     )
-    return [r for r in rows if r["name"] not in eligible_names]
+    excluded_rows = []
+    for row in rows:
+        if row["name"] in eligible_names:
+            continue
+
+        reason_bits = []
+        if row.get("return_reason"):
+            reason_bits.append(f"return_reason={row['return_reason']}")
+        if int(row.get("is_replace") or 0) == 1:
+            reason_bits.append("is_replace=1")
+        if row.get("order_source") and "- Repair" in row["order_source"]:
+            reason_bits.append(f"order_source={row['order_source']}")
+        if row.get("reserved_sales_order") and (
+            not row.get("reserved_sales_order_status")
+            or row.get("reserved_sales_order_status") in ("Closed", "Cancelled", "Completed")
+        ):
+            status = row.get("reserved_sales_order_status") or "Sales Order not found"
+            reason_bits.append(
+                f"stale reserved_sales_order={row['reserved_sales_order']} "
+                f"(Sales Order status={status})"
+            )
+
+        row["exclusion_reason"] = "Excluded: " + (
+            ", ".join(reason_bits) if reason_bits else "not eligible for production planning"
+        )
+        excluded_rows.append(row)
+
+    return excluded_rows
 
 
 @log_io
@@ -3439,10 +3486,29 @@ def _get_priority_rank_sort_key(row: Dict) -> tuple:
         parsed_delivery_date.isoformat() if parsed_delivery_date else PP_RANK_FAR_FUTURE_DATE
     )
 
+    # Forecast/Reconfig rows were chosen lowest DOI first (ties to the higher sales
+    # rate) by _allocate_forecast_to_balance_doi; without this the hourly re-rank
+    # collapsed them to pure serial age. Order rows are always written with doi 0
+    # and sales_rate 1, so this leaves their order untouched.
+    if row.get("reason") == "Order":
+        doi_key, sales_rate_key = 0.0, 0.0
+    else:
+        doi_key = flt(row.get("doi"))
+        sales_rate_key = -flt(row.get("sales_rate"))
+
     # FIFO tiebreak: the oldest serial (largest age in days) moves first.
     age_days = int(flt(row.get("serial_age_days") or 0))
 
-    return (dead, part_allocated, reason_order, delivery_key, -age_days, row.get("serial_no") or "")
+    return (
+        dead,
+        part_allocated,
+        reason_order,
+        delivery_key,
+        doi_key,
+        sales_rate_key,
+        -age_days,
+        row.get("serial_no") or "",
+    )
 
 
 @frappe.whitelist()
@@ -3485,6 +3551,8 @@ def refresh_latest_production_plan_priority_rank(plan_name: Optional[str] = None
             pp.current_warehouse,
             pp.reason,
             pp.delivery_date,
+            pp.doi,
+            pp.sales_rate,
             pp.serial_age_days,
             CAST(IFNULL(NULLIF(pp.priority_rank, ''), '0') AS UNSIGNED) AS priority_rank,
             IFNULL(pp.part_allocation, 0) AS part_allocation,

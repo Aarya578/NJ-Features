@@ -89,7 +89,8 @@ frappe.ui.form.on('Laptop Box', {
     },
 
     barcode: function(frm) {
-        
+        if (!window.njScannerAccess.validateSerialBarcode(frm, 'barcode', {raise_exp: false})) return;
+
         if (frm.doc.barcode) {
             frappe.call({
                 method: 'nj_features.nj_features.api.qr_code.generate_and_save_qrcode',
@@ -319,6 +320,7 @@ function setLaptopBoxSerialNoFromScan(frm, serialNo) {
 
     //     frm.set_value("barcode", serialNo);
     // });
+    window.njScannerAccess.markResolvedSerial(frm, 'barcode', serialNo);
     frm.set_value("barcode", serialNo);
 }
 
@@ -410,6 +412,7 @@ function getLaptopBoxCurrencyPrecision(frm) {
 }
 
 function setupLaptopBoxScannerOnly(frm, fieldname) {
+    if (!window.njScannerAccess || !window.njScannerAccess.isEnabled()) return;
     const field = frm.get_field(fieldname);
     if (!field || !field.$input || frm.doc.docstatus !== 0) return;
 
@@ -586,6 +589,7 @@ function acceptLaptopBoxScannerValue(frm, fieldname, value, state) {
 }
 
 function isLaptopBoxValueFromScanner(frm, fieldname) {
+    if (!window.njScannerAccess || !window.njScannerAccess.isEnabled()) return true;
     const value = (frm.doc[fieldname] || "").trim();
     const state = frm[`__laptop_box_scanner_${fieldname}`];
     if (!value) return true;

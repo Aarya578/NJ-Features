@@ -10,7 +10,10 @@ app_email = "itsupport@newjaisa.com"
 app_license = "MIT"
 
 # ========== Assets / Includes ==========
-app_include_js = "/assets/nj_features/js/nj_features.js"
+app_include_js = [
+    "/assets/nj_features/js/nj_features.js",
+    "/assets/nj_features/js/scanner_access.js",
+]
 
 # ========== Client Scripts ==========
 
@@ -100,36 +103,16 @@ doc_events = {
             "nj_features.nj_features.doctype.njqca.njqca.previous_njqca_failed_result_validation",
         ] ,
     },
-    # Blocks a Serial No from being saved if it would push the count
-    # of Serial Nos against its (rfq_id, item_code) combination past
-    # that RFQ Item line's qty. Runs alongside nj_p1_features's
-    # CustomSerialNo.validate() (override_doctype_class), not instead
-    # of it -- doc_events and class overrides are complementary, not
-    # exclusive, so this doesn't touch or conflict with that app's own
-    # BIOS-uniqueness checks there.
+
     "Serial No": {
-        # Order matters: prevent_manual_department_history_edits must run
-        # BEFORE seed_department_count_history -- see the former's
-        # docstring for why (it needs to see the client-submitted state
-        # before our own seeding hook mutates department_history in this
-        # same validate cycle).
+
         "validate": [
             "nj_features.overrides.serial_no.validate_rfq_qty",
             "nj_features.overrides.serial_no.prevent_manual_department_history_edits",
             "nj_features.overrides.serial_no.seed_department_count_history",
         ],
     },
-    # Every department-crossing stock transfer (Stock Movement, NJ Audit,
-    # or a direct manual transfer) ends up submitting a real Stock Entry,
-    # so this is the one point that catches all of them exactly once --
-    # see nj_features.overrides.stock_entry.update_department_count_history.
-    # block_restricted_department_moves is a backstop for a Stock Entry
-    # created and submitted directly, bypassing validate_serial_no_and_
-    # department (which already runs this same check earlier for every
-    # other flow -- Stock Movement / NJ Audit / Auto Stock Entry / MPC /
-    # NJQCA all route through nj_lib.utils.stock_entry.stock_entry_using_
-    # nj_lib(), which calls that validator before the Stock Entry even
-    # exists).
+
     "Stock Entry": {
         "before_submit": "nj_features.overrides.stock_entry.block_restricted_department_moves",
         "on_submit": "nj_features.overrides.stock_entry.update_department_count_history",
@@ -221,6 +204,7 @@ has_permission = {
 # ========== Override Whitelisted Methods ==========
 
 override_whitelisted_methods = {
+    "erpnext.selling.page.point_of_sale.point_of_sale.search_for_serial_or_batch_or_barcode_number": "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_number",
     "ecommerce_integrations.shopify.product.upload_erpnext_item": "nj_features.overrides.product.upload_erpnext_item",
     "ecommerce_integrations.shopify.order.sync_sales_order": "nj_features.overrides.order.sync_sales_order",
     "ecommerce_integrations.shopify.order.create_order": "nj_features.overrides.order.create_order",
@@ -266,13 +250,6 @@ scheduler_events = {
         "1 * * * *": [
             "nj_features.overrides.product_bundle.update_product_bundle_quantities",
         ],
-
-        # update_zero_quantity_product_bundles removed - it overwrote the same
-        # Product Bundle.quantity field one minute after update_product_bundle_quantities
-        # with a different, family-wide (parent+CPU) total instead of this exact
-        # SKU's own stock, causing the Shopify-visible quantity to flap between
-        # the two every hour and letting many sibling SKUs claim the same unit
-        # as available simultaneously.
 
         "45 9 * * *": [
             "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",

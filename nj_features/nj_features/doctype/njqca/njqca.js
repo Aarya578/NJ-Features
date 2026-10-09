@@ -4623,6 +4623,7 @@ function dedupeChildTable(frm) {
 const NJQCA_BARCODE_SCANNER_MESSAGE = "Please use the scanner to scan barcode.";
 
 function setupNJQCABarcodeScannerOnly(frm) {
+  if (!window.njScannerAccess || !window.njScannerAccess.isEnabled()) return;
   const fieldname = "barcode";
   const field = frm.get_field(fieldname);
   if (!field || !field.$input || frm.doc.docstatus !== 0) return;
@@ -4795,6 +4796,7 @@ function acceptNJQCABarcodeScannerValue(frm, value, state) {
 }
 
 function isNJQCABarcodeFromScanner(frm) {
+  if (!window.njScannerAccess || !window.njScannerAccess.isEnabled()) return true;
   const value = (frm.doc.barcode || "").trim();
   const state = frm.__njqca_barcode_scanner_state;
   if (!value) return true;

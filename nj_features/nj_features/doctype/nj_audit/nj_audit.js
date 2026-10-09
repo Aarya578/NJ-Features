@@ -212,6 +212,7 @@ const NJ_AUDIT_SCANNER_MAX_KEY_GAP = 350;
 const NJ_AUDIT_SCANNER_IDLE_DELAY = 600;
 
 function setupNJAuditScannerOnly(frm, fieldname) {
+    if (!window.njScannerAccess || !window.njScannerAccess.isEnabled()) return;
     const field = frm.get_field(fieldname);
     if (!field || !field.$input || frm.doc.docstatus !== 0) return;
 
@@ -388,6 +389,7 @@ function acceptNJAuditScannerValue(frm, fieldname, value, state) {
 }
 
 function isNJAuditValueFromScanner(frm, fieldname) {
+    if (!window.njScannerAccess || !window.njScannerAccess.isEnabled()) return true;
     const value = (frm.doc[fieldname] || "").trim();
     const state = frm[`__nj_audit_scanner_${fieldname}`];
     if (!value) return true;

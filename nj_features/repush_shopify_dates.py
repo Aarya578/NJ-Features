@@ -20,7 +20,7 @@ Delete this file once it has been run.
 
 import frappe
 
-from nj_features.overrides.sales_order import push_delivery_date_to_shopify_order
+# from nj_features.overrides.sales_order import push_delivery_date_to_shopify_order
 
 SHOPIFY_ORDER_NUMBERS = [
     "6519223320758",
@@ -146,7 +146,7 @@ def run():
     ok = failed = 0
     for r in rows:
         try:
-            push_delivery_date_to_shopify_order(r.name, str(r.estimated_delivery_date))
+            # push_delivery_date_to_shopify_order(r.name, str(r.estimated_delivery_date))
             ok += 1
         except Exception as e:
             failed += 1

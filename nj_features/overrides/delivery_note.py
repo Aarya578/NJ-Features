@@ -18,14 +18,6 @@ from frappe.utils import now
 # Single source of truth for order_source, shared with the Sales Order
 # allocator and the production planner so all three write the same value.
 from nj_features.services.reservation_service import get_effective_order_source
-
-
-def _is_machine_item(item_code):
-    """True when item_code is in a machine item group - the same list Sales Order
-    allocation uses (HARDWARE_ITEM_GROUPS). Components and accessories are never
-    reserved to a Sales Order, returns included."""
-    from nj_features.overrides.sales_order import HARDWARE_ITEM_GROUPS
-    return frappe.db.get_value("Item", item_code, "item_group") in HARDWARE_ITEM_GROUPS
 from contextlib import contextmanager
 #from __future__ import unicode_literals
 from datetime import datetime, timedelta
@@ -906,14 +898,7 @@ class CustomDeliveryNote(DeliveryNote):
                                     break
                             break
 
-                if against_sales_order and item_code and not _is_machine_item(item_code):
-                    # Business rule 2026-09-26: only machines are reserved to a
-                    # Sales Order, returns included. A returned RAM / SSD / adaptor /
-                    # keyboard / monitor is handled by hand, not re-reserved.
-                    frappe.logger().info(
-                        f"Repair return {self.name}: {sn} ({item_code}) is not a machine - not reserved to {against_sales_order}"
-                    )
-                elif against_sales_order and item_code:
+                if against_sales_order and item_code:
                     # order_source must be written alongside the reservation. It is
                     # the only record of where a reservation came from, and on this
                     # path it also carries the return cause (e.g.
@@ -995,14 +980,7 @@ class CustomDeliveryNote(DeliveryNote):
                                         break
                                 break
 
-                    if against_sales_order and item_code and not _is_machine_item(item_code):
-                        # Business rule 2026-09-26: no replacement is auto-allocated
-                        # from stock for a component (RAM / SSD / adaptor / keyboard /
-                        # monitor ...); only machines are allocated.
-                        frappe.logger().info(
-                            f"Replace return {self.name}: {sn} ({item_code}) is not a machine - no replacement allocated for {against_sales_order}"
-                        )
-                    elif against_sales_order and item_code:
+                    if against_sales_order and item_code:
                         from nj_features.overrides.sales_order import create_unallocated_log
 
                         # -- C1 + C1b: exact item_code, or a unit already WIP-reconfiguring
@@ -3403,8 +3381,14 @@ def shiprocket_awb_number(doc):
                     frappe.throw(f"API request failed with status {response.status_code}: {response.text}")
                     
         except Exception as e:
-            frappe.log_error(f"Consignment API Failed for {doc.name}: {str(e)}", frappe.get_traceback())
-            frappe.throw(f"Failed to send data to ShipRocket API. Error: {str(e)}")
+            frappe.log_error(
+                message=frappe.get_traceback(),
+                title=f"Shiprocket consignment failed: {doc.name}",
+            )
+            frappe.throw(
+                f"Failed to send Delivery Note {doc.name} to Shiprocket. "
+                f"Error: {str(e) or type(e).__name__}"
+            )
 
         if not doc.shiprocket_shipment_id:
             frappe.throw("Shipment ID not found on the document after consignment creation.")
@@ -3712,8 +3696,27 @@ def shiprocket_awb_number(doc):
             "gst_transporter_id": transporter_id,
         }
     except Exception as e:
-        frappe.log_error(f"Error in shiprocket_awb_number: {str(e)}", frappe.get_traceback())
-        raise
+        doc_name = "Unknown"
+        if isinstance(doc, dict):
+            doc_name = doc.get("name") or doc_name
+        elif getattr(doc, "name", None):
+            doc_name = doc.name
+
+        frappe.log_error(
+            message=frappe.get_traceback(),
+            title=f"Shiprocket error: {doc_name}",
+        )
+
+        # Preserve messages deliberately raised with frappe.throw(). For all
+        # other exceptions, return a readable validation error instead of an
+        # empty HTTP 500 response.
+        if isinstance(e, frappe.ValidationError):
+            raise
+
+        frappe.throw(
+            f"Shiprocket processing failed for Delivery Note {doc_name}. "
+            f"Error: {str(e) or type(e).__name__}"
+        )
 
 @frappe.whitelist()
 def fetch_shiprocket_details(doc):

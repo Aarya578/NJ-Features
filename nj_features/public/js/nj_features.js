@@ -1373,3 +1373,10 @@ function toggle_checkboxes(field) {
         }
     }
 }
+
+// Load the shared scanner-access guard from this long-standing Desk asset as
+// well as hooks.py. This makes the feature available even when a deployment
+// has not yet reloaded its cached hooks; scanner_access.js protects itself
+// against duplicate loading.
+frappe.require("/assets/nj_features/js/scanner_access.js");
+

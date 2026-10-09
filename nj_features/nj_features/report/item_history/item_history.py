@@ -33,7 +33,7 @@ def get_data(filters):
     data = []
     conditions = []
 
-    nj_serial_no = search_for_serial_or_batch_or_barcode_no(filters.get("barcode"), raise_exp=False)
+    nj_serial_no = search_for_serial_or_batch_or_barcode_no(filters.get("barcode"), raise_exp=False, enforce_encrypted=False)
 
     if filters.get("item_group"):
         conditions.append(f"AND sle.item_group = '{filters['item_group']}'")

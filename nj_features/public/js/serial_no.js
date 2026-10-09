@@ -5,6 +5,26 @@ frappe.ui.form.on('Serial No', {
     refresh: function(frm) {
         init_component_snapshot(frm);
         applyReadOnlyStyling(frm);
+        const has_inventory_access = (frappe.user && typeof frappe.user.has_role === 'function' && frappe.user.has_role('Inventory Access')) ||
+            (Array.isArray(frappe.user_roles) && frappe.user_roles.includes('Inventory Access'));
+
+        if (has_inventory_access) {
+            frm.toolbar.print_icon?.removeClass('hide').show();
+            frm.page.wrapper.find('button[data-original-title="Print"], button[title="Print"]').removeClass('hide').show();
+            if (!frm.is_new()) {
+                frm.add_custom_button(__('Print QR Code'), function() {
+                    printQRCode(frm);
+                });
+            }
+        } else {
+            frm.toolbar.print_icon?.addClass('hide').hide();
+            frm.page.wrapper.find('button[data-original-title="Print"], button[title="Print"]').addClass('hide').hide();
+            frm.remove_custom_button(__('Print QR Code'));
+            setTimeout(function() {
+                frm.toolbar.print_icon?.addClass('hide').hide();
+                frm.page.wrapper.find('button[data-original-title="Print"], button[title="Print"]').addClass('hide').hide();
+            }, 300);
+        }
 
         console.log('Current user roles:', frappe.user_roles);
         // to make field edit accessible for specific roles
@@ -35,9 +55,6 @@ frappe.ui.form.on('Serial No', {
                 function togglePrintVisibility() {
                     const shouldShow = serial_no_warehouse === employee_work_warehouse;
                     
-                    // Get the print button using the data-original-title attribute
-                    let printButton = document.querySelector('button[data-original-title="Print"]');
-                    
                     // Get the "Print" option in the dropdown menu - more specific selector
                     let printDropdownOption = Array.from(document.querySelectorAll('a.grey-link.dropdown-item')).find(
                         el => el.querySelector('[data-label="Print"]')
@@ -48,11 +65,6 @@ frappe.ui.form.on('Serial No', {
                         printDropdownOption = Array.from(document.querySelectorAll('a.grey-link.dropdown-item')).find(
                             el => el.textContent.trim() === 'Print'
                         );
-                    }
-
-                    // Hide/show print button
-                    if (printButton) {
-                        printButton.style.display = shouldShow ? 'block' : 'none';
                     }
 
                     // Hide/show dropdown print option
@@ -100,10 +112,6 @@ frappe.ui.form.on('Serial No', {
         frm.add_custom_button(__('Generate Report'), function() {
             get_report_data(frm);
         }).addClass('btn-primary');
-
-        frm.add_custom_button(__('Print QR Code'), function() {
-            printQRCode(frm);
-        });
 
         if (frappe.user.has_role(["Item Wizard Manager"]) || frappe.user.has_role(["Item Manager"])) {
             frm.set_df_property('serial_no_component', 'read_only', 0);
@@ -280,6 +288,36 @@ function applyReadOnlyStyling(frm) {
 }
 
 function printQRCode(frm) {
+    const handlePrint = (qr_print_count) => {
+        frm.doc.qr_print_count = qr_print_count;
+        if (qr_print_count >= 2) {
+            frappe.confirm(
+                __('You already printed QR {0} times for this Serial No. Do you want to print again?', [qr_print_count]),
+                function() {
+                    proceedPrintQRCode(frm);
+                },
+                function() {
+                    // Skip printing functionality if user clicks No
+                }
+            );
+        } else {
+            proceedPrintQRCode(frm);
+        }
+    };
+
+    if (frm.doc && frm.doc.name) {
+        frappe.db.get_value('Serial No', frm.doc.name, 'qr_print_count', function(data) {
+            const count = (data && data.qr_print_count !== undefined && data.qr_print_count !== null)
+                ? Number(data.qr_print_count)
+                : Number(frm.doc.qr_print_count || 0);
+            handlePrint(count);
+        });
+    } else {
+        handlePrint(Number(frm.doc.qr_print_count || 0));
+    }
+}
+
+function proceedPrintQRCode(frm) {
     var docname = encodeURIComponent(frm.doc.name);
     var doctype = encodeURIComponent("Serial No");
     var format = "Serial No Barcode";
@@ -291,13 +329,13 @@ function printQRCode(frm) {
         callback: function(r) {
             if (r.message) {
                 frappe.db.get_value('NJ Settings', {'parameter': 'max_qr_copy'}, 'value').then((r) => {
-                    let max_copies = r.message.value;
-                    frm.doc.qr_print_count = frm.doc.qr_print_count ? frm.doc.qr_print_count + 1 : 1;
+                    let max_copies = (r && r.message && r.message.value) ? Number(r.message.value) : null;
+                    frm.doc.qr_print_count = (Number(frm.doc.qr_print_count) || 0) + 1;
 
                     if (frm.doc.is_encrypted == 1) {
                         format = "SN QR Code Mapping";
-                        docname = frm.doc.qr_code_mapping
-                        doctype=encodeURIComponent("QR Code Mapping")
+                        docname = frm.doc.qr_code_mapping;
+                        doctype = encodeURIComponent("QR Code Mapping");
                     }
             
                     frappe.call({
@@ -307,7 +345,7 @@ function printQRCode(frm) {
                             fieldname: "qr_print_count", value: frm.doc.qr_print_count
                         },
                         callback: function(response) {
-                            if (frm.doc.qr_print_count > max_copies) {
+                            if (max_copies && frm.doc.qr_print_count > max_copies) {
                                 // Prompt for reason and comment if print limit exceeded
                                 frappe.prompt([
                                     {
@@ -600,6 +638,5 @@ frappe.ui.form.on('Serial No Component', {
         );
     }
 });
-
 
 

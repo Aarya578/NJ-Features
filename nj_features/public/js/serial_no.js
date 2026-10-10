@@ -326,17 +326,20 @@ function proceedPrintQRCode(frm) {
     frappe.call({
         method: 'nj_features.nj_features.api.qr_code.generate_and_save_qrcode',
         args: { data: frm.doc.name },
-        callback: function(r) {
-            if (r.message) {
-                frappe.db.get_value('NJ Settings', {'parameter': 'max_qr_copy'}, 'value').then((r) => {
-                    let max_copies = (r && r.message && r.message.value) ? Number(r.message.value) : null;
-                    frm.doc.qr_print_count = (Number(frm.doc.qr_print_count) || 0) + 1;
+        callback: function(qr_res) {
+            if (qr_res && qr_res.message) {
+                if (String(qr_res.message).startsWith('Error')) {
+                    frappe.msgprint(__(qr_res.message));
+                    return;
+                }
 
-                    if (frm.doc.is_encrypted == 1) {
-                        format = "SN QR Code Mapping";
-                        docname = frm.doc.qr_code_mapping;
-                        doctype = encodeURIComponent("QR Code Mapping");
-                    }
+                const qr_mapping = qr_res.message;
+                frm.doc.is_encrypted = 1;
+                frm.doc.qr_code_mapping = qr_mapping;
+
+                frappe.db.get_value('NJ Settings', {'parameter': 'max_qr_copy'}, 'value').then((setting_res) => {
+                    let max_copies = (setting_res && setting_res.message && setting_res.message.value) ? Number(setting_res.message.value) : null;
+                    frm.doc.qr_print_count = (Number(frm.doc.qr_print_count) || 0) + 1;
             
                     frappe.call({
                         method: "frappe.client.set_value",
@@ -379,15 +382,15 @@ function proceedPrintQRCode(frm) {
                                             // Generate QR code and open the print view
                                             frappe.call({
                                                 method: "nj_features.nj_features.api.qr_code.get_print_format_role",
-                                                callback: function(r) {
-                                                    if (r.message == true) {
+                                                callback: function(role_res) {
+                                                    if (role_res && role_res.message == true) {
             
                                                         window.open(frappe.urllib.get_full_url("/printview?" +
                                                         "doctype=" + doctype +
                                                         "&name=" + docname +
                                                         "&trigger_print=" + print_trigger +
                                                         "&format=" + format +
-                                                        "&no_letterhead=0" +
+                                                        "&no_letterhead=1" +
                                                         "&_lang=" + (frappe.boot.lang || "en")));
                                                         frm.reload_doc();
                                                     } else {
@@ -405,7 +408,7 @@ function proceedPrintQRCode(frm) {
                                     "&name=" + docname +
                                     "&trigger_print=" + print_trigger +
                                     "&format=" + format +
-                                    "&no_letterhead=0" +
+                                    "&no_letterhead=1" +
                                     "&_lang=" + (frappe.boot.lang || "en")));
                                 frm.reload_doc();
                             }

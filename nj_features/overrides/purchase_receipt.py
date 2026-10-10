@@ -1253,7 +1253,9 @@ def get_batch(doc, method=None):
                     if serial:
                         qr_code_mappings.append(generate_and_save_qrcode(serial))
             elif item.truncated_item_code:
-                generate_and_save_qrcode(item.truncated_item_code)
+                decoded_val = generate_and_save_qrcode(item.truncated_item_code)
+                if decoded_val and not str(decoded_val).startswith("Error"):
+                    frappe.db.set_value("Purchase Receipt Item", item.name, "decoded_item_code", decoded_val, update_modified=False)
 
             qr_code_mapping_str = '\n'.join(qr_code_mappings)
             frappe.db.sql("""

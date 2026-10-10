@@ -28,6 +28,7 @@ STORES_STOCK_EXCLUDED_WAREHOUSES = {
     "WK-Santosh Kumar-EMP01180",
     "WK-Amit Kumar Sah-EMP02051 - NJ",
     "WK-Shwetha S-NJVEN0157 - NJ",
+    "WK-Dhanush-EMP01674 - NJ",
 }
 
 MR_EXCLUDED_ITEM_GROUPS = {

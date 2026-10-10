@@ -857,6 +857,10 @@ def validate_serial_no_and_department(
     print("TARGET WAREHOUSE:", repr(t_warehouse))
 
     department = frappe.db.get_value('Warehouse', {'name': t_warehouse}, 'department')
+    target_is_employee_personal_warehouse = (
+        frappe.db.get_value('Warehouse', t_warehouse, 'warehouse_type')
+        == 'Employee Personal Warehouse'
+    )
     print("_t ==department=================",department )
     s_department = frappe.db.get_value('Warehouse', {'name': s_warehouse}, 'department')
     print("_s ==department=================",s_department )
@@ -1013,6 +1017,7 @@ def validate_serial_no_and_department(
 
     if (
         combined_sla_restriction
+        and not target_is_employee_personal_warehouse
         and department
         and department != s_department
         and combined_sla_cache_key not in combined_sla_checked
@@ -1036,6 +1041,7 @@ def validate_serial_no_and_department(
 
     if (
         not combined_sla_restriction
+        and not target_is_employee_personal_warehouse
         and department
         and department != s_department
         and row_item_group not in core_item_groups
@@ -1061,7 +1067,13 @@ def validate_serial_no_and_department(
         department_sla = frappe.db.get_value("Department", department, "department_sla")
         if should_validate_sla and sla_item_groups:
             sla_item_group_placeholders = ", ".join(["%s"] * len(sla_item_groups))
-        if should_validate_sla and sla_item_groups and warehouse_sla and t_warehouse:
+        if (
+            not target_is_employee_personal_warehouse
+            and should_validate_sla
+            and sla_item_groups
+            and warehouse_sla
+            and t_warehouse
+        ):
             warehouse_sla_days = int(warehouse_sla)
             warehouse_aging = frappe.db.sql(
                 f"""
@@ -1114,6 +1126,7 @@ def validate_serial_no_and_department(
                 )
         if (
             not combined_sla_restriction
+            and not target_is_employee_personal_warehouse
             and should_validate_sla
             and sla_item_groups
             and department_sla

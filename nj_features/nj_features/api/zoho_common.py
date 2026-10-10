@@ -35,13 +35,23 @@ def resolve_customer(account_id, record_id, zoho_get, zoho_put, skip_context="Zo
     the fly if the Account was made directly in Zoho and never mirrored
     from ERP (no ERP_Customer_ID yet, or one that no longer resolves).
     The new Customer's name is written back onto the Zoho Account so this
-    only happens once per Account.
+    only happens once per Account. Also maintains the zoho_account_id field on Customer.
     """
+    account_id_str = str(account_id)
+
+    # 1. Check if a Customer already has zoho_account_id matching this Zoho Account
+    existing_by_zoho_id = frappe.db.get_value("Customer", {"zoho_account_id": account_id_str}, "name")
+    if existing_by_zoho_id:
+        return existing_by_zoho_id
+
     account_detail = zoho_get(f"Accounts/{account_id}", params={"fields": "Account_Name,ERP_Customer_ID"})
     account_data = (account_detail.get("data") or [{}])[0]
 
+    # 2. Check if Zoho Account already has ERP_Customer_ID that exists in ERPNext
     erp_customer_id = account_data.get("ERP_Customer_ID")
     if erp_customer_id and frappe.db.exists("Customer", erp_customer_id):
+        if not frappe.db.get_value("Customer", erp_customer_id, "zoho_account_id"):
+            frappe.db.set_value("Customer", erp_customer_id, "zoho_account_id", account_id_str)
         return erp_customer_id
 
     account_name = account_data.get("Account_Name")
@@ -49,14 +59,24 @@ def resolve_customer(account_id, record_id, zoho_get, zoho_put, skip_context="Zo
         skip(record_id, f"Account {account_id} has no Account_Name to create a Customer from.", skip_context)
         return None
 
+    # 3. Check if a Customer already exists with matching customer_name
+    existing_by_name = frappe.db.get_value("Customer", {"customer_name": account_name}, "name")
+    if existing_by_name:
+        frappe.db.set_value("Customer", existing_by_name, "zoho_account_id", account_id_str)
+        zoho_put(f"Accounts/{account_id}", {"data": [{"id": account_id, "ERP_Customer_ID": existing_by_name}]})
+        return existing_by_name
+
+    # 4. Create new Customer
     customer = frappe.new_doc("Customer")
     customer.customer_name = account_name
     customer.customer_type = "Company"
     customer.customer_group = NEW_CUSTOMER_GROUP
     customer.territory = NEW_CUSTOMER_TERRITORY
+    customer.zoho_account_id = account_id_str
     customer.insert(ignore_permissions=True)
     frappe.db.commit()
 
     zoho_put(f"Accounts/{account_id}", {"data": [{"id": account_id, "ERP_Customer_ID": customer.name}]})
 
     return customer.name
+

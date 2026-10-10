@@ -2613,6 +2613,106 @@ def _release_rfq_serial_no(docname, serial_no):
         }, error=True)
 
 
+def get_existing_flutter_njqca_qi(doc):
+    """
+    Reuse the QI already linked to a Flutter-created NJQCA.
+
+    Does not submit NJQCA.
+    Does not create, delete, or modify any QI.
+    Does not change RFQ or non-Flutter behavior.
+    """
+
+    # Preserve the existing RFQ flow.
+    if doc.get("rfq_id"):
+        return None
+
+    # Apply only to NJQCA created from Flutter.
+    is_flutter_njqca = any(
+        str(row.get("parameter") or "").strip()
+        == "NJQCA_Created_From_Flutter"
+        and str(row.get("value") or "").strip() == "1"
+        for row in (doc.get("njqca_result_parameters") or [])
+    )
+
+    if not is_flutter_njqca:
+        return None
+
+    qi_name = str(doc.get("qi_name") or "").strip()
+
+    # No linked QI: preserve normal QI creation behavior.
+    if not qi_name:
+        return None
+
+    # Linked QI must actually exist.
+    if not frappe.db.exists("NJ Quality Inspection", qi_name):
+        frappe.throw(
+            "The Quality Inspection linked to this Flutter NJQCA "
+            "does not exist: {0}".format(qi_name)
+        )
+
+    qi = frappe.get_doc("NJ Quality Inspection", qi_name)
+
+    # Never reuse a QI linked to another NJQCA.
+    if qi.get("njqca_laptop_name") != doc.name:
+        frappe.throw(
+            "Quality Inspection {0} is not linked to NJQCA {1}."
+            .format(qi_name, doc.name)
+        )
+
+    # Verify inspection type.
+    if qi.get("inspection_type") != doc.get("inspection_type"):
+        frappe.throw(
+            "Quality Inspection {0} has a different Inspection Type."
+            .format(qi_name)
+        )
+
+    # Use the same serial identity rules as open_draft_qi().
+    is_component = frappe.db.get_value(
+        "Item Group",
+        doc.item_group,
+        "is_component"
+    )
+
+    expected_serial = (
+        doc.get("component_serial_no")
+        if is_component == 1
+        else doc.get("serial_no")
+    )
+
+    if expected_serial and qi.get("barcode") != expected_serial:
+        frappe.throw(
+            "Quality Inspection {0} is linked to a different Serial No."
+            .format(qi_name)
+        )
+
+    # Do not reuse a cancelled QI.
+    if qi.docstatus == 2:
+        frappe.throw(
+            "Linked Quality Inspection {0} is cancelled."
+            .format(qi_name)
+        )
+
+    base_url = frappe.db.get_value(
+        "NJ Settings",
+        {"parameter": "njpluse_url_for_qi"},
+        "value"
+    )
+
+    if not base_url:
+        frappe.throw("NJPulse URL is not found in NJ Settings.")
+
+    return {
+        "qi_name": qi_name,
+        "njpulse_url": "{0}qi/{1}/0".format(
+            base_url.rstrip("/") + "/",
+            qi_name
+        ),
+        "msg_pnt": "Existing Flutter Quality Inspection reused: {0}"
+                   .format(qi_name),
+        "base_url": base_url
+    }
+
+
 @frappe.whitelist()
 def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, qi_type=None):
     njqca_qi_trace("after_save_njqca_start", docname, {
@@ -2689,6 +2789,19 @@ def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, 
                 "reason": "Power On is not Yes",
                 "power_on": doc.power_on
             }
+
+        # Flutter-only: reuse an already-linked QI.
+        # Do not create another QI during manual ERP submission.
+        existing_flutter_qi = get_existing_flutter_njqca_qi(doc)
+
+        if existing_flutter_qi:
+            njqca_qi_trace(
+                "flutter_existing_qi_reused",
+                docname,
+                {"qi_name": existing_flutter_qi.get("qi_name")}
+            )
+
+            return existing_flutter_qi
 
         njqca_qi_trace("before_open_draft_qi", docname, {
             "qi_type": qi_type,

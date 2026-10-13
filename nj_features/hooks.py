@@ -138,9 +138,15 @@ doc_events = {
             "nj_features.overrides.sales_invoice.deviding_tax_chargese",
             "nj_features.overrides.sales_invoice.add_missing_sales_order_tax_accounts",
         ],
-        # "on_submit": [
-        #     "nj_features.overrides.sales_invoice.send_invoice_email",
-        # ],
+        "on_submit": [
+            "nj_features.nj_features.api.zoho_status_sync.on_sales_invoice_submit",
+        ],
+        "on_update_after_submit": [
+            "nj_features.nj_features.api.zoho_status_sync.on_sales_invoice_update_after_submit",
+        ],
+        "on_cancel": [
+            "nj_features.nj_features.api.zoho_status_sync.on_sales_invoice_cancel",
+        ],
     },
     "Laptop Box": {
         "before_save": "nj_features.nj_features.doctype.laptop_box.laptop_box.printing_barcode"
@@ -160,9 +166,11 @@ doc_events = {
             "nj_features.overrides.delivery_note.set_cod_details_critical"
         ],
         "on_submit": "nj_features.nj_features.api.zoho_status_sync.on_delivery_note_submit",
+        "on_cancel": "nj_features.nj_features.api.zoho_status_sync.on_delivery_note_cancel",
     },
     "Quotation": {
         "on_submit": "nj_features.nj_features.api.zoho_status_sync.on_quotation_submit",
+        "on_cancel": "nj_features.nj_features.api.zoho_status_sync.on_quotation_cancel",
     },
     "Employee": {
         "on_update": "nj_features.overrides.employee.update_item_group_and_max_qty_in_warehouse",

@@ -453,7 +453,66 @@ def create_delhivery_order(doc, shipping_mode):
 
 	sales_order = _get_sales_order(delivery_note)
 	item_details = _get_delhivery_item_details(delivery_note)
-	is_cod = bool(sales_order.is_cod)
+
+	# Case 1: COD checked but payment already received → run normal prepaid flow
+	if sales_order.is_cod == 1 and getattr(sales_order, "payment_received", 0) == 1:
+		payment_mode = "Prepaid"
+		cod_amount = 0
+
+		if delivery_note.grand_total:
+			total_amount = float(delivery_note.grand_total)
+		else:
+			# If grand_total not found, fetch from item groups
+			total_default_charge = 0
+			found_charges = False
+			for item in delivery_note.items:
+				if item.item_code:
+					try:
+						item_doc = frappe.get_doc("Item", item.item_code)
+						if item_doc.item_group:
+							item_group_doc = frappe.get_doc("Item Group", item_doc.item_group)
+							if getattr(item_group_doc, "default_charge", None):
+								total_default_charge += float(item_group_doc.default_charge)
+								found_charges = True
+					except Exception:
+						continue
+
+			if found_charges and total_default_charge > 0:
+				total_amount = total_default_charge
+			else:
+				total_amount = 450.0
+
+	# Case 2: Only COD checked → COD flow
+	elif sales_order.is_cod == 1:
+		payment_mode = "COD"
+		cod_amount = float(sales_order.total_outstanding or 0)
+		total_amount = float(delivery_note.grand_total or 0)
+
+	# Case 3: Normal Prepaid flow (non-COD orders)
+	else:
+		payment_mode = "Prepaid"
+		cod_amount = 0
+		if delivery_note.grand_total:
+			total_amount = float(delivery_note.grand_total)
+		else:
+			total_default_charge = 0
+			found_charges = False
+			for item in delivery_note.items:
+				if item.item_code:
+					try:
+						item_doc = frappe.get_doc("Item", item.item_code)
+						if item_doc.item_group:
+							item_group_doc = frappe.get_doc("Item Group", item_doc.item_group)
+							if getattr(item_group_doc, "default_charge", None):
+								total_default_charge += float(item_group_doc.default_charge)
+								found_charges = True
+					except Exception:
+						continue
+
+			if found_charges and total_default_charge > 0:
+				total_amount = total_default_charge
+			else:
+				total_amount = 300.0
 
 	shipment = {
 		"name": shipping_address.name,
@@ -464,16 +523,16 @@ def create_delhivery_order(doc, shipping_mode):
 		"country": shipping_address.country or "India",
 		"phone": shipping_address.phone or "",
 		"order": delivery_note.name,
-		"payment_mode": "COD" if is_cod else "Prepaid",
+		"payment_mode": payment_mode,
 		"return_pin": str(company_address.pincode or ""),
 		"return_city": company_address.city or "",
 		"return_phone": company_address.phone or "",
 		"return_add": _join_address(company_address),
 		"return_state": company_address.state or "",
 		"return_country": company_address.country or "India",
-		"cod_amount": float(sales_order.total_outstanding or 0) if is_cod else 0,
+		"cod_amount": cod_amount,
 		"order_date": str(delivery_note.creation),
-		"total_amount": float(delivery_note.grand_total or 0),
+		"total_amount": total_amount,
 		"quantity": item_details["quantity"],
 		"waybill": "",
 		"shipment_width": float(delivery_note.length or 0),

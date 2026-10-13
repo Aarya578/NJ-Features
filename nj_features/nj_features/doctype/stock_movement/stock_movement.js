@@ -568,7 +568,6 @@ function createDialogForLastRecord(child, cdt, cdn) {
                         });
                         
                         d.fields_dict.t_warehouse.$input.on("blur", function() {
-                            handleScannerInput(d, 't_warehouse');
                             let t_warehouse_value = $(this).val().trim();
                         
                             if (t_warehouse_value === '') {

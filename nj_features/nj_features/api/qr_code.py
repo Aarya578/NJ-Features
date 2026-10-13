@@ -21,7 +21,11 @@ def generate_and_save_qrcode(data, format='png'):
         filename_key = data  # ← default filename = original input
 
         # --- DB lookups ---
-        template_item_code   = frappe.db.exists('Item', encoded_data)
+        template_item_code   = (
+            frappe.db.exists('Item', encoded_data)
+            or frappe.db.get_value('Item', {'name': ('like', f"{encoded_data}%")}, 'name')
+            or frappe.db.exists('QR Code Mapping', {'item_code': encoded_data})
+        )
         qr_code_item_name    = frappe.db.exists('QR Code Mapping', {'item_code': encoded_data})
         qr_code_serial_name  = frappe.db.exists('QR Code Mapping', {'serial_no': encoded_data})
 
@@ -38,6 +42,7 @@ def generate_and_save_qrcode(data, format='png'):
                 qr_code_mapping_doc = frappe.new_doc('QR Code Mapping')
                 qr_code_mapping_doc.item_code = encoded_data
                 qr_code_mapping_doc.doctype1  = 'Item'
+                qr_code_mapping_doc.flags.ignore_links = True
                 qr_code_mapping_doc.save(ignore_permissions=True)
                 print(f"  [BRANCH 1a] New QR Code Mapping created: {qr_code_mapping_doc.name}")
                 encoded_data = qr_code_mapping_doc.name
@@ -63,26 +68,20 @@ def generate_and_save_qrcode(data, format='png'):
                 )
                 print(f"  [BRANCH 2] existing_qr_mapping from QR Code Mapping : {existing_qr_mapping}")
 
-            # STEP C: If mapping found — just reuse it, skip threshold check
+            # STEP C: If mapping found — just reuse it and ensure Serial No is updated
             if existing_qr_mapping:
                 print(f"  [BRANCH 2] ✅ Existing mapping found — reusing: {existing_qr_mapping}")
                 encoded_data = existing_qr_mapping
+                frappe.db.set_value(
+                    'Serial No',
+                    encoded_data,
+                    {'is_encrypted': True, 'qr_code_mapping': existing_qr_mapping},
+                    update_modified=False
+                )
 
             else:
-                # STEP D: No mapping exists — now apply threshold check
-                sn_creation    = frappe.db.get_value('Serial No', encoded_data, 'creation')
-                threshold_date = datetime(2025, 7, 24, 0, 0, 0)
-
-                print(f"  [BRANCH 2] Serial No creation date : {sn_creation}")
-                print(f"  [BRANCH 2] Threshold date          : {threshold_date}")
-
-                if sn_creation and sn_creation < threshold_date:
-                    print(f"  [BRANCH 2] ⚠️  Old serial, no mapping — SKIPPING QR generation")
-                    print(f"  [generate_and_save_qrcode] END (early return — old serial)\n  {'*'*50}")
-                    return encoded_data
-
-                # STEP E: New serial — create a fresh QR mapping
-                print(f"  [BRANCH 2] New serial — CREATING QR Code Mapping")
+                # STEP D: No mapping exists — create a fresh QR mapping
+                print(f"  [BRANCH 2] Creating fresh QR Code Mapping for Serial No: {encoded_data}")
                 qr_code_mapping_doc           = frappe.new_doc('QR Code Mapping')
                 qr_code_mapping_doc.serial_no = encoded_data
                 qr_code_mapping_doc.doctype1  = 'Serial No'
@@ -121,30 +120,52 @@ def generate_and_save_qrcode(data, format='png'):
         print(f"  [QR FILE] Final filename_key  (file name) : {repr(filename_key)}")
 
         url            = pyqrcode.create(encoded_data)        # ← QR content = mapping name
-        filename       = f"{filename_key}.{format}"           # ← file name  = serial no
+        safe_filename_key = str(filename_key).replace('/', '@')
+        filename       = f"{safe_filename_key}.{format}"      # ← file name  = serial no or mapping
         base_directory = frappe.get_site_path("public", "files")
+        os.makedirs(base_directory, exist_ok=True)
         file_path      = os.path.join(base_directory, filename)
 
         print(f"  [QR FILE] filename      : {filename}")
         print(f"  [QR FILE] full file_path: {file_path}")
 
-        # Always write the QR code PNG to ensure the image on disk is in sync with the mapping in the database
-        try:
-            url.png(file_path, scale=8)
-            print(f"  [QR FILE] ✅ QR PNG successfully WRITTEN to disk: {file_path}")
-        except (OSError, IOError) as e:
-            import errno
-            if e.errno == errno.EACCES and os.path.exists(file_path):
-                print(f"  [QR FILE] Permission denied on existing file. Attempting to delete and recreate: {file_path}")
-                try:
-                    os.remove(file_path)
-                    url.png(file_path, scale=8)
-                    print(f"  [QR FILE] ✅ QR PNG successfully WRITTEN to disk after recreation: {file_path}")
-                except Exception as sub_e:
-                    print(f"  [QR FILE] ❌ Failed to recreate and write QR PNG: {str(sub_e)}")
+        def _safe_write_png(target_file_path):
+            try:
+                url.png(target_file_path, scale=8)
+                print(f"  [QR FILE] ✅ QR PNG successfully WRITTEN: {target_file_path}")
+            except (OSError, IOError) as e:
+                import errno
+                if e.errno == errno.EACCES and os.path.exists(target_file_path):
+                    print(f"  [QR FILE] Permission denied on existing file. Attempting to delete and recreate: {target_file_path}")
+                    try:
+                        os.remove(target_file_path)
+                        url.png(target_file_path, scale=8)
+                        print(f"  [QR FILE] ✅ QR PNG successfully WRITTEN after recreation: {target_file_path}")
+                    except Exception as sub_e:
+                        print(f"  [QR FILE] ❌ Failed to recreate and write QR PNG: {str(sub_e)}")
+                        raise
+                else:
                     raise
-            else:
-                raise
+
+        # 1. Write the primary QR PNG (e.g., {serial_no}.png)
+        _safe_write_png(file_path)
+
+        # 2. If mapping name differs from filename, also write {qr_mapping}.png so both formats work seamlessly
+        if encoded_data and str(encoded_data) != str(safe_filename_key):
+            safe_mapping_key = str(encoded_data).replace('/', '@')
+            mapping_file_path = os.path.join(base_directory, f"{safe_mapping_key}.{format}")
+            try:
+                _safe_write_png(mapping_file_path)
+            except Exception as me:
+                print(f"  [QR FILE] ⚠️ Could not write mapping PNG directly ({me}). Trying copy...")
+                import shutil
+                if os.path.exists(file_path) and not os.path.exists(mapping_file_path):
+                    try:
+                        shutil.copyfile(file_path, mapping_file_path)
+                    except Exception:
+                        pass
+
+        frappe.db.commit()
 
         print(f"  [generate_and_save_qrcode] END — returning: {encoded_data}\n  {'*'*50}")
         return encoded_data

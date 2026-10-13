@@ -4,14 +4,24 @@ import traceback
 from nj_lib.utils.common_utils import get_item_wizard
 from nj_lib.utils.common_utils import latest_repacked_battery_serialno
 from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
-
+from frappe.utils import cint
 
 def encrypted_serial_scan_error(serial_no, is_encrypted, from_mapping=False):
-    if is_encrypted and not from_mapping:
+    nj_value = frappe.db.get_value(
+        "NJ Settings",
+        {"parameter": "is_encrypted_restriction"},
+        "value",
+    )
+
+    if cint(nj_value) != 1:
+        return None
+
+    if cint(is_encrypted) and not from_mapping:
         return (
             f"Serial No {serial_no} already has an encrypted barcode. "
             "Please scan its encrypted barcode; the direct NJ Series Serial No barcode is not allowed."
         )
+
     return None
 
 @frappe.whitelist()

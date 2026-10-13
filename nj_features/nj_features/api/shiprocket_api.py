@@ -12,13 +12,31 @@ AUTH_URL = "https://apiv2.shiprocket.in/v1/external/auth/login"
 CACHE_KEY = "shiprocket_auth_token"
 TOKEN_TTL_SECONDS = 10 * 24 * 60 * 60  # 10 days in seconds
 @frappe.whitelist(allow_guest=True)
-def get_auth_token():
+def get_auth_token(force_refresh=False):
     try:
-        # Try to get token from cache
-        cached_token = frappe.cache().get_value(CACHE_KEY)
-        if cached_token:
-            print(f"Using cached token: {cached_token[:20]}..." if len(cached_token) > 20 else cached_token)
-            return {"token": cached_token, "source": "cache"}
+        # Check cache if force_refresh is not requested
+        if force_refresh:
+            frappe.cache().delete_value(CACHE_KEY)
+        else:
+            cached_token = frappe.cache().get_value(CACHE_KEY)
+            if cached_token:
+                # Check JWT expiration
+                try:
+                    import base64, time
+                    parts = cached_token.split(".")
+                    if len(parts) == 3:
+                        payload_b64 = parts[1] + ("=" * (-len(parts[1]) % 4))
+                        payload_data = json.loads(base64.urlsafe_b64decode(payload_b64).decode("utf-8"))
+                        exp = payload_data.get("exp")
+                        if exp and exp <= (time.time() + 60):
+                            frappe.cache().delete_value(CACHE_KEY)
+                            cached_token = None
+                except Exception:
+                    pass
+
+            if cached_token:
+                print(f"Using cached token: {cached_token[:20]}..." if len(cached_token) > 20 else cached_token)
+                return {"token": cached_token, "source": "cache"}
             
         # Get settings and login
         settings = frappe.get_single("Ship Rocket Settings")

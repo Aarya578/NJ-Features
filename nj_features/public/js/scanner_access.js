@@ -16,7 +16,6 @@
 
     const TARGET_DOCTYPES = new Set([
         "Stock Movement",
-        "NJ Quality Inspection",
         "Rack Pick",
         "Purchase Order",
         "Purchase Receipt",
@@ -40,6 +39,7 @@
         "NJQCA",
         "Kitting",
         "Non Serialized Quality Inspection",
+        "NJ Quality Inspection",
     ]);
 
     let enabled = false;
@@ -81,6 +81,15 @@
     }
 
     function isScannerAccessActive() {
+        // Report and list views accept typed, pasted, and dropped filter values.
+        const route = window.frappe && typeof frappe.get_route === "function"
+            ? frappe.get_route() : [];
+        if (route.length > 0) {
+            const routeType = (route[0] || "").toLowerCase();
+            if (["list", "query-report", "workspaces", "tree", "kanban", "dashboard-view", "print"].includes(routeType)) {
+                return false;
+            }
+        }
         // If user has "Scanner Access" role, bypass all scanner restrictions
         if (hasScannerBypassRole()) {
             return false;
@@ -114,21 +123,22 @@
     }
 
     function getTargetDoctype(element) {
-        if (window.cur_frm && cur_frm.doctype) {
-            return cur_frm.doctype;
+        const route = window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [];
+        if (route && route[0] === "Form" && route[1]) {
+            return route[1];
         }
         if (element && element.closest) {
-            const docElem = element.closest("[data-doctype]");
-            if (docElem) {
-                const dt = docElem.getAttribute("data-doctype");
-                if (dt) return dt;
+            const formElem = element.closest(".form-page, .form-layout, .page-form, [data-page-route^='Form/']");
+            if (formElem) {
+                const docElem = formElem.closest("[data-doctype]");
+                if (docElem) {
+                    const dt = docElem.getAttribute("data-doctype");
+                    if (dt) return dt;
+                }
             }
         }
-        if (window.frappe && typeof frappe.get_route === "function") {
-            const route = frappe.get_route();
-            if (route && route[0] === "Form" && route[1]) {
-                return route[1];
-            }
+        if (window.cur_frm && cur_frm.doctype && route && route[0] === "Form") {
+            return cur_frm.doctype;
         }
         return "";
     }
@@ -152,6 +162,10 @@
         if (!fieldname) return false;
         const fn = fieldname.toLowerCase();
 
+        if (doctype === "NJ Quality Inspection") {
+            return fn === "encrypted_serial_no";
+        }
+
         if (
             fn === "scan_barcode" ||
             fn === "scan_barcodes" ||
@@ -159,10 +173,6 @@
             fn.endsWith("_barcode") ||
             fn.includes("barcode")
         ) {
-            return true;
-        }
-
-        if (doctype === "NJ Quality Inspection" && fn === "encrypted_serial_no") {
             return true;
         }
 
@@ -187,6 +197,28 @@
         return null;
     }
 
+    function isSkippedField(input, doctype, fieldname) {
+        const dt = (doctype || (input && getTargetDoctype(input)) || (window.cur_frm && cur_frm.doctype) || "").trim();
+        const fn = (fieldname || (input && getFieldname(input)) || "").trim().toLowerCase();
+
+        // In Stock Movement racking workflow, allow copy/paste, typing, and standard inputs
+        // for the warehouse field in the racking popup dialog.
+        if (dt === "Stock Movement") {
+            const transferStatus = (window.cur_frm && cur_frm.doc && cur_frm.doc.transfer_status)
+                ? String(cur_frm.doc.transfer_status).toLowerCase()
+                : "";
+            const isModal = Boolean(input && input.closest && input.closest(".modal, .modal-dialog"));
+
+            if (fn === "t_warehouse" || (isModal && (fn === "warehouse" || fn === "t_warehouse"))) {
+                if (!transferStatus || transferStatus === "racking" || isModal) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     function isActualBarcodeInput(target) {
         if (!isScannerAccessActive()) {
             return false;
@@ -201,6 +233,11 @@
             return false;
         }
 
+        // Never intercept inputs inside filters, search bars, lists, reports, or headers
+        if (input.closest && input.closest(".frappe-list, .standard-filter-section, .filter-box, .filter-selector, .list-filters, .filter-area, .search-box, .awesomplete, .search-dialog, .report-filter-area, .report-view, .page-head, .desk-searchbar, .navbar-search")) {
+            return false;
+        }
+
         const doctype = getTargetDoctype(input);
 
         // Skip legacy DocTypes that have their own dedicated scanner handlers
@@ -210,6 +247,11 @@
 
         const fieldname = getFieldname(input);
         if (!fieldname) return false;
+
+        // Skip fields explicitly exempted from scanner access restrictions
+        if (isSkippedField(input, doctype, fieldname)) {
+            return false;
+        }
 
         // If in target doctypes
         if (doctype && TARGET_DOCTYPES.has(doctype)) {
@@ -636,9 +678,16 @@
         isLoaded: function () {
             return loaded;
         },
+        isFieldSkipped: function (doctype, fieldname) {
+            return isSkippedField(null, doctype, fieldname);
+        },
         isFieldGuarded: function (doctype, fieldname) {
             if (!isScannerAccessActive()) return false;
             if (!fieldname) return false;
+            if (isSkippedField(null, doctype, fieldname)) return false;
+            if (doctype === "NJ Quality Inspection") {
+                return fieldname.toLowerCase() === "encrypted_serial_no";
+            }
             if (doctype && LEGACY_SCANNER_DOCTYPES.has(doctype)) return false;
             if (doctype && TARGET_DOCTYPES.has(doctype)) {
                 return isBarcodeField(doctype, fieldname);

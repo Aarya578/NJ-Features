@@ -3187,6 +3187,53 @@ def send_consignement_data(doc):
          
     except Exception as e:
         frappe.throw(f"Failed to send data to Criticalog API. Error: {str(e)}")   
+
+def parse_shiprocket_response(response, action_name):
+    """
+    Safely parse JSON response from Shiprocket API.
+    Raises descriptive frappe.ValidationError if response is empty, non-JSON, or an HTTP error.
+    """
+    if not response.text or not response.text.strip():
+        frappe.throw(
+            f"Shiprocket {action_name} failed: Received empty response from server (HTTP {response.status_code})."
+        )
+
+    try:
+        data = response.json()
+    except Exception:
+        preview = response.text[:300].strip().replace("\n", " ")
+        frappe.throw(
+            f"Shiprocket {action_name} failed (HTTP {response.status_code}): {preview}"
+        )
+
+    if response.status_code not in (200, 201):
+        err_msg = ""
+        if isinstance(data, dict):
+            err_msg = (
+                data.get("message")
+                or data.get("error")
+                or (str(data.get("errors")) if data.get("errors") else "")
+            )
+        frappe.throw(
+            f"Shiprocket {action_name} failed with HTTP {response.status_code}: {err_msg or response.text[:300]}"
+        )
+
+    return data
+
+def shiprocket_request(method, url, headers, **kwargs):
+    """
+    Execute request to Shiprocket API. If a 401 Unauthorized / Invalid Token is returned,
+    automatically refreshes the auth token from Ship Rocket Settings and retries once.
+    """
+    response = requests.request(method, url, headers=headers, **kwargs)
+    if response.status_code == 401:
+        auth_info = get_auth_token(force_refresh=True)
+        fresh_token = auth_info.get("token") if isinstance(auth_info, dict) else None
+        if fresh_token:
+            headers["Authorization"] = f"Bearer {fresh_token.strip()}"
+            response = requests.request(method, url, headers=headers, **kwargs)
+    return response
+
 @frappe.whitelist()
 def shiprocket_awb_number(doc):
     """Create a ShipRocket consignment, assign an AWB, and generate a manifest and invoice."""
@@ -3197,7 +3244,13 @@ def shiprocket_awb_number(doc):
         auth_token = get_auth_token().get("token")
 
         if not auth_token:
-            frappe.throw("Authentication token could not be retrieved from Shiprocket.")   
+            frappe.throw("Authentication token could not be retrieved from Shiprocket.")
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {auth_token.strip()}"
+        }
+
         try:
             delivery_note_doc = frappe.get_doc("Delivery Note", doc.name)
             total_qty = 0
@@ -3342,43 +3395,32 @@ def shiprocket_awb_number(doc):
                 "height": str(delivery_note_doc.height),
                 "weight": str(delivery_note_doc.weight)
             }
-            # url = "https://apiv2.shiprocket.in/v1/external/orders/create/adhoc"
-            url = frappe.db.get_single_value("Logistics Settings", "adhoc_url")
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {auth_token.strip()}"
-            }
-            response = requests.post(url, headers=headers, json=data)
-            
-            if response.status_code == 200:
-                try:
-                    resp_json = response.json()
-                    # print("response:--------159", response.json())
-                    if resp_json.get('order_id'):
-                        # Update document with ShipRocket IDs
-
-                        frappe.db.set_value("Delivery Note", doc.name, {
-                            "shiprocket_order_id": resp_json.get("order_id"),
-                            "shiprocket_shipment_id": resp_json.get("shipment_id")
-                        }, update_modified=False)
-                        
-                        # Update local doc object for further processing
-                        doc.shiprocket_order_id = resp_json.get('order_id')
-                        doc.shiprocket_shipment_id = resp_json.get('shipment_id')
-                        
-                        frappe.db.commit()
-                    else:
-                        frappe.throw(f"Order creation failed: {response.text}")
-                except ValueError as json_err:
-                    frappe.throw(f"Could not parse API response: {response.text}")
+            # If already created on this Delivery Note, reuse existing Shiprocket IDs
+            if delivery_note_doc.shiprocket_order_id and delivery_note_doc.shiprocket_shipment_id:
+                doc.shiprocket_order_id = delivery_note_doc.shiprocket_order_id
+                doc.shiprocket_shipment_id = delivery_note_doc.shiprocket_shipment_id
             else:
-                # Handle different error codes
-                if response.status_code == 401:
-                    frappe.throw("Authentication failed. Please check your ShipRocket credentials.")
-                elif response.status_code == 422:
-                    frappe.throw(f"Validation error: {response.text}")
+                # url = "https://apiv2.shiprocket.in/v1/external/orders/create/adhoc"
+                url = frappe.db.get_single_value("Logistics Settings", "adhoc_url")
+                if not url:
+                    frappe.throw("Adhoc Order URL is not configured in Logistics Settings.")
+                response = shiprocket_request("POST", url.strip(), headers=headers, json=data)
+                resp_json = parse_shiprocket_response(response, "Consignment Creation")
+
+                if resp_json.get('order_id'):
+                    # Update document with ShipRocket IDs
+                    frappe.db.set_value("Delivery Note", doc.name, {
+                        "shiprocket_order_id": resp_json.get("order_id"),
+                        "shiprocket_shipment_id": resp_json.get("shipment_id")
+                    }, update_modified=False)
+                    
+                    # Update local doc object for further processing
+                    doc.shiprocket_order_id = resp_json.get('order_id')
+                    doc.shiprocket_shipment_id = resp_json.get('shipment_id')
+                    
+                    frappe.db.commit()
                 else:
-                    frappe.throw(f"API request failed with status {response.status_code}: {response.text}")
+                    frappe.throw(f"Order creation failed: {resp_json.get('message') or response.text}")
                     
         except Exception as e:
             frappe.log_error(
@@ -3398,12 +3440,19 @@ def shiprocket_awb_number(doc):
         shipment_list = [int(shipment_id)]
 
         # 1. Service Availability
-        service_url = frappe.db.get_single_value("Logistics Settings", "service_url")
-        service_response = requests.get(service_url, headers=headers, json={"order_id": invoice_order_id})
-        service_json = service_response.json()
+        service_url = (frappe.db.get_single_value("Logistics Settings", "service_url") or "").strip()
+        if not service_url:
+            frappe.throw("Service URL is not configured in Logistics Settings.")
+
+        service_response = shiprocket_request("GET", service_url, headers=headers, params={"order_id": invoice_order_id})
+        service_json = parse_shiprocket_response(service_response, "Courier Serviceability check")
         courier_data = service_json.get("data", {}).get("available_courier_companies", [])
         if not courier_data:
-            frappe.throw("No courier companies found in serviceability response.")
+            err_msg = service_json.get("message") or ""
+            if err_msg:
+                frappe.throw(f"No courier companies found in serviceability response. Shiprocket message: {err_msg}")
+            else:
+                frappe.throw("No courier companies found in serviceability response.")
 
         # Get  courier names from Logistics Settings child table
         logistics_settings = frappe.get_doc("Logistics Settings")
@@ -3564,14 +3613,16 @@ def shiprocket_awb_number(doc):
 
         # 2. AWB Assignment
         # awb_url = "https://apiv2.shiprocket.in/v1/external/courier/assign/awb"
-        awb_url = frappe.db.get_single_value("Logistics Settings", "awb_number_url")
+        awb_url = (frappe.db.get_single_value("Logistics Settings", "awb_number_url") or "").strip()
+        if not awb_url:
+            frappe.throw("AWB Number URL is not configured in Logistics Settings.")
 
         awb_response = requests.post(awb_url, headers=headers, json={
             "shipment_id": shipment_id,
             "courier_id": best_courier.get("courier_company_id")
         })
-        awb_json = awb_response.json()
-        if "message" in awb_json:
+        awb_json = parse_shiprocket_response(awb_response, "AWB Assignment")
+        if "message" in awb_json and not awb_json.get("response", {}).get("data"):
             frappe.throw(f"ShipRocket AWB Assignment Failed: {awb_json.get('message')}")
 
         response_data = awb_json.get("response", {})
@@ -3602,38 +3653,41 @@ def shiprocket_awb_number(doc):
             # 3. Pickup Generation (when pickup date was not in AWB response)
             try:
                 # pickup_url = "https://apiv2.shiprocket.in/v1/external/courier/generate/pickup"
-                pickup_url = frappe.db.get_single_value("Logistics Settings", "pickup_url")
-                pickup_response = requests.post(pickup_url, headers=headers, json={"shipment_id": shipment_list})
-                pickup_json = pickup_response.json()
+                pickup_url = (frappe.db.get_single_value("Logistics Settings", "pickup_url") or "").strip()
+                if pickup_url:
+                    pickup_response = requests.post(pickup_url, headers=headers, json={"shipment_id": shipment_list})
+                    pickup_json = parse_shiprocket_response(pickup_response, "Pickup Scheduling")
 
-                if "message" in pickup_json and pickup_json.get("message") != "Pickup scheduled successfully":
-                    frappe.msgprint(f"Pickup scheduling message: {pickup_json.get('message')}")
-                
-                pickup_date = None
-                response_data = pickup_json.get("response", {})
-                
-                if isinstance(response_data, dict):
-                    pickup_date = response_data.get("pickup_scheduled_date")
-                    if not pickup_date:
-                        pickup_date = response_data.get("pickup_date")
-                
-                if pickup_date:
-                    frappe.db.set_value("Delivery Note", doc.name, "pickup_scheduled_date", pickup_date,update_modified=False)
-                    frappe.msgprint(f"AWB: {awb_code} assigned successfully. Pickup scheduled for: {pickup_date}")
-                else:
-                    frappe.msgprint(f"AWB: {awb_code} assigned successfully. Pickup may have been scheduled - please check ShipRocket dashboard.")
+                    if "message" in pickup_json and pickup_json.get("message") != "Pickup scheduled successfully":
+                        frappe.msgprint(f"Pickup scheduling message: {pickup_json.get('message')}")
                     
+                    pickup_date = None
+                    response_data = pickup_json.get("response", {})
+                    
+                    if isinstance(response_data, dict):
+                        pickup_date = response_data.get("pickup_scheduled_date")
+                        if not pickup_date:
+                            pickup_date = response_data.get("pickup_date")
+                    
+                    if pickup_date:
+                        frappe.db.set_value("Delivery Note", doc.name, "pickup_scheduled_date", pickup_date,update_modified=False)
+                        frappe.msgprint(f"AWB: {awb_code} assigned successfully. Pickup scheduled for: {pickup_date}")
+                    else:
+                        frappe.msgprint(f"AWB: {awb_code} assigned successfully. Pickup may have been scheduled - please check ShipRocket dashboard.")
+                        
             except Exception as e:
                 frappe.msgprint(f"AWB: {awb_code} assigned successfully, but pickup scheduling encountered an issue: {str(e)}")
         # 5. Invoice Generation
         invoice_order_id = doc.shiprocket_order_id
         # invoice_url = "https://apiv2.shiprocket.in/v1/external/orders/print/invoice"
-        invoice_url = frappe.db.get_single_value("Logistics Settings", "invoice_url")
+        invoice_url = (frappe.db.get_single_value("Logistics Settings", "invoice_url") or "").strip()
+        if not invoice_url:
+            frappe.throw("Invoice URL is not configured in Logistics Settings.")
         invoice_response = requests.post(invoice_url, headers=headers, json={"ids": [invoice_order_id]})
-        invoice_json = invoice_response.json()
+        invoice_json = parse_shiprocket_response(invoice_response, "Invoice Generation")
         invoice_pdf_url = invoice_json.get("invoice_url")
         if not invoice_pdf_url:
-            frappe.throw("Invoice URL not found in response.")
+            frappe.throw(f"Invoice URL not found in response: {invoice_json.get('message') or invoice_json}")
         invoice_file_response = requests.get(invoice_pdf_url)
         if invoice_file_response.status_code != 200:
             frappe.throw(f"Could not fetch invoice PDF: {invoice_file_response.status_code}")
@@ -3642,12 +3696,14 @@ def shiprocket_awb_number(doc):
 
         # 6. Label Generation
         # label_url = "https://apiv2.shiprocket.in/v1/external/courier/generate/label"
-        label_url = frappe.db.get_single_value("Logistics Settings", "label_url")
+        label_url = (frappe.db.get_single_value("Logistics Settings", "label_url") or "").strip()
+        if not label_url:
+            frappe.throw("Label URL is not configured in Logistics Settings.")
         label_response = requests.post(label_url, headers=headers, json={"shipment_id": shipment_list})
-        label_json = label_response.json()
+        label_json = parse_shiprocket_response(label_response, "Label Generation")
         label_link = label_json.get("label_url")
         if not label_link:
-            frappe.throw("Label URL not found in response.")
+            frappe.throw(f"Label URL not found in response: {label_json.get('message') or label_json}")
         label_file_response = requests.get(label_link)
         if label_file_response.status_code != 200:
             frappe.throw(f"Could not fetch label PDF: {label_file_response.status_code}")
@@ -3656,18 +3712,20 @@ def shiprocket_awb_number(doc):
         
         # 4. Manifest Generation
         # manifest_url = "https://apiv2.shiprocket.in/v1/external/manifests/generate"
-        manifest_url = frappe.db.get_single_value("Logistics Settings", "manifest_url")
+        manifest_url = (frappe.db.get_single_value("Logistics Settings", "manifest_url") or "").strip()
+        if not manifest_url:
+            frappe.throw("Manifest URL not configured in Logistics Settings.")
         manifest_response = requests.post(manifest_url, headers=headers, json={"shipment_id": shipment_list})
-        manifest_json = manifest_response.json()
+        manifest_json = parse_shiprocket_response(manifest_response, "Manifest Generation")
 
         # Check if there's an error message in the response
-        if "message" in manifest_json:
+        if "message" in manifest_json and not manifest_json.get("manifest_url"):
             frappe.throw(f"Manifest Generation Error: {manifest_json.get('message')}")
         # Get manifest URL
         manifest_pdf_url = manifest_json.get("manifest_url")
         if not manifest_pdf_url:
             frappe.throw(f"Manifest URL not found. Full response: {manifest_json}")
-          # Fetch and save manifest PDF
+        # Fetch and save manifest PDF
         manifest_file_response = requests.get(manifest_pdf_url)
         if manifest_file_response.status_code != 200:
             frappe.throw(f"Could not fetch manifest PDF: {manifest_file_response.status_code}")

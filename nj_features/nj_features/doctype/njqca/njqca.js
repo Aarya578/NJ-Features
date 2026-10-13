@@ -885,7 +885,17 @@ frappe.ui.form.on("NJQCA", {
             let urlToCompare = r.message.njpulse_url.replace(/\/$/, "");
             let pwd_njpulse_url = urlToCompare;
 
-            if (urlToCompare && !openedUrls.includes(urlToCompare)) {
+            // Identify NJQCA documents created through Flutter.
+            const isFlutterNJQCA = (frm.doc.njqca_result_parameters || []).some(
+              (row) =>
+                (row.parameter || "").trim() === "NJQCA_Created_From_Flutter",
+            );
+
+            if (
+              !isFlutterNJQCA &&
+              urlToCompare &&
+              !openedUrls.includes(urlToCompare)
+            ) {
               openedUrls.push(urlToCompare);
               localStorage.setItem("openedUrls", JSON.stringify(openedUrls));
 
@@ -899,6 +909,7 @@ frappe.ui.form.on("NJQCA", {
                   "&encrypted_pwd=True&doctype_url=qi/" +
                   r.message.qi_name;
               }
+
               window.open(pwd_njpulse_url, "_blank");
             }
 
@@ -4796,7 +4807,8 @@ function acceptNJQCABarcodeScannerValue(frm, value, state) {
 }
 
 function isNJQCABarcodeFromScanner(frm) {
-  if (!window.njScannerAccess || !window.njScannerAccess.isEnabled()) return true;
+  if (!window.njScannerAccess || !window.njScannerAccess.isEnabled())
+    return true;
   const value = (frm.doc.barcode || "").trim();
   const state = frm.__njqca_barcode_scanner_state;
   if (!value) return true;

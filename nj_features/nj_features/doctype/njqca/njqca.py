@@ -220,7 +220,7 @@ def get_inspection_type():
         frappe.msgprint("<b>Inspection Type</b> is not updated in either <b>Role Profile</b> or <b>Department: {0}</b>".format(department))
         return None
     
-def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_defective=None, re_check=None):
+def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_defective=None, re_check=None, existing_qi_name=None):
     try:
         njqca_qi_trace("open_draft_qi_start", self.name, {
             "serial_no": self.serial_no,
@@ -271,6 +271,43 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
 
         create_new_qi = True
         new_qi = None
+
+        # Flutter existing-QI path: use the exact linked QI.
+        # Normal NJQCA processing remains unchanged.
+        if existing_qi_name:
+            new_qi = frappe.get_doc(
+                "NJ Quality Inspection",
+                existing_qi_name
+            )
+
+            if new_qi.docstatus != 0:
+                frappe.throw(
+                    "Cannot sync NJQCA results because linked QI "
+                    "{0} is not in Draft.".format(existing_qi_name)
+                )
+
+            if new_qi.get("njqca_laptop_name") != self.name:
+                frappe.throw(
+                    "Linked QI {0} belongs to another NJQCA.".format(
+                        existing_qi_name
+                    )
+                )
+
+            if new_qi.get("inspection_type") != inspection_type:
+                frappe.throw(
+                    "Linked QI {0} has a different Inspection Type.".format(
+                        existing_qi_name
+                    )
+                )
+
+            if new_qi.get("barcode") != serial_num:
+                frappe.throw(
+                    "Linked QI {0} has a different Serial No.".format(
+                        existing_qi_name
+                    )
+                )
+
+            create_new_qi = False
         
         sync_njqca_qis = frappe.get_list(
             'NJ Quality Inspection',
@@ -321,14 +358,14 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
                 "existing_qis": existing_qis
             })
 
-        if sync_njqca_qis:
+        if not existing_qi_name and sync_njqca_qis:
             latest_qi = sync_njqca_qis[0]
             time_diff = frappe.utils.time_diff_in_seconds(frappe.utils.now_datetime(), latest_qi.creation)
             log_error(str(time_diff)+str(latest_qi.name),"time_diff for serial no "+str(serial_num)+" in open draft qi")
             if time_diff < 3600:
                 new_qi = frappe.get_doc('NJ Quality Inspection', latest_qi.name)
                 create_new_qi = False
-        elif existing_qis:
+        elif not existing_qi_name and not sync_njqca_qis and existing_qis:
             latest_qi = existing_qis[0]
             time_diff = frappe.utils.time_diff_in_seconds(frappe.utils.now_datetime(), latest_qi.creation)
             if time_diff < 1200:
@@ -2795,13 +2832,34 @@ def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, 
         existing_flutter_qi = get_existing_flutter_njqca_qi(doc)
 
         if existing_flutter_qi:
+            qi_name = existing_flutter_qi.get("qi_name")
+
             njqca_qi_trace(
-                "flutter_existing_qi_reused",
+                "flutter_existing_qi_sync_start",
                 docname,
-                {"qi_name": existing_flutter_qi.get("qi_name")}
+                {"qi_name": qi_name}
             )
 
-            return existing_flutter_qi
+            qi_draft_data = open_draft_qi(
+                doc,
+                component_serial_no,
+                brand,
+                model,
+                is_defective="1" if qi_type == "is_defective" else None,
+                re_check="1" if qi_type == "re_check" else None,
+                existing_qi_name=qi_name
+            )
+
+            njqca_qi_trace(
+                "flutter_existing_qi_sync_completed",
+                docname,
+                {
+                    "qi_name": qi_name,
+                    "result": qi_draft_data
+                }
+            )
+
+            return qi_draft_data
 
         njqca_qi_trace("before_open_draft_qi", docname, {
             "qi_type": qi_type,

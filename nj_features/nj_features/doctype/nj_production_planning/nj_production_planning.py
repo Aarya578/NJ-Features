@@ -268,7 +268,16 @@ def _is_rebuild_compatible(physical_item_code: str, target_item_code: str) -> bo
     if not tmpl_a or not tmpl_b:
         return True
 
-    return _is_same_model_family(tmpl_a, tmpl_b)
+    if _is_same_model_family(tmpl_a, tmpl_b):
+        return True
+
+    # Explicit Shopify grouping can map differently named parents. Apply the
+    # same mapping used by C3 so the planner does not discard its reservations.
+    if tmpl_a not in _get_equivalent_parent_models(tmpl_b):
+        return False
+    physical_cpu = _cfg_tuple_from_item(physical_item_code)[1]
+    target_cpu = _cfg_tuple_from_item(target_item_code)[1]
+    return bool(physical_cpu and physical_cpu == target_cpu)
 
 
 def _clear_serial_to_make(serial_no: str, bad_to_make: str) -> None:
@@ -297,7 +306,12 @@ _EQUIVALENT_PARENT_MODELS_CACHE: Dict[str, Set[str]] = {}
 
 
 def _get_equivalent_parent_models(template_name: str) -> Set[str]:
-    """Retrieve all equivalent parent templates grouped together in tabNJ Inventory Sync Main, strictly matching brand and model family."""
+    """Resolve parent equivalence from explicit Shopify variant membership.
+
+    RAM/storage may differ; callers still require the same CPU. Different
+    parent names are allowed only through a shared mapping, while explicit
+    Touch/NT and PIR chassis conflicts remain excluded.
+    """
     if not template_name:
         return set()
     if template_name in _EQUIVALENT_PARENT_MODELS_CACHE:
@@ -305,21 +319,44 @@ def _get_equivalent_parent_models(template_name: str) -> Set[str]:
 
     sync_rows = frappe.db.sql(
         """
-        SELECT item_code FROM `tabNJ Inventory Sync Main`
-        WHERE item_code LIKE %s
+        SELECT DISTINCT source.item_code AS source_item_codes, mapped.item_code
+        FROM `tabNJ Inventory Sync Main` source
+        INNER JOIN `tabNJ Inventory Sync Main` mapped
+            ON TRIM(mapped.shopify_variant_id) = TRIM(source.shopify_variant_id)
+        WHERE source.item_code LIKE %s
+          AND TRIM(IFNULL(source.shopify_variant_id, '')) != ''
         """,
         (f"%{template_name}%",),
         as_dict=True
     )
     equivalent = {template_name}
-    for r in sync_rows:
-        raw = r.get("item_code") or ""
-        for code in raw.split(","):
+    parent_cache = {}
+
+    def parents(raw):
+        result = set()
+        for code in (raw or "").split(","):
             code = code.strip()
-            if code:
-                v_of = frappe.db.get_value("Item", code, "variant_of")
-                if v_of and _is_same_model_family(template_name, v_of):
-                    equivalent.add(v_of)
+            if not code:
+                continue
+            if code not in parent_cache:
+                parent_cache[code] = frappe.db.get_value("Item", code, "variant_of")
+            if parent_cache[code]:
+                result.add(parent_cache[code])
+        return result
+
+    target_is_pir = 'pir' in re.findall(r'[a-z0-9]+', template_name.lower())
+    for r in sync_rows:
+        # LIKE narrows the lookup only. It must not let e.g. Dell 5400 borrow
+        # mappings that contain only Dell 5400(PIR) or Dell 54000.
+        if template_name not in parents(r.get("source_item_codes")):
+            continue
+        for parent in parents(r.get("item_code")):
+            if not is_screen_type_compatible(template_name, parent):
+                continue
+            parent_is_pir = 'pir' in re.findall(r'[a-z0-9]+', parent.lower())
+            if target_is_pir != parent_is_pir:
+                continue
+            equivalent.add(parent)
     _EQUIVALENT_PARENT_MODELS_CACHE[template_name] = equivalent
     return equivalent
 
@@ -550,7 +587,7 @@ def _update_serial_to_make(serial_no: str, item_code_to_make: str, expected_so: 
 
 
 @log_io
-def _update_serial_reserved_sales_order(serial_no: str, sales_order_no: Optional[str]) -> bool:
+def _update_serial_reserved_sales_order(serial_no: str, sales_order_no: Optional[str], target_item: Optional[str] = None) -> bool:
     """Update Serial No.reserved_sales_order atomically with checked result."""
     if not UPDATE_SERIAL_RESERVED_SO:
         return True
@@ -585,6 +622,29 @@ def _update_serial_reserved_sales_order(serial_no: str, sales_order_no: Optional
                     """, (effective_source, serial_no, so_val))
                 return True
 
+            # Demand SQL only drops orders whose latest DN is a Repair return; an
+            # order still owed only for earlier Repair returns (see
+            # return_allocation._return_owed_delivery) waits for the customer's unit.
+            if (effective_source or "").endswith(" - Repair") or effective_source == "Repair":
+                logger.warning("Not reserving Serial No %s for %s: order waits for repaired customer unit", serial_no, so_val)
+                return False
+
+            from nj_features.services.return_allocation import is_past_allocation_window, get_return_owed_qty
+            if is_past_allocation_window(so_val) and get_return_owed_qty(so_val, causes=("Replace",)) <= 0:
+                logger.warning("Not reserving Serial No %s for %s: older than 200 days, no Replace unit owed", serial_no, so_val)
+                return False
+
+            # Per item on a mixed order: Repair-owed units wait for the
+            # customer's own unit, and Replace-owed units carry "- Replace".
+            if target_item:
+                from nj_features.services.return_allocation import get_item_return_state
+                from nj_features.services.reservation_service import get_item_order_source
+                state = get_item_return_state(so_val, target_item)
+                if state.repair_gap and state.pending - state.reserved <= state.repair_gap:
+                    logger.warning("Not reserving Serial No %s for %s: %s owes only Repair units", serial_no, so_val, target_item)
+                    return False
+                effective_source = get_item_order_source(so_val, target_item)
+
             frappe.db.sql("""
                 UPDATE `tabSerial No`
                 SET reserved_sales_order = %s,
@@ -599,6 +659,8 @@ def _update_serial_reserved_sales_order(serial_no: str, sales_order_no: Optional
             if getattr(frappe.db, "_cursor", None) and frappe.db._cursor.rowcount <= 0:
                 logger.warning("Could not reserve Serial No %s for %s: already reserved or ineligible", serial_no, so_val)
                 return False
+            from nj_features.services.reservation_service import stamp_allocated_department
+            stamp_allocated_department(serial_no)
             return True
         else:
             frappe.db.sql("""
@@ -881,18 +943,48 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
         forward_keys_per_seq[s] = _build_forward_keys(sellable_items, forward_grain, sales_rate)
 
     inward_serials_per_dept: Dict[str, List[Dict]] = {}
+    reserved_serials_per_dept: Dict[str, List[Dict]] = {}
+    return_units_per_dept: Dict[str, List[Dict]] = {}
     all_serial_ids = []
     for s in sequences:
         for d in depts_by_seq[s]:
             dept_name = d["name"]
             dept_doc = frappe.get_doc("Department", dept_name)
             rows = _get_inward_serials_for_department(dept_doc)
+            eligible_names = {r["name"] for r in rows}
+
+            # A wizard that is not submitted (draft, or a submitted one later
+            # reset to draft) cannot be planned - same rule the reserved-serial
+            # phase applies. Report it instead of letting it reach the plan.
+            planned_rows = []
+            for r in rows:
+                if r.get("item_wizard") and r.get("iw_docstatus") != 1:
+                    plan_doc.append("missing_serial_nos", {
+                        "serial_no": r["name"],
+                        "current_department": dept_name,
+                        "current_warehouse": r.get("warehouse"),
+                        "reason": f"Item Wizard not Submitted ({r['item_wizard']})"
+                    })
+                    continue
+                planned_rows.append(r)
+            rows = planned_rows
+
             inward_serials_per_dept[dept_name] = rows
             all_serial_ids.extend([r["name"] for r in rows])
             logger.debug(f"has taken {len(rows)} serial no from the department {dept_name}")
 
-            eligible_names = {r["name"] for r in rows}
+            # Serials reserved to an active SO are handled by the reserved phase
+            # below (planned in Lines, or reported there with their own reason),
+            # so a reserved Repair/Replace unit must not also be listed here.
+            reserved_serials_per_dept[dept_name] = _get_reserved_serials_for_department(dept_name)
+            eligible_names |= {r["name"] for r in reserved_serials_per_dept[dept_name]}
+
             excluded_rows = _get_return_excluded_serials_for_department(dept_doc, eligible_names)
+            # An unreserved Repair/Replace unit is still worked on the floor, so
+            # it goes to Lines (no sales order, never allocated) in the reserved
+            # phase below instead of being reported as missing.
+            return_units_per_dept[dept_name] = [ex for ex in excluded_rows if ex.get("is_return_unit")]
+            excluded_rows = [ex for ex in excluded_rows if not ex.get("is_return_unit")]
             for ex in excluded_rows:
                 reason_text = ex.get("exclusion_reason") or "Excluded from production planning"
                 plan_doc.append("missing_serial_nos", {
@@ -917,7 +1009,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
             serial_rows = inward_serials_per_dept.get(dept_name, [])
 
             # Process Pre-Reserved serials (already locked to SOs)
-            reserved_rows = _get_reserved_serials_for_department(dept_name)
+            reserved_rows = reserved_serials_per_dept.get(dept_name, [])
             for res_row in reserved_rows:
                 sn_id = res_row['name']
                 wh = res_row['warehouse']
@@ -1003,6 +1095,58 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                 )
                 priority_per_dept[dept_name] += 1
 
+            # Unreserved Repair/Replace units: planned for their own build only.
+            # No sales_order_number, so _append_plan_row never reserves them.
+            for ret_row in return_units_per_dept.get(dept_name, []):
+                sn_id = ret_row["name"]
+                wh = ret_row["warehouse"]
+
+                skip_reason = None
+                if not ret_row.get("item_wizard"):
+                    skip_reason = "Repair/Replace unit - Item Wizard not found"
+                elif ret_row.get("part_list_status") != "Completed":
+                    skip_reason = "Repair/Replace unit - Item Wizard not Completed"
+                elif ret_row.get("iw_docstatus") != 1:
+                    skip_reason = "Repair/Replace unit - Item Wizard not Submitted"
+
+                item_code_to_make = None
+                if not skip_reason:
+                    item_code_to_make = _get_fallback_pb_item_code(ret_row["item_code"])
+                    if not item_code_to_make:
+                        skip_reason = "Repair/Replace unit - Product Bundle not found"
+
+                if skip_reason:
+                    plan_doc.append("missing_serial_nos", {
+                        "serial_no": sn_id,
+                        "current_department": dept_name,
+                        "current_warehouse": wh,
+                        "reason": skip_reason
+                    })
+                    continue
+
+                base_date = frappe.utils.getdate(
+                    ret_row.get("purchase_date") or ret_row.get("creation") or frappe.utils.nowdate()
+                )
+                age_days = (_today - base_date).days if base_date else 0
+                return_label = "Replace" if ret_row.get("return_reason") == "Replace" else "Repair"
+
+                _append_plan_row(
+                    plan_doc,
+                    serial_no=sn_id,
+                    current_warehouse=wh,
+                    current_department=dept_name,
+                    sales_rate=0.0,
+                    doi=0.0,
+                    sales_order_number=None,
+                    delivery_date=None,
+                    item_code_to_make=item_code_to_make,
+                    reason=return_label,
+                    priority_rank=priority_per_dept[dept_name],
+                    serial_age_days=age_days,
+                    remarks=f"Not Allocated: {return_label} unit, no reserved Sales Order ({ret_row['exclusion_reason']})",
+                )
+                priority_per_dept[dept_name] += 1
+
             serial_map = []
             for row in serial_rows:
                 enriched = _enrich_serial_from_attrs(row)
@@ -1055,8 +1199,12 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
         if parent_variant_id:
             p4_codes = set(_get_variant_bundle_item_codes(parent_variant_id)) - {target_ic} - p2_codes
 
+        rejected_for_so = set()
+
         def _try_assign_sn(s, dept_name, remarks_text):
             nonlocal needed_qty
+            if s["serial_no"] in rejected_for_so:
+                return False
             # A Non-Touch panel cannot be rebuilt into a Touch one. _is_same_model_family
             # already enforces this for C3, but C1b matches on to_make and C2/C4 on
             # Shopify variant grouping - none of them look at the screen, so all three
@@ -1083,12 +1231,21 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                 part_allocation=part_allocation,
             )
             dept_pool = avail_serials_by_dept.get(dept_name, [])
-            if s in dept_pool:
-                dept_pool.remove(s)
             if success:
+                if s in dept_pool:
+                    dept_pool.remove(s)
                 needed_qty -= 1
                 priority_per_dept[dept_name] += 1
                 return True
+            # A refused reservation (SO past the 200-day window, Repair-bound
+            # order) leaves the serial free. Dropping it from the pool here made
+            # it vanish from the plan - neither a line nor a Missing Serial No -
+            # so Stock Movement blocked it. Keep it for later orders and the
+            # Forecast phase unless it really was reserved elsewhere meanwhile.
+            rejected_for_so.add(s["serial_no"])
+            if (frappe.db.get_value("Serial No", s["serial_no"], "reserved_sales_order") or "").strip():
+                if s in dept_pool:
+                    dept_pool.remove(s)
             return False
 
         # -------------------------------------------------------------------------
@@ -1564,8 +1721,10 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
     LOOKBACK_DAYS_B2C = 200
     LOOKBACK_DAYS_B2B = 200
 
+    from nj_features.services.return_allocation import FRESH_ALLOCATION_EXCLUSION_SQL
+
     rows = frappe.db.sql(
-        """
+        f"""
         SELECT
             so_data.sales_order                                   AS so_name,
             so_data.soi_name                                      AS soi_name,
@@ -1640,45 +1799,10 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
             WHERE
                 so.status NOT IN ('Closed', 'Completed', 'Draft', 'Cancelled')
                 AND so.docstatus = 1
-                AND so.name NOT IN (
-                    SELECT DISTINCT sales_order
-                    FROM `tabNJ Refund`
-                    WHERE refund_status IN ('Paid', 'Refunded', 'Initiated', 'Debit Failed', 'Returned')
-                      AND docstatus = 1
-                      AND sales_order IS NOT NULL
-                      AND sales_order != ''
-                )
-                AND so.name NOT IN (
-                    SELECT DISTINCT dni.against_sales_order
-                    FROM `tabDelivery Note Item` dni
-                    JOIN `tabDelivery Note` dn ON dn.name = dni.parent
-                    WHERE dn.docstatus = 1 AND dn.is_return = 1 
-                      AND (dn.cause_of_return IN ('Repair', 'Refund') OR dn.return_reason IN ('Repair', 'In-House Repair', 'Refund'))
-                      AND dni.against_sales_order IS NOT NULL AND dni.against_sales_order != ''
-                )
-                -- An RTO'd order is not demand: the parcel came back, so the sale
-                -- did not happen. Kept in step with RTO_EXCLUSION_SQL in
-                -- reservation_service - the planner reserves units too
-                -- (_update_serial_reserved_sales_order), so excluding these orders
-                -- in the Sales Order allocator alone would leave the planner
-                -- re-reserving exactly what the allocator had stopped taking.
-                -- Latest submitted DN wins, so a deliberate re-ship lifts it.
-                AND so.name NOT IN (
-                    SELECT DISTINCT dni.against_sales_order
-                    FROM `tabDelivery Note Item` dni
-                    JOIN `tabDelivery Note` dn ON dn.name = dni.parent
-                    WHERE dn.docstatus = 1 AND dn.is_return = 1
-                      AND dn.cause_of_return IN ('RTO Customer', 'RTO Delivery Partner')
-                      AND dni.against_sales_order IS NOT NULL AND dni.against_sales_order != ''
-                      AND NOT EXISTS (
-                          SELECT 1
-                          FROM `tabDelivery Note Item` dni2
-                          JOIN `tabDelivery Note` dn2 ON dn2.name = dni2.parent
-                          WHERE dni2.against_sales_order = dni.against_sales_order
-                            AND dn2.docstatus = 1
-                            AND dn2.creation > dn.creation
-                      )
-                )
+                -- Unapproved orders take no fresh stock; see
+                -- reservation_service.is_sales_order_approved().
+                AND IFNULL(so.approve, 0) = 1
+                {FRESH_ALLOCATION_EXCLUSION_SQL}
                 AND (
                     (so.sale_type IN ('NJ-Website-B2C', 'NJ-Direct-B2C') AND so.creation > CURDATE() - INTERVAL %(lookback_b2c)s DAY)
                     OR
@@ -2615,7 +2739,8 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
     """
     Fetch valid serials for a department where:
     - status NOT in ('Delivered', 'Scrapped', 'Inactive') OR NULL
-    - linked item_wizard exists AND its part_list_status = 'Completed'
+    - wizard fields are returned but NOT filtered here: the caller drops
+      serials whose wizard is not submitted (iw_docstatus != 1)
     - exclude restricted warehouses defined in the department config
     """
     restricted_warehouse: List[str] = []
@@ -2664,9 +2789,12 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
           AND (sn.order_source IS NULL OR sn.order_source NOT LIKE '%%- Repair%%')
           -- Keep the SO candidate rule identical to assign_serials in
           -- overrides/sales_order.py. Returned/replacement stock is sellable only
-          -- after it has reached the reprocessed portion of the pipeline.
+          -- after it has reached the reprocessed portion of the pipeline -
+          -- except Refund: the customer was paid back, so the unit is ordinary
+          -- company stock wherever it sits (business rule 2026-10-08), and
+          -- Shopify already counts it as sellable.
           AND (
-              (IFNULL(sn.is_replace, 0) = 0 AND (sn.return_reason IS NULL OR sn.return_reason = ''))
+              (IFNULL(sn.is_replace, 0) = 0 AND (sn.return_reason IS NULL OR sn.return_reason IN ('', 'Refund')))
               OR (sn.sales_order_id IS NOT NULL AND sn.sales_order_id != '')
               OR IFNULL(dp.department_sequence, 0) >= 10
           )
@@ -2714,10 +2842,16 @@ def _get_return_excluded_serials_for_department(dept_doc, eligible_names) -> Lis
             sn.is_replace,
             sn.order_source,
             sn.reserved_sales_order,
-            so.status AS reserved_sales_order_status
+            so.status AS reserved_sales_order_status,
+            sn.creation,
+            sn.purchase_date,
+            sn.item_wizard,
+            iw.part_list_status,
+            iw.docstatus AS iw_docstatus
         FROM `tabSerial No` sn
         INNER JOIN `tabItem` it
             ON sn.item_code = it.name
+        LEFT JOIN `tabItem Wizards` iw ON sn.item_wizard = iw.name
         INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
         INNER JOIN `tabDepartment` dp ON w.department = dp.name
         LEFT JOIN `tabSales Order` so ON so.name = sn.reserved_sales_order
@@ -2730,7 +2864,7 @@ def _get_return_excluded_serials_for_department(dept_doc, eligible_names) -> Lis
               sn.return_reason IN ('Repair', 'Replace')
               OR sn.order_source LIKE '%%- Repair%%'
               OR NOT (
-                  (IFNULL(sn.is_replace, 0) = 0 AND (sn.return_reason IS NULL OR sn.return_reason = ''))
+                  (IFNULL(sn.is_replace, 0) = 0 AND (sn.return_reason IS NULL OR sn.return_reason IN ('', 'Refund')))
                   OR (sn.sales_order_id IS NOT NULL AND sn.sales_order_id != '')
                   OR IFNULL(dp.department_sequence, 0) >= 10
               )
@@ -2767,6 +2901,10 @@ def _get_return_excluded_serials_for_department(dept_doc, eligible_names) -> Lis
                 f"(Sales Order status={status})"
             )
 
+        row["is_return_unit"] = (
+            row.get("return_reason") in ("Repair", "Replace")
+            or "- Repair" in (row.get("order_source") or "")
+        )
         row["exclusion_reason"] = "Excluded: " + (
             ", ".join(reason_bits) if reason_bits else "not eligible for production planning"
         )
@@ -3687,7 +3825,7 @@ def _append_plan_row(
     logger.debug(f"processing each and every serial no we need to mention got it: {serial_no}")
 
     if reason == "Order" and sales_order_number:
-        success = _update_serial_reserved_sales_order(serial_no, sales_order_number)
+        success = _update_serial_reserved_sales_order(serial_no, sales_order_number, item_code_to_make)
         if not success:
             logger.warning(
                 "[ALLOCATION_REJECTED] Serial %s could not be reserved for SO %s: already reserved or modified concurrently.",

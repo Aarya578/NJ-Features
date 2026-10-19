@@ -326,17 +326,20 @@ function proceedPrintQRCode(frm) {
     frappe.call({
         method: 'nj_features.nj_features.api.qr_code.generate_and_save_qrcode',
         args: { data: frm.doc.name },
-        callback: function(r) {
-            if (r.message) {
-                frappe.db.get_value('NJ Settings', {'parameter': 'max_qr_copy'}, 'value').then((r) => {
-                    let max_copies = (r && r.message && r.message.value) ? Number(r.message.value) : null;
-                    frm.doc.qr_print_count = (Number(frm.doc.qr_print_count) || 0) + 1;
+        callback: function(qr_res) {
+            if (qr_res && qr_res.message) {
+                if (String(qr_res.message).startsWith('Error')) {
+                    frappe.msgprint(__(qr_res.message));
+                    return;
+                }
 
-                    if (frm.doc.is_encrypted == 1) {
-                        format = "SN QR Code Mapping";
-                        docname = frm.doc.qr_code_mapping;
-                        doctype = encodeURIComponent("QR Code Mapping");
-                    }
+                const qr_mapping = qr_res.message;
+                frm.doc.is_encrypted = 1;
+                frm.doc.qr_code_mapping = qr_mapping;
+
+                frappe.db.get_value('NJ Settings', {'parameter': 'max_qr_copy'}, 'value').then((setting_res) => {
+                    let max_copies = (setting_res && setting_res.message && setting_res.message.value) ? Number(setting_res.message.value) : null;
+                    frm.doc.qr_print_count = (Number(frm.doc.qr_print_count) || 0) + 1;
             
                     frappe.call({
                         method: "frappe.client.set_value",
@@ -345,70 +348,69 @@ function proceedPrintQRCode(frm) {
                             fieldname: "qr_print_count", value: frm.doc.qr_print_count
                         },
                         callback: function(response) {
-                            if (max_copies && frm.doc.qr_print_count > max_copies) {
-                                // Prompt for reason and comment if print limit exceeded
-                                frappe.prompt([
-                                    {
-                                        fieldname: 'reason',
-                                        label: 'Reason',
-                                        fieldtype: 'Link',
-                                        reqd: 1,
-                                        options: 'Master Reasons'
-                                    },
-                                    {
-                                        fieldname: 'comment',
-                                        label: 'Comment',
-                                        fieldtype: 'Text',
-                                        reqd: 1
-                                    }
-                                ], function(values) {
-                                    let reason = values.reason;
-                                    let comment = values.comment;
+                            // if (max_copies && frm.doc.qr_print_count > max_copies) {
+                            //     // Prompt for reason and comment if print limit exceeded
+                            //     frappe.prompt([
+                            //         {
+                            //             fieldname: 'reason',
+                            //             label: 'Reason',
+                            //             fieldtype: 'Link',
+                            //             reqd: 1,
+                            //             options: 'Master Reasons'
+                            //         },
+                            //         {
+                            //             fieldname: 'comment',
+                            //             label: 'Comment',
+                            //             fieldtype: 'Text',
+                            //             reqd: 1
+                            //         }
+                            //     ], function(values) {
+                            //         let reason = values.reason;
+                            //         let comment = values.comment;
             
-                                    // Add comment for print reason
-                                    frappe.call({
-                                        method: "frappe.desk.form.utils.add_comment",
-                                        args: {
-                                            reference_doctype: frm.doctype,
-                                            reference_name: frm.doc.name,
-                                            content: frappe.session.user + ' has taken 1 copy. \nReason: ' + reason + '\nComment: ' + comment,
-                                            comment_email: frappe.session.user,
-                                            comment_by: frappe.session.user_fullname,
-                                        },
-                                        callback: function() {
-                                            // Generate QR code and open the print view
-                                            frappe.call({
-                                                method: "nj_features.nj_features.api.qr_code.get_print_format_role",
-                                                callback: function(r) {
-                                                    if (r.message == true) {
+                            //         // Add comment for print reason
+                            //         frappe.call({
+                            //             method: "frappe.desk.form.utils.add_comment",
+                            //             args: {
+                            //                 reference_doctype: frm.doctype,
+                            //                 reference_name: frm.doc.name,
+                            //                 content: frappe.session.user + ' has taken 1 copy. \nReason: ' + reason + '\nComment: ' + comment,
+                            //                 comment_email: frappe.session.user,
+                            //                 comment_by: frappe.session.user_fullname,
+                            //             },
+                            //             callback: function() {
+                            //                 // Generate QR code and open the print view
+                            //                 frappe.call({
+                            //                     method: "nj_features.nj_features.api.qr_code.get_print_format_role",
+                            //                     callback: function(role_res) {
+                            //                         if (role_res && role_res.message == true) {
             
-                                                        window.open(frappe.urllib.get_full_url("/printview?" +
-                                                        "doctype=" + doctype +
-                                                        "&name=" + docname +
-                                                        "&trigger_print=" + print_trigger +
-                                                        "&format=" + format +
-                                                        "&no_letterhead=0" +
-                                                        "&_lang=" + (frappe.boot.lang || "en")));
-                                                        frm.reload_doc();
-                                                    } else {
-                                                        frappe.msgprint(__('You do not have permission to print QR code. Please contact your Reporting Manager.'));
-                                                    }
-                                                }
-                                            });
-                                        }
-                                    });
-                                });
-                            } else {
-                                // If under the limit, directly open the print view
-                                window.open(frappe.urllib.get_full_url("/printview?" +
-                                    "doctype=" + doctype +
-                                    "&name=" + docname +
-                                    "&trigger_print=" + print_trigger +
-                                    "&format=" + format +
-                                    "&no_letterhead=0" +
-                                    "&_lang=" + (frappe.boot.lang || "en")));
-                                frm.reload_doc();
-                            }
+                            //                             window.open(frappe.urllib.get_full_url("/printview?" +
+                            //                             "doctype=" + doctype +
+                            //                             "&name=" + docname +
+                            //                             "&trigger_print=" + print_trigger +
+                            //                             "&format=" + format +
+                            //                             "&no_letterhead=1" +
+                            //                             "&_lang=" + (frappe.boot.lang || "en")));
+                            //                             frm.reload_doc();
+                            //                         } else {
+                            //                             frappe.msgprint(__('You do not have permission to print QR code. Please contact your Reporting Manager.'));
+                            //                         }
+                            //                     }
+                            //                 });
+                            //             }
+                            //         });
+                            //     });
+                            // } else {
+                            // If under the limit, directly open the print view
+                            window.open(frappe.urllib.get_full_url("/printview?" +
+                                "doctype=" + doctype +
+                                "&name=" + docname +
+                                "&trigger_print=" + print_trigger +
+                                "&format=" + format +
+                                "&no_letterhead=1" +
+                                "&_lang=" + (frappe.boot.lang || "en")));
+                            frm.reload_doc();
                         }
                     });
                 });

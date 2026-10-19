@@ -16,148 +16,34 @@ import logging
 logger = logging.getLogger("nj_reservation_service")
 
 
-# ==============================================================================
-# 0. SHARED REFUND-BLOCKING CHECK (single source of truth)
-# ==============================================================================
-# Previously this existed as three separately hand-copied variants across the
-# codebase (two checking only ('Paid', 'Refunded'), one checking ('Paid',
-# 'Refunded', 'Initiated')), and two allocation entry points (get_open_sales_orders,
-# upgrade_order_reservations) had no refund check at all. That gap let a
-# refunded-then-reopened Sales Order get silently re-allocated a fresh serial on
-# every hourly cron run, only to have it released again by trim_over_allocated_serials
-# — an hourly allocate/release churn that briefly locked real inventory away from
-# genuine orders each cycle.
-#
-# 'Debit Failed' and 'Returned' are included here defensively (block-by-default):
-# the cost of wrongly holding back a legitimate order (an ops person notices and
-# clears it) is far lower than the cost of wrongly allocating a dead one (a real
-# unit ships to an already-refunded customer). Revisit if the refund team confirms
-# either status should NOT block allocation — this is the only place to change it.
-# 'Hold' (the default status on new refund records, and the vast majority of all
-# NJ Refund rows) and 'Rejected'/'Deleted' (refund didn't happen / was voided) are
-# deliberately NOT blocking.
-REFUND_BLOCKING_STATUSES = ('Paid', 'Refunded', 'Initiated', 'Debit Failed', 'Returned')
-
-REFUND_EXCLUSION_SQL = """
-    AND so.name NOT IN (
-        SELECT DISTINCT sales_order FROM `tabNJ Refund`
-        WHERE docstatus = 1
-          AND refund_status IN ('Paid', 'Refunded', 'Initiated', 'Debit Failed', 'Returned')
-          AND sales_order IS NOT NULL AND sales_order != ''
-    )
-    AND so.name NOT IN (
-        -- An NJ Refund record may never get created at all - the return itself
-        -- (Delivery Note, cause_of_return = 'Refund') is often the only signal
-        -- that this order shouldn't be refilled. Only the LATEST submitted
-        -- Delivery Note per order counts, so a genuine later re-delivery
-        -- (someone deliberately decided to replace instead of refund) naturally
-        -- un-blocks it again without needing a manual override.
-        SELECT DISTINCT dni.against_sales_order
-        FROM `tabDelivery Note Item` dni
-        INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
-        WHERE dn.docstatus = 1
-          AND dn.is_return = 1
-          AND dn.cause_of_return = 'Refund'
-          AND dni.against_sales_order IS NOT NULL AND dni.against_sales_order != ''
-          AND NOT EXISTS (
-              SELECT 1
-              FROM `tabDelivery Note Item` dni2
-              INNER JOIN `tabDelivery Note` dn2 ON dn2.name = dni2.parent
-              WHERE dni2.against_sales_order = dni.against_sales_order
-                AND dn2.docstatus = 1
-                AND dn2.creation > dn.creation
-          )
-    )
-"""
-
-
-# ==============================================================================
-# 0b. RTO-BLOCKING CHECK
-# ==============================================================================
-# An RTO return (courier could not deliver, or the customer refused the parcel)
-# reverses delivered_qty, so the Sales Order drops back to "To Deliver" with
-# per_delivered = 0 while staying submitted and 100% billed. To every demand
-# query that made it indistinguishable from a fresh, never-shipped order, so the
-# allocator kept handing it real machines - 32 units were held this way across 65
-# such orders, the oldest since 2026-03-15, each one a paid order nobody had
-# closed or refunded.
-#
-# Repair/Replace are excluded because the unit is owed to the customer who
-# returned it. RTO is excluded for the opposite reason: the sale did not happen,
-# so the order must stop consuming stock until a person decides to refund it,
-# close it, or re-ship it.
-#
-# Same "latest submitted Delivery Note wins" shape as the Refund block above: if
-# someone deliberately re-ships the order, that newer outbound DN lifts the block
-# on its own, with no manual override needed.
-RTO_BLOCKING_CAUSES = ('RTO Customer', 'RTO Delivery Partner')
-
-RTO_EXCLUSION_SQL = """
-    AND so.name NOT IN (
-        SELECT DISTINCT dni.against_sales_order
-        FROM `tabDelivery Note Item` dni
-        INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
-        WHERE dn.docstatus = 1
-          AND dn.is_return = 1
-          AND dn.cause_of_return IN ('RTO Customer', 'RTO Delivery Partner')
-          AND dni.against_sales_order IS NOT NULL AND dni.against_sales_order != ''
-          AND NOT EXISTS (
-              SELECT 1
-              FROM `tabDelivery Note Item` dni2
-              INNER JOIN `tabDelivery Note` dn2 ON dn2.name = dni2.parent
-              WHERE dni2.against_sales_order = dni.against_sales_order
-                AND dn2.docstatus = 1
-                AND dn2.creation > dn.creation
-          )
-    )
-"""
+# Re-export shared SQL for existing demand/report consumers.
+from nj_features.services.return_allocation import (
+    REFUND_BLOCKING_STATUSES, RTO_BLOCKING_CAUSES,
+    REFUND_EXCLUSION_SQL, RTO_EXCLUSION_SQL,
+    get_latest_delivery, return_cause,
+)
 
 
 def is_sales_order_rto_blocked(so_name):
-    """True if this SO's latest submitted Delivery Note is an RTO return.
-
-    Python mirror of RTO_EXCLUSION_SQL, for the paths that check one order at a
-    time instead of filtering a demand query.
-    """
-    latest_dn = frappe.db.sql("""
-        SELECT dn.is_return, dn.cause_of_return
-        FROM `tabDelivery Note Item` dni
-        INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
-        WHERE dni.against_sales_order = %s AND dn.docstatus = 1
-        ORDER BY dn.creation DESC
-        LIMIT 1
-    """, (so_name,), as_dict=True)
-
-    return bool(
-        latest_dn
-        and latest_dn[0].get("is_return")
-        and latest_dn[0].get("cause_of_return") in RTO_BLOCKING_CAUSES
-    )
+    return return_cause(get_latest_delivery(so_name)) in RTO_BLOCKING_CAUSES
 
 
 def is_sales_order_refund_blocked(so_name):
-    """True if this SO has a submitted refund record, or its latest submitted
-    Delivery Note is a Refund-cause return, that should stop allocation."""
     if frappe.db.exists("NJ Refund", {
         "sales_order": so_name,
         "docstatus": 1,
         "refund_status": ["in", REFUND_BLOCKING_STATUSES],
     }):
         return True
+    return return_cause(get_latest_delivery(so_name)) == "Refund"
 
-    latest_dn = frappe.db.sql("""
-        SELECT dn.is_return, dn.cause_of_return
-        FROM `tabDelivery Note Item` dni
-        INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
-        WHERE dni.against_sales_order = %s AND dn.docstatus = 1
-        ORDER BY dn.creation DESC
-        LIMIT 1
-    """, (so_name,), as_dict=True)
 
-    if latest_dn and latest_dn[0].get("is_return") and latest_dn[0].get("cause_of_return") == "Refund":
-        return True
-
-    return False
+def is_sales_order_approved(so_name):
+    # Fresh stock is reserved only once the order's "Approved" box is ticked
+    # (business rule 2026-10-17). Website B2C orders are ticked on submit from
+    # their Payment ID; the rest are approved by hand after submit, which
+    # triggers allocation from on_update_after_submit().
+    return bool(frappe.db.get_value("Sales Order", so_name, "approve"))
 
 
 # ==============================================================================
@@ -170,22 +56,46 @@ def get_effective_order_source(so_name, base_sale_type=None):
     returns '{sale_type} - {cause_of_return}'. Otherwise returns '{sale_type}'.
     """
     sale_type = base_sale_type or frappe.db.get_value("Sales Order", so_name, "sale_type") or ""
-    ret_cause = frappe.db.sql("""
-        SELECT dn.cause_of_return
-        FROM `tabDelivery Note Item` dni
-        JOIN `tabDelivery Note` dn ON dn.name = dni.parent
-        WHERE dni.against_sales_order = %s
-          AND dn.docstatus = 1
-          AND dn.is_return = 1
-          AND dn.cause_of_return IN ('Repair', 'Replace')
-        ORDER BY dn.posting_date DESC, dn.creation DESC
-        LIMIT 1
-    """, (so_name,), as_dict=True)
-    if ret_cause and ret_cause[0].get("cause_of_return"):
-        cause = ret_cause[0]["cause_of_return"].strip()
-        if cause:
-            return f"{sale_type} - {cause}" if sale_type else cause
+    cause = return_cause(get_latest_delivery(so_name))
+    if cause in ("Repair", "Replace"):
+        return f"{sale_type} - {cause}" if sale_type else cause
     return sale_type
+
+
+def get_item_order_source(so_name, item_code, base_sale_type=None):
+    """order_source for a new reservation of one item of an SO.
+
+    Same as get_effective_order_source(), except on a mixed order: while this
+    item still owes Replace units not yet covered by a "- Replace" reservation,
+    the next unit is labelled "- Replace"; the never-shipped balance stays plain.
+    """
+    from nj_features.services.return_allocation import get_item_return_state
+
+    source = get_effective_order_source(so_name, base_sale_type)
+    if source in ("Repair", "Replace") or source.endswith((" - Repair", " - Replace")):
+        return source
+    state = get_item_return_state(so_name, item_code)
+    if state.replace_owed > state.replace_labelled:
+        return f"{source} - Replace" if source else "Replace"
+    return source
+
+
+def stamp_allocated_department(serial_no):
+    """Record the department a unit is in at the moment an order reserves it.
+
+    Call right after a NEW reservation is written. initial_allocated_department
+    used to be written only when blank, so a value from an earlier, released
+    reservation survived onto the next order (SAL-ORD-2026-09586 showed Inward
+    for NJ-LP-901278, taken from Packing & Dispatch). Taken from the warehouse,
+    the same source the allocator's department pools use.
+    """
+    frappe.db.sql("""
+        UPDATE `tabSerial No` sn
+        LEFT JOIN `tabWarehouse` w ON w.name = sn.warehouse
+        SET sn.initial_allocated_department = COALESCE(NULLIF(w.department, ''), sn.department)
+        WHERE sn.name = %s
+          AND COALESCE(NULLIF(w.department, ''), sn.department) IS NOT NULL
+    """, (serial_no,))
 
 
 def swap_order_reservation(so_name, old_serial_no, new_serial_no, target_item_code=None, reason=None, operator=None):
@@ -331,6 +241,8 @@ def swap_order_reservation(so_name, old_serial_no, new_serial_no, target_item_co
         ))
         if getattr(frappe.db, "_cursor", None) and frappe.db._cursor.rowcount <= 0:
             raise frappe.ValidationError(f"Failed to reserve {new_serial_no}: row was modified concurrently.")
+        if new_sn.get("reserved_sales_order") != so_name:
+            stamp_allocated_department(new_serial_no)
 
         # Release old serial (preserve to_make so upstream production requirement remains intact)
         frappe.db.sql("""

@@ -202,6 +202,35 @@ def pre_order_etd_allows(row, flags):
     return etd_days > flags["pre_order_min_etd_days"]
 
 
+# Business rule 2026-10-13: only these item groups are ever offered as pre-order
+# (pre_order_status badge + "Continue selling when out of stock"). Desktops and
+# everything else stay ready-stock only.
+PRE_ORDER_ITEM_GROUPS = {"Laptops", "Chromebooks", "MacBooks"}
+
+
+def pre_order_group_allows(item_groups):
+    """True when any of the listing's item groups may be sold as pre-order.
+
+    A bundle listing carries several groups joined with ", " (e.g.
+    "Laptops, Warranty"), so this is a membership test, not an equality.
+    """
+    groups = {g.strip() for g in str(item_groups or "").split(",")}
+    return bool(groups & PRE_ORDER_ITEM_GROUPS)
+
+
+def continue_selling_allows(row):
+    """True when a variant may be sold beyond its ready stock on Shopify.
+
+    Business rule 2026-10-13: no ready stock (actual qty 0) and a pre-order qty
+    of more than 2 - every item group, no ETD check. Drives both the variant's
+    "Continue selling when out of stock" policy and the product's "pre-order"
+    tag (ON when any of its variants qualifies).
+    """
+    live_qty = safe_float(row.get("actual_qty")) or 0
+    pre_order_qty = safe_float(row.get("shopify_pre_order_qty")) or 0
+    return live_qty <= 0 and pre_order_qty > 2
+
+
 def _effective_live_qty(rows, flags, parent_qty_dict):
     """Live quantity each variant will actually end up with.
 
@@ -431,7 +460,7 @@ def post_shopify_api(url, headers, payload=None, json_payload=None, max_retries=
             raise e
         except Exception as e:
             if retry_count < max_retries - 1:
-                time.sleep(backoff_time)
+                
                 retry_count += 1
                 backoff_time *= 2
                 continue
@@ -967,32 +996,36 @@ def _create_rq_doc(variant_ids=None):
             pre_order_qty = safe_float(row.total_pre_order_qty) or 0
 
             hold_pre_order = False
-            etd_is_pre = pre_order_etd_allows(row, flags)
+            group_is_pre = pre_order_group_allows(getattr(row, "item_groups", None))
+            etd_is_pre = pre_order_etd_allows(row, flags) and group_is_pre
 
             if live_qty > 0:
                 desired_qty = float(live_qty)
                 if etd_is_pre:
                     is_pre_order = 1
-                    # Save what Shopify actually gets (the shelf qty), not the pool qty.
-                    pre_order_qty = live_qty
+                    # shopify_pre_order_qty keeps the real pool: the "Continue
+                    # selling" rule (pre-order qty > 2) reads it.
                     update_status += f"[PreOrderLiveSynced→{desired_qty:g}] "
                 else:
                     is_pre_order = 0
             elif pre_order_qty > 0 and etd_is_pre:
-                # The threshold was already applied upstream in update_pre_order_qty
-                # (against company quantity); anything still > 0 has passed it.
-                desired_qty = float(pre_order_qty)
+                # Business rule 2026-10-13: Shopify gets the ready (actual) quantity
+                # only. The pool is kept in shopify_pre_order_qty: the variant is
+                # still published as pre-order, and the policy sync turns on
+                # "Continue selling when out of stock" when the pool is more than 2.
+                desired_qty = 0.0
                 is_pre_order = 1
-                update_status += f"[PreOrderSynced→{desired_qty:g}] "
+                update_status += f"[PreOrderFlagOnly pool={pre_order_qty:g}] "
             elif pre_order_qty > 0:
-                # ETD too short (or missing) to be offered as pre-order. The staged
-                # shopify_pre_order_qty is zeroed too: the policy and tag syncs
-                # read that field, not is_pre_order.
+                # ETD too short (or missing), or not a pre-order item group: not
+                # published as pre-order. The pool stays in shopify_pre_order_qty,
+                # because "Continue selling" (pre-order qty > 2) covers every group
+                # with no ETD check.
                 update_status += (
                     f"[PreOrderSkipped ETD={safe_float(getattr(row, 'etd_days', None)) or 0:g}"
                     f"<={flags['pre_order_min_etd_days']}] "
+                    if group_is_pre else "[PreOrderSkipped ItemGroup] "
                 )
-                pre_order_qty = 0
                 desired_qty = 0.0
                 is_pre_order = 0
             elif not pre_order_data_ok:
@@ -1049,6 +1082,17 @@ def _create_rq_doc(variant_ids=None):
             ):
                 updated_doc_names.add(existing[0].name)
                 stats["held_for_order_sync"] += 1
+                # The hold protects the quantity only. A blank ETD left by an
+                # order sync that raced the SO Quantity Check rebuild is never
+                # right, so fill it from this run (2026-10-07, 12 listings).
+                held_etd = getattr(row, "estimated_time_of_dispatch", "") or ""
+                if held_etd and not frappe.db.get_value(
+                    "NJ Inventory Sync Main", existing[0].name, "estimated_time_of_dispatch"
+                ):
+                    frappe.db.set_value(
+                        "NJ Inventory Sync Main", existing[0].name,
+                        "estimated_time_of_dispatch", held_etd, update_modified=False,
+                    )
                 log_error(
                     f"variant={held_variant} hourly staging skipped: order sync started "
                     f"{recent_order_syncs[held_variant] - snapshot_started_at:.0f}s after this "
@@ -1060,12 +1104,12 @@ def _create_rq_doc(variant_ids=None):
                 )
                 continue
 
-            # Breaker tripped: keep whatever this variant already advertises.
-            # With no prior record there is nothing live on Shopify to protect,
-            # so zero is safe.
+            # Breaker tripped: keep the pre-order state this variant already
+            # advertises. The quantity is the ready stock only (0 here), so it
+            # needs no protecting.
             if hold_pre_order:
                 if existing:
-                    desired_qty = safe_float(existing[0].get("updated_qty")) or 0.0
+                    desired_qty = 0.0
                     pre_order_qty = safe_float(existing[0].get("shopify_pre_order_qty")) or 0
                     is_pre_order = int(existing[0].get("shopify_pre_order_enabled") or 0)
                 else:
@@ -1782,7 +1826,7 @@ def sync_shopify_pre_order_policies(shopify_data, shop, token):
             filters={"shopify_variant_id": ["in", variant_ids]},
             fields=[
                 "name", "shopify_variant_id", "actual_qty", "shopify_pre_order_qty",
-                "shopify_pre_order_enabled", "estimated_time_of_dispatch"
+                "shopify_pre_order_enabled", "estimated_time_of_dispatch", "item_group",
             ],
         )
         sync_row_by_variant = {
@@ -1801,21 +1845,18 @@ def sync_shopify_pre_order_policies(shopify_data, shop, token):
                 continue
 
             stats["checked"] += 1
-            pre_order_qty = safe_float(sync_row.shopify_pre_order_qty) or 0
-            live_qty = safe_float(sync_row.actual_qty) or 0
-            # Pre-order quantity is now synced directly to Shopify as available inventory.
-            # We set policy to DENY so Shopify strictly sells up to the synced quantity and prevents overselling.
-            desired_policy = "DENY"
-            is_pre = int(sync_row.get("shopify_pre_order_enabled") or 0) or (1 if (live_qty <= 0 and pre_order_qty > 0) else 0)
+            # Business rule 2026-10-13: Shopify gets the ready quantity only, and
+            # "Continue selling when out of stock" is ON only when the variant has
+            # no ready stock (actual qty 0) and its pre-order qty is more than 2 -
+            # every item group, no ETD check (continue_selling_allows). While ready
+            # stock exists the policy is DENY, so Shopify sells only the ready
+            # units. Independent of custom.pre_order_status (ETD >
+            # pre_order_min_etd_days, PRE_ORDER_ITEM_GROUPS only), so the two can
+            # differ. shopify_pre_order_enabled is owned by staging and not touched
+            # here: rewriting it from the qty would drag the badge with it.
+            desired_policy = "CONTINUE" if continue_selling_allows(sync_row) else "DENY"
 
             if current_policy == desired_policy:
-                frappe.db.set_value(
-                    "NJ Inventory Sync Main",
-                    sync_row.name,
-                    "shopify_pre_order_enabled",
-                    is_pre,
-                    update_modified=False,
-                )
                 stats["unchanged"] += 1
                 continue
 
@@ -1906,17 +1947,6 @@ def sync_shopify_pre_order_policies(shopify_data, shop, token):
                 if not sync_row or confirmed_policy not in ("CONTINUE", "DENY"):
                     continue
 
-                live_qty = safe_float(sync_row.actual_qty) or 0
-                pre_order_qty = safe_float(sync_row.shopify_pre_order_qty) or 0
-                is_pre = int(sync_row.get("shopify_pre_order_enabled") or 0) or (1 if (live_qty <= 0 and pre_order_qty > 0) else 0)
-
-                frappe.db.set_value(
-                    "NJ Inventory Sync Main",
-                    sync_row.name,
-                    "shopify_pre_order_enabled",
-                    is_pre,
-                    update_modified=False,
-                )
                 updated_variant_ids.add(variant_id)
                 stats["updated"] += 1
 
@@ -1932,6 +1962,46 @@ def sync_shopify_pre_order_policies(shopify_data, shop, token):
             "Shopify Pre-Order Policy Sync",
         )
         return stats
+
+
+def _post_graphql_throttle_aware(url, headers, json_payload, max_attempts=6):
+    """POST a GraphQL document, waiting out Shopify's cost-based rate limit.
+
+    post_shopify_api only retries HTTP 429. GraphQL throttling arrives as HTTP 200
+    with errors[].extensions.code == "THROTTLED", so it went straight back to the
+    caller and the batch was lost. Here the wait is taken from the response's
+    throttleStatus (points short / restore rate) and the same request is retried.
+    Also pauses when the bucket is nearly empty, so the next call is not throttled.
+    Returns the last response either way; callers keep their own error handling.
+    """
+    response = None
+    for _attempt in range(max_attempts):
+        response = post_shopify_api(url, headers=headers, json_payload=json_payload)
+        if response.status_code != 200:
+            return response
+        try:
+            body = response.json()
+        except ValueError:
+            return response
+
+        cost = (body.get("extensions") or {}).get("cost") or {}
+        throttle = cost.get("throttleStatus") or {}
+        available = float(throttle.get("currentlyAvailable") or 0)
+        restore_rate = float(throttle.get("restoreRate") or 50) or 50
+        requested = float(cost.get("requestedQueryCost") or 0)
+
+        errors = body.get("errors")
+        throttled = isinstance(errors, list) and any(
+            isinstance(e, dict) and (e.get("extensions") or {}).get("code") == "THROTTLED"
+            for e in errors
+        )
+        if not throttled:
+            if throttle and requested and available < requested * 2:
+                time.sleep(min((requested * 2 - available) / restore_rate, 10))
+            return response
+
+        time.sleep(min(max((requested or 100) - available, 0) / restore_rate + 1, 10))
+    return response
 
 
 @frappe.whitelist()
@@ -1965,6 +2035,15 @@ def sync_shopify_etd_metafields(shopify_data, shop=None, token=None):
             str(row.shopify_variant_id).strip(): row for row in sync_rows
         }
 
+        # What Shopify holds right now, when the caller fetched it (get_shopify_variants
+        # returns it as etd_metafield). Rows without the key - e.g. a bare
+        # [{"variant_id": ...}] payload - are always pushed.
+        live_etd_by_variant = {
+            str(data.get("variant_id") or "").strip(): str(data.get("etd_metafield") or "").strip()
+            for data in shopify_data
+            if data.get("variant_id") and "etd_metafield" in data
+        }
+
         metafields_to_set = []
         for variant_id in variant_ids:
             sync_row = sync_row_by_variant.get(variant_id)
@@ -1973,6 +2052,17 @@ def sync_shopify_etd_metafields(shopify_data, shop=None, token=None):
 
             stats["checked"] += 1
             etd_val = str(sync_row.get("estimated_time_of_dispatch") or "").strip()
+
+            # Push only what changed. Rewriting all ~9,400 variants every hour ran
+            # into Shopify's rate limit: ~29 batches per run came back THROTTLED and
+            # were dropped, so those listings kept a stale ETD for hours. On
+            # 2026-10-03 the Dell 5591 16/500 listing kept "1 Day" for 17h after its
+            # only ready unit left Packing; the checkout read that and sent order
+            # #34403 (SAL-ORD-2026-09573) in as ready_stock instead of pre-order.
+            if live_etd_by_variant.get(variant_id) == etd_val:
+                stats["unchanged"] += 1
+                continue
+
             metafields_to_set.append({
                 "ownerId": f"gid://shopify/ProductVariant/{variant_id}",
                 "namespace": "custom",
@@ -2011,13 +2101,8 @@ def sync_shopify_etd_metafields(shopify_data, shop=None, token=None):
         batch_size = 25
         for i in range(0, len(metafields_to_set), batch_size):
             batch = metafields_to_set[i:i + batch_size]
-            response = post_shopify_api(
-                url,
-                headers=headers,
-                json_payload={
-                    "query": mutation,
-                    "variables": {"metafields": batch},
-                },
+            response = _post_graphql_throttle_aware(
+                url, headers, {"query": mutation, "variables": {"metafields": batch}},
             )
 
             if response.status_code != 200:
@@ -2055,19 +2140,17 @@ def sync_shopify_etd_metafields(shopify_data, shop=None, token=None):
                 stats["failed"] += len(invalid_indexes)
                 valid_sub_batch = [item for idx, item in enumerate(batch) if idx not in invalid_indexes]
                 if valid_sub_batch:
-                    retry_resp = post_shopify_api(
-                        url,
-                        headers=headers,
-                        json_payload={
-                            "query": mutation,
-                            "variables": {"metafields": valid_sub_batch},
-                        },
+                    retry_resp = _post_graphql_throttle_aware(
+                        url, headers,
+                        {"query": mutation, "variables": {"metafields": valid_sub_batch}},
                     )
                     if retry_resp.status_code == 200:
-                        retry_payload = retry_resp.json().get("data", {}).get("metafieldsSet", {})
+                        retry_payload = (retry_resp.json().get("data") or {}).get("metafieldsSet") or {}
                         retry_updated = retry_payload.get("metafields") or []
                         stats["updated"] += len(retry_updated)
+                        stats["failed"] += len(valid_sub_batch) - len(retry_updated)
                         continue
+                    stats["failed"] += len(valid_sub_batch)
                 continue
 
             updated_metafields = payload.get("metafields") or []
@@ -2247,6 +2330,37 @@ PRE_ORDER_STATUS_VALUE = "pre-order"
 READY_STOCK_STATUS_VALUE = "ready_stock"
 
 
+def variant_pre_order_status(row, min_etd_days):
+    """Pre-order status of one NJ Inventory Sync Main row: what the website shows.
+
+    If ETD > pre_order_min_etd_days, the variant is marked as pre-order even when
+    there is actual live inventory on the shelf. Shared with order creation
+    (overrides/order.py), which falls back to it when a checkout does not send
+    custom.pre_order_status, so the Sales Order flag and the listing can never
+    use different rules. The item group limit (PRE_ORDER_ITEM_GROUPS) is applied
+    only where the status is published to Shopify, not here: order creation
+    keeps this rule unchanged (business decision 2026-10-13).
+    """
+    live_qty = safe_float(row.get("actual_qty")) or 0
+    pre_order_qty = safe_float(row.get("shopify_pre_order_qty")) or 0
+    is_pre_enabled = int(row.get("shopify_pre_order_enabled") or 0)
+
+    etd_str = str(row.get("estimated_time_of_dispatch") or "").strip()
+    etd_days = 0
+    if etd_str:
+        try:
+            etd_days = float(etd_str.split()[0])
+        except (ValueError, IndexError):
+            etd_days = 0
+
+    has_stock = (live_qty > 0 or pre_order_qty > 0)
+    if is_pre_enabled == 1 or (etd_days > min_etd_days and has_stock):
+        return PRE_ORDER_STATUS_VALUE
+    if live_qty > 0:
+        return READY_STOCK_STATUS_VALUE
+    return ""
+
+
 VARIANT_PAGE_QUERY = """
     query ProductVariantPage($id: ID!, $after: String!) {
         product(id: $id) {
@@ -2353,6 +2467,11 @@ def fetch_product_pre_order_state(product_ids, shop, token):
 def sync_shopify_pre_order_metafields_and_tags(shopify_data, shop=None, token=None):
     """Publish pre-order status to Shopify as variant/product metafields and a product tag.
 
+    The metafields follow the pre-order badge rule (variant_pre_order_status,
+    PRE_ORDER_ITEM_GROUPS only). The "pre-order" product tag follows the
+    Continue-selling rule instead (business rule 2026-10-13): ON when any variant
+    of the product has actual qty 0 and pre-order qty > 2, removed otherwise.
+
     Everything here is a diff against what Shopify already holds, which the
     inventory read brings back with it, so a run where nothing moved costs no
     API calls at all.
@@ -2393,7 +2512,7 @@ def sync_shopify_pre_order_metafields_and_tags(shopify_data, shop=None, token=No
             filters={"shopify_variant_id": ["in", variant_ids]},
             fields=[
                 "name", "shopify_variant_id", "actual_qty", "shopify_pre_order_qty",
-                "shopify_pre_order_enabled", "estimated_time_of_dispatch",
+                "shopify_pre_order_enabled", "estimated_time_of_dispatch", "item_group",
             ],
         )
         sync_row_by_variant = {
@@ -2405,29 +2524,12 @@ def sync_shopify_pre_order_metafields_and_tags(shopify_data, shop=None, token=No
         min_etd_days = get_inventory_sync_flags()["pre_order_min_etd_days"]
 
         def status_for(row):
-            """Pre-order status derived from quantities and ETD.
-
-            If ETD > 3 (pre_order_min_etd_days), the variant is marked as
-            pre-order even when there is actual live inventory on the shelf.
-            """
-            live_qty = safe_float(row.get("actual_qty")) or 0
-            pre_order_qty = safe_float(row.get("shopify_pre_order_qty")) or 0
-            is_pre_enabled = int(row.get("shopify_pre_order_enabled") or 0)
-
-            etd_str = str(row.get("estimated_time_of_dispatch") or "").strip()
-            etd_days = 0
-            if etd_str:
-                try:
-                    etd_days = float(etd_str.split()[0])
-                except (ValueError, IndexError):
-                    etd_days = 0
-
-            has_stock = (live_qty > 0 or pre_order_qty > 0)
-            if is_pre_enabled == 1 or (etd_days > min_etd_days and has_stock):
-                return PRE_ORDER_STATUS_VALUE
-            if live_qty > 0:
-                return READY_STOCK_STATUS_VALUE
-            return ""
+            # Business rule 2026-10-13: pre_order_status is published only for
+            # PRE_ORDER_ITEM_GROUPS; every other group shows ready stock or nothing.
+            if not pre_order_group_allows(row.get("item_group")):
+                live_qty = safe_float(row.get("actual_qty")) or 0
+                return READY_STOCK_STATUS_VALUE if live_qty > 0 else ""
+            return variant_pre_order_status(row, min_etd_days)
 
         url = f"{shop}/admin/api/2026-10/graphql.json"
         headers = {"X-Shopify-Access-Token": token, "Content-Type": "application/json"}
@@ -2440,6 +2542,10 @@ def sync_shopify_pre_order_metafields_and_tags(shopify_data, shop=None, token=No
         desired_by_variant = {}
         products_by_variant = {}
         changed_product_ids = set()
+        # Tag: whether any variant in this batch qualifies, per product, and
+        # the product's current tag as the inventory read brought it back.
+        batch_tag_wanted = {}
+        current_tag_state = {}
 
         for data in shopify_data:
             variant_id = str(data.get("variant_id") or "").strip()
@@ -2452,6 +2558,14 @@ def sync_shopify_pre_order_metafields_and_tags(shopify_data, shop=None, token=No
             product_id = str(data.get("product_id") or "").strip()
             if product_id:
                 products_by_variant[variant_id] = product_id
+                batch_tag_wanted[product_id] = (
+                    batch_tag_wanted.get(product_id, False) or continue_selling_allows(sync_row)
+                )
+                if "product_tags" in data:
+                    current_tag_state[product_id] = [
+                        str(t) for t in (data.get("product_tags") or [])
+                        if str(t).strip().lower() == "pre-order"
+                    ]
 
             desired = status_for(sync_row)
             published = str(data.get("pre_order_status") or "")
@@ -2535,19 +2649,58 @@ def sync_shopify_pre_order_metafields_and_tags(shopify_data, shop=None, token=No
                 )
             stats["metafields_cleared"] += len(payload.get("deletedMetafields") or [])
 
-        if not changed_product_ids:
+        # Products whose "pre-order" tag looks wrong against this batch. When the
+        # tag should go, a variant outside the batch may still qualify, so this
+        # only queues the product; the block below decides from all variants.
+        tag_check_product_ids = set()
+        for product_id, wanted in batch_tag_wanted.items():
+            tags = current_tag_state.get(product_id)
+            if tags is None:
+                # Tags not read by the caller: only an add can be judged safely.
+                if wanted:
+                    tag_check_product_ids.add(product_id)
+                continue
+            canonical = bool(tags) and all(t == "pre-order" for t in tags)
+            if (wanted and not canonical) or (not wanted and tags):
+                tag_check_product_ids.add(product_id)
+
+        products_to_check = changed_product_ids | tag_check_product_ids
+        if not products_to_check:
             return stats
 
         # ---- product metafield + tag ---------------------------------------
-        # Only products whose variants actually moved, and decided across ALL
-        # of their variants: the ones this run knows about carry their new
-        # status, the rest are read back from Shopify.
-        product_state = fetch_product_pre_order_state(changed_product_ids, shop, token)
+        # Only products whose variants actually moved or whose tag looks wrong,
+        # and decided across ALL of their variants: the ones this run knows
+        # about carry their new status, the rest are read back from Shopify.
+        product_state = fetch_product_pre_order_state(products_to_check, shop, token)
 
-        for product_id in sorted(changed_product_ids):
+        # The tag rule reads ERP quantities, so every variant of those products
+        # needs its sync row, not just the ones in this batch.
+        rows_for_tag = dict(sync_row_by_variant)
+        missing_ids = sorted({
+            variant_id
+            for state in product_state.values()
+            for variant_id in state["variant_status"]
+            if variant_id not in rows_for_tag
+        })
+        for i in range(0, len(missing_ids), 500):
+            for row in frappe.get_all(
+                "NJ Inventory Sync Main",
+                filters={"shopify_variant_id": ["in", missing_ids[i:i + 500]]},
+                fields=["shopify_variant_id", "actual_qty", "shopify_pre_order_qty"],
+            ):
+                rows_for_tag[str(row.shopify_variant_id).strip()] = row
+
+        for product_id in sorted(products_to_check):
             state = product_state.get(product_id)
             if not state:
                 continue
+
+            tag_wanted = any(
+                continue_selling_allows(rows_for_tag[variant_id])
+                for variant_id in state["variant_status"]
+                if variant_id in rows_for_tag
+            )
 
             statuses = dict(state["variant_status"])
             for variant_id, desired in desired_by_variant.items():
@@ -2560,7 +2713,7 @@ def sync_shopify_pre_order_metafields_and_tags(shopify_data, shop=None, token=No
             # and dedupes case-insensitively. This store already carries
             # "Pre-Order", so a case-sensitive check reports the tag missing on
             # every run: tagsAdd fires forever as a no-op, and - worse - a
-            # product that should LOSE the tag never does, because is_pre and
+            # product that should LOSE the tag never does, because tag_wanted and
             # has_tag both read False and the branch is skipped.
             existing_tags = state["tags"] or []
             matching_tags = [t for t in existing_tags if str(t).strip().lower() == "pre-order"]
@@ -2568,7 +2721,7 @@ def sync_shopify_pre_order_metafields_and_tags(shopify_data, shop=None, token=No
             product_gid = f"gid://shopify/Product/{product_id}"
             touched = False
 
-            if desired_status != str(state["status"] or ""):
+            if product_id in changed_product_ids and desired_status != str(state["status"] or ""):
                 if desired_status:
                     data = _shopify_graphql(
                         url, headers, set_mutation,
@@ -2603,8 +2756,10 @@ def sync_shopify_pre_order_metafields_and_tags(shopify_data, shop=None, token=No
             PRE_ORDER_TAG = "pre-order"
             stale_casing = [t for t in matching_tags if str(t) != PRE_ORDER_TAG]
 
+            # The tag follows the Continue-selling rule (tag_wanted), not the
+            # badge (is_pre): business rule 2026-10-13.
             tag_ops = []
-            if is_pre:
+            if tag_wanted:
                 if stale_casing:
                     tag_ops.append(("tagsRemove", stale_casing))
                 if stale_casing or not has_tag:
@@ -2732,6 +2887,9 @@ def get_shopify_variants(
                 metafield(namespace: "custom", key: "pre_order_status") {{
                     value
                 }}
+                etd_metafield: metafield(namespace: "custom", key: "estimated_time_of_dispatch") {{
+                    value
+                }}
                 product {{
                     id
                     tags
@@ -2800,6 +2958,7 @@ def get_shopify_variants(
                     "inventory_policy": node.get("inventoryPolicy"),
                     "product_id": product_id,
                     "pre_order_status": (node.get("metafield") or {}).get("value") or "",
+                    "etd_metafield": (node.get("etd_metafield") or {}).get("value") or "",
                     "product_pre_order_status": (product.get("metafield") or {}).get("value") or "",
                     "product_tags": product.get("tags") or [],
                 })

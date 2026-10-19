@@ -310,6 +310,44 @@ def get_latest_customer_addresses(customer_name):
 #         so = frappe.get_doc("Sales Order", so)
     
 #     return so
+def _pre_order_from_listings(shopify_order):
+    """(1, variant_ids) when any ordered variant's listing currently shows pre-order.
+
+    The order webhook is processed before this order's own targeted inventory
+    push, so NJ Inventory Sync Main still holds the state the customer bought
+    from. Same rule as the published custom.pre_order_status.
+    """
+    from nj_features.nj_features.api.shopify_inventory import (
+        PRE_ORDER_STATUS_VALUE,
+        get_inventory_sync_flags,
+        variant_pre_order_status,
+    )
+
+    variant_ids = sorted({
+        cstr(line_item.get("variant_id")).strip()
+        for line_item in (shopify_order.get("line_items") or [])
+        if line_item.get("variant_id")
+    })
+    if not variant_ids:
+        return 0, []
+
+    min_etd_days = get_inventory_sync_flags()["pre_order_min_etd_days"]
+    rows = frappe.get_all(
+        "NJ Inventory Sync Main",
+        filters={"shopify_variant_id": ["in", variant_ids], "is_active": 1},
+        fields=[
+            "shopify_variant_id", "actual_qty", "shopify_pre_order_qty",
+            "shopify_pre_order_enabled", "estimated_time_of_dispatch",
+        ],
+    )
+    pre_order_variants = sorted({
+        cstr(row.shopify_variant_id).strip()
+        for row in rows
+        if variant_pre_order_status(row, min_etd_days) == PRE_ORDER_STATUS_VALUE
+    })
+    return int(bool(pre_order_variants)), pre_order_variants
+
+
 def create_sales_order(shopify_order, setting, company=None):
 
     logger.info(f"shopify_order ====from njfeatures====316======{shopify_order}")
@@ -388,12 +426,29 @@ def create_sales_order(shopify_order, setting, company=None):
     # ))
     note_attributes = shopify_order.get("note_attributes") or []
 
-    is_pre_order = int(any(
-        str(attribute.get("name") or "").strip() == "custom.pre_order_status"
-        and str(attribute.get("value") or "").strip().lower() == "pre-order"
+    checkout_statuses = [
+        str(attribute.get("value") or "").strip().lower()
         for attribute in note_attributes
         if isinstance(attribute, dict)
-    ))
+        and str(attribute.get("name") or "").strip() == "custom.pre_order_status"
+    ]
+    if checkout_statuses:
+        is_pre_order = int("pre-order" in checkout_statuses)
+    else:
+        # Some checkouts (GST checkout, 2026-10) never send the status. Treating
+        # "not sent" as "not pre-order" left SAL-ORD-2026-09589 unticked although
+        # its machine came from L2. Use what the listing shows instead.
+        try:
+            is_pre_order, pre_order_variants = _pre_order_from_listings(shopify_order)
+        except Exception:
+            # The flag must never cost us the order itself.
+            logger.exception(f"[PRE_ORDER_FALLBACK] {shopify_order.get('name')}: lookup failed")
+            is_pre_order, pre_order_variants = 0, []
+        logger.info(
+            f"[PRE_ORDER_FALLBACK] {shopify_order.get('name')}: no custom.pre_order_status "
+            f"from checkout; listing status pre_order={is_pre_order} "
+            f"(pre-order variants: {pre_order_variants})"
+        )
 
     if is_snapmint and snapmint_id:
         payment_id = snapmint_id

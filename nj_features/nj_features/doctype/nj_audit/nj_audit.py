@@ -8,6 +8,30 @@ from frappe.utils import now_datetime
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 
 class NJAudit(Document):
+    def validate(self):
+        self.validate_unique_serial_numbers()
+
+    def validate_unique_serial_numbers(self):
+        seen_serial_numbers = set()
+        duplicate_serial_numbers = set()
+
+        for item in self.get('nj_audit_items', []):
+            serial_no = (item.get('serial_no') or '').strip()
+            if not serial_no:
+                continue
+            if serial_no in seen_serial_numbers:
+                duplicate_serial_numbers.add(serial_no)
+            seen_serial_numbers.add(serial_no)
+
+        if duplicate_serial_numbers:
+            serial_numbers = ', '.join(
+                frappe.bold(serial_no) for serial_no in sorted(duplicate_serial_numbers)
+            )
+            frappe.throw(
+                f"Serial No(s) {serial_numbers} are already scanned in this NJ Audit document.",
+                title="Duplicate Serial No",
+            )
+
     def on_submit(self):
         self.time_stamp_update()
         move_all_stock(self)

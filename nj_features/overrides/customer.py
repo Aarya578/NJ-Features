@@ -151,6 +151,24 @@ class ShopifyCustomer(EcommerceCustomer):
 		super().create_customer_contact(contact_fields)
 
 
+def _gstin_from_company(company):
+    """Shopify's address Company field, only when it is shaped like a GSTIN.
+
+    Customers type their company NAME into that field as often as a GSTIN. It was
+    copied into Address.gstin unchecked, ERPNext's GSTIN validation rejected the
+    address, and the whole Sales Order failed with it - #34353 (paid, Rs 28,999)
+    never reached ERP because its Company read like "School...". A name is not a
+    GSTIN, so it is left out. A GSTIN-shaped value is still passed through and
+    validated as before.
+    """
+    from erpnext.regional.india.utils import GSTIN_FORMAT, GSTIN_UIN_FORMAT
+
+    value = cstr(company).strip().upper()
+    if value and (GSTIN_FORMAT.match(value) or GSTIN_UIN_FORMAT.match(value)):
+        return value
+    return None
+
+
 def _map_address_fields(shopify_address, customer_name, address_type, email):
     """ returns dict with shopify address fields mapped to equivalent ERPNext fields """
 
@@ -196,7 +214,7 @@ def _map_address_fields(shopify_address, customer_name, address_type, email):
         "pincode": shopify_address.get("zip"),
         "country": shopify_address.get("country"),
         "email_id": email,
-        "gstin": shopify_address.get("company")
+        "gstin": _gstin_from_company(shopify_address.get("company"))
     }
 
     phone = shopify_address.get("phone")

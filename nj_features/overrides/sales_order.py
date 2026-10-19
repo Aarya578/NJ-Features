@@ -23,8 +23,9 @@ logger = frappe.logger('SOLogger', allow_site=True, file_count=1)
 # Business rule 2026-09-25: on submit it is part of the promise (committed =
 # estimated = dept SLA + 10% + these days). In the hourly estimate the same days
 # count DOWN from the order date and stop once the machine is rebuilt - they are
-# never re-added from "today". Change it here and it changes everywhere.
-RECONFIG_SLA_DAYS = 4
+# never re-added from "today". 4 -> 6 on 2026-10-14. The Shopify listing ETD
+# (SO Quantity Check) reads this too. Change it here and it changes everywhere.
+RECONFIG_SLA_DAYS = 6
 
 # When an order is submitted and allocation cannot find a machine for every unit
 # on it, the missing units have to come through procurement. This is how long that
@@ -34,11 +35,20 @@ RECONFIG_SLA_DAYS = 4
 # created instead of drifting apart on day one.
 UNALLOCATED_PROCUREMENT_DAYS = 45
 
+# Business rule 2026-10-14: the PROMISE for an order submitted without a machine
+# for every unit is order date + 55 days + 10% buffer = 60 CALENDAR days
+# (55 x 1.10 = 60.5, rounded down - SO-2026-08-00110, 22 Aug -> 21 Oct).
+# Calendar days, not working days, and it is not held back by
+# COMMITTED_DATE_CAP_DAYS. The hourly estimate still uses
+# UNALLOCATED_PROCUREMENT_DAYS above.
+UNALLOCATED_PROMISE_BASE_DAYS = 55
+UNALLOCATED_PROMISE_CALENDAR_DAYS = int(UNALLOCATED_PROMISE_BASE_DAYS * 1.10)
+
 # Business rule 2026-09-28: the committed_delivery_date made on submit is never
 # more than this many WORKING days out, whatever produced it - the department
 # SLA, a later date the customer asked for, or the procurement floor above.
-# Keep it >= UNALLOCATED_PROCUREMENT_DAYS, or the cap undercuts the floor and an
-# order with no stock is promised sooner than procurement can deliver.
+# The no-stock procurement floor (UNALLOCATED_PROMISE_CALENDAR_DAYS) is applied
+# AFTER this cap, so the cap never pulls a no-stock order back in.
 COMMITTED_DATE_CAP_DAYS = 45
 
 # How far ahead of its delivery date an order is allowed to hold serial
@@ -340,12 +350,13 @@ class CustomSalesOrder(SalesOrder):
         # wins, up to the cap below. A promise that already existed (e.g. carried
         # from a Quotation) is never moved.
         #
-        # If allocation could not find a machine for every hardware unit, the
-        # missing ones come through procurement: the promise is then at least
-        # UNALLOCATED_PROCUREMENT_DAYS out, and delivery_date is set to match.
+        # The result is capped at COMMITTED_DATE_CAP_DAYS working days from today:
+        # committed = min(cap, max(estimates)).
         #
-        # Whatever the result, it is capped at COMMITTED_DATE_CAP_DAYS working
-        # days from today: committed = min(cap, max(estimates)).
+        # Then, if allocation could not find a machine for every hardware unit,
+        # the missing ones come through procurement: the promise is at least
+        # order date + UNALLOCATED_PROMISE_CALENDAR_DAYS (55 + 10%), applied after
+        # the cap so the cap cannot undercut it, and delivery_date is set to match.
         # This is the ONLY time the system writes delivery_date. Afterwards
         # neither field is ever written again.
         if is_first_commit and target_committed:
@@ -355,13 +366,6 @@ class CustomSalesOrder(SalesOrder):
             if candidate_date and getdate(candidate_date) > promise_date:
                 promise_date = _snap_to_working_day(candidate_date)
 
-            unallocated_qty = _unallocated_hardware_qty(self.name)
-            if unallocated_qty > 0:
-                procurement_floor = getdate(
-                    add_working_days(nowdate(), UNALLOCATED_PROCUREMENT_DAYS)
-                )
-                promise_date = max(promise_date, procurement_floor)
-
             promise_cap = getdate(add_working_days(nowdate(), COMMITTED_DATE_CAP_DAYS))
             if promise_date > promise_cap:
                 logger.info(
@@ -369,6 +373,13 @@ class CustomSalesOrder(SalesOrder):
                     self.name, promise_date, promise_cap, COMMITTED_DATE_CAP_DAYS
                 )
                 promise_date = promise_cap
+
+            unallocated_qty = _unallocated_hardware_qty(self.name)
+            if unallocated_qty > 0:
+                procurement_floor = _snap_to_working_day(
+                    add_days(self.transaction_date or nowdate(), UNALLOCATED_PROMISE_CALENDAR_DAYS)
+                )
+                promise_date = max(promise_date, procurement_floor)
 
             if inherited_promise and promise_date > inherited_promise:
                 logger.info(
@@ -518,6 +529,14 @@ class CustomSalesOrder(SalesOrder):
     def on_update_after_submit(self):
         if self.status in ("Closed", "Cancelled", "Completed"):
             _release_serial_reservations(self.name)
+            return
+
+        # Approved ticked by hand after submit: reserve stock now rather than
+        # waiting for the hourly run. on_submit's own auto-approve uses
+        # db.set_value, so it never lands here.
+        before = self.get_doc_before_save()
+        if before and not before.get("approve") and self.get("approve"):
+            calculate_dispatch_eta_for_sales_order(self.name, do_commit=False)
 
 
 def _release_serial_reservations(so_name):
@@ -618,12 +637,17 @@ def trigger_fulfillment(order_id):
 """Laptop Allocations Functions - Modified with Delivery Date Logic"""
 
 
-def trim_over_allocated_serials():
+def trim_over_allocated_serials(sales_orders=None):
     """Safety net: find all SOs where reserved serial count > net pending qty, and release excess.
 
     This prevents over-allocation caused by any race condition or mismatch between
     the hourly allocator and the production planner. It runs at the start of every
     hourly allocation cycle. Runs very fast by targeting only active reserved Sales Orders.
+
+    sales_orders: limit the trim to these orders. Delivery Note submit passes its own
+    orders so a line shipped with a different serial than the reserved one releases
+    the leftover hold straight away instead of at the next hourly run
+    (SO-2026-09-00227, 06-Oct: NJ-LP-546981 stayed held after the order completed).
     """
     try:
         # A reserved serial is NOT released just because of where it is standing.
@@ -654,13 +678,15 @@ def trim_over_allocated_serials():
         # trimmed below - that is counting, not a judgement about location.
 
         # Get active reserved Sales Orders to avoid querying the whole system history
-        active_reserved_sos = frappe.db.sql_list("""
-            SELECT DISTINCT reserved_sales_order 
-            FROM `tabSerial No` 
-            WHERE reserved_sales_order IS NOT NULL 
+        so_filter = "AND reserved_sales_order IN %(sales_orders)s" if sales_orders else ""
+        active_reserved_sos = frappe.db.sql_list(f"""
+            SELECT DISTINCT reserved_sales_order
+            FROM `tabSerial No`
+            WHERE reserved_sales_order IS NOT NULL
               AND reserved_sales_order != ''
               AND status = 'Active'
-        """)
+              {so_filter}
+        """, {"sales_orders": tuple(sales_orders or ())})
         if not active_reserved_sos:
             return
 
@@ -1166,8 +1192,11 @@ def get_dept_available_serials(dept_name):
                 AND IFNULL(dp.department_sequence, 0) != 0
                 AND dp.sla_item_groups IS NOT NULL AND dp.sla_item_groups != ''
                 AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
+                -- Refund units count as plain stock in any department (2026-10-08):
+                -- the customer was paid back. Same rule as the production planner's
+                -- _get_inward_serials_for_department.
                 AND (
-                    (IFNULL(sn.is_replace, 0) = 0 AND (sn.return_reason IS NULL OR sn.return_reason = ''))
+                    (IFNULL(sn.is_replace, 0) = 0 AND (sn.return_reason IS NULL OR sn.return_reason IN ('', 'Refund')))
                     OR (sn.sales_order_id IS NOT NULL AND sn.sales_order_id != '')
                     OR IFNULL(dp.department_sequence, 0) >= 10
                 )
@@ -1308,7 +1337,7 @@ def get_open_sales_orders(so_name=None):
     """Get open orders from the last 200 days, plus reserved/recent-return orders.
     If so_name is passed, return only that Sales Order's items.
     """
-    from nj_features.services.reservation_service import REFUND_EXCLUSION_SQL, RTO_EXCLUSION_SQL
+    from nj_features.services.return_allocation import FRESH_ALLOCATION_EXCLUSION_SQL
 
     condition_direct = ""
     condition_bundle = ""
@@ -1321,8 +1350,8 @@ def get_open_sales_orders(so_name=None):
         # must apply here too, not just in the bulk/hourly branch below,
         # otherwise on_submit()'s direct calculate_dispatch_eta_for_sales_order
         # call would still allocate a fresh serial to a refunded order.
-        condition_direct = " AND so.name = %s " + REFUND_EXCLUSION_SQL + RTO_EXCLUSION_SQL
-        condition_bundle = " AND so.name = %s " + REFUND_EXCLUSION_SQL + RTO_EXCLUSION_SQL
+        condition_direct = " AND so.name = %s " + FRESH_ALLOCATION_EXCLUSION_SQL
+        condition_bundle = " AND so.name = %s " + FRESH_ALLOCATION_EXCLUSION_SQL
         params_direct.append(so_name)
         params_bundle.append(so_name)
     else:
@@ -1345,14 +1374,7 @@ def get_open_sales_orders(so_name=None):
                     WHERE dn_ret.docstatus = 1 AND dn_ret.is_return = 1 AND dn_ret.posting_date > CURDATE() - INTERVAL 200 DAY
                 )
             )
-            AND so.name NOT IN (
-                SELECT DISTINCT dni.against_sales_order
-                FROM `tabDelivery Note Item` dni
-                JOIN `tabDelivery Note` dn ON dn.name = dni.parent
-                WHERE dn.docstatus = 1 AND dn.is_return = 1 AND dn.cause_of_return IN ('Repair', 'Refund')
-                  AND dni.against_sales_order IS NOT NULL AND dni.against_sales_order != ''
-            )
-        """ + REFUND_EXCLUSION_SQL + RTO_EXCLUSION_SQL
+        """ + FRESH_ALLOCATION_EXCLUSION_SQL
         condition_direct = active_filter
         condition_bundle = active_filter
 
@@ -1533,17 +1555,9 @@ HARDWARE_ITEM_GROUPS = {
 
 
 def is_repair_sales_order(so_name):
-    """Check if the sales order has an active return delivery note with cause Repair."""
-    return bool(frappe.db.sql("""
-        SELECT 1
-        FROM `tabDelivery Note Item` dni
-        JOIN `tabDelivery Note` dn ON dn.name = dni.parent
-        WHERE dni.against_sales_order = %s
-          AND dn.docstatus = 1
-          AND dn.is_return = 1
-          AND (dn.cause_of_return = 'Repair' OR dn.return_reason IN ('Repair', 'In-House Repair'))
-        LIMIT 1
-    """, (so_name,)))
+    """Only the latest submitted delivery event can classify a repair."""
+    from nj_features.services.return_allocation import get_latest_delivery, return_cause
+    return return_cause(get_latest_delivery(so_name)) == "Repair"
 
 
 def is_customer_return_sales_order(so_name):
@@ -1565,9 +1579,10 @@ def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, r
     from nj_features.services.reservation_service import (
         get_reserved_serial_count,
         is_sales_order_rto_blocked,
+        is_sales_order_refund_blocked,
     )
 
-    if is_sales_order_rto_blocked(so_name):
+    if is_sales_order_rto_blocked(so_name) or is_sales_order_refund_blocked(so_name):
         return 0
 
     # Count serials already committed to THIS line, keyed on where each serial is
@@ -1595,20 +1610,53 @@ def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, r
     to_allocate = int(net_pending - allocated_count)
     unallocated_qty = 0
 
-    # Priority 0: For customer return orders (Repair), bind any active returned serials first
-    if to_allocate > 0 and is_customer_return_sales_order(so_name):
-        returned_serials = frappe.db.sql("""
-            SELECT DISTINCT sn.name, dn.cause_of_return
+    from nj_features.services.return_allocation import (
+        get_latest_delivery, return_cause, RETURN_CAUSE_SQL,
+        is_past_allocation_window, get_return_owed_qty,
+    )
+    latest_delivery = get_latest_delivery(so_name)
+    is_repair = return_cause(latest_delivery) == "Repair"
+
+    # Past the 200-day window only units owed for returns may take stock; the
+    # never-shipped balance is not demand. A Repair order binds only its own
+    # returned units below; otherwise only Replace units may take fresh stock.
+    # Only caps new allocation - existing reservations are not trimmed here.
+    if to_allocate > 0 and is_past_allocation_window(so_name):
+        causes = ('Repair', 'In-House Repair', 'Replace') if is_repair else ('Replace',)
+        owed = get_return_owed_qty(so_name, item_code, causes)
+        to_allocate = max(0, min(to_allocate, owed - allocated_count))
+
+    # Mixed order (latest DN a dispatch): units this item owes for Repair
+    # returns wait for the customer's own unit - never fresh stock. Before
+    # 2026-10-07 Systech SO-2025-11-00029 took 7 fresh machines this way.
+    if to_allocate > 0 and not is_repair:
+        from nj_features.services.return_allocation import get_item_return_state
+        repair_gap = get_item_return_state(so_name, item_code).repair_gap
+        if repair_gap:
+            to_allocate = max(0, to_allocate - repair_gap)
+            create_unallocated_log(so_name, item_code, repair_gap, "Waiting for returned customer unit")
+
+    # Repair may bind only the units on the current repair event.
+    if to_allocate > 0 and is_repair:
+        returned_serials = frappe.db.sql(f"""
+            SELECT DISTINCT sn.name, dn.cause_of_return,
+                sn.reserved_sales_order AS prev_reserved_so,
+                COALESCE(w.department, sn.department) AS department
             FROM `tabDelivery Note Item` dni
             JOIN `tabDelivery Note` dn ON dn.name = dni.parent
             JOIN `tabSerial No` sn ON (dni.serial_no = sn.name OR dni.serial_no LIKE CONCAT('%%', sn.name, '%%'))
+            LEFT JOIN `tabWarehouse` w ON w.name = sn.warehouse
             WHERE dni.against_sales_order = %s
               AND dn.docstatus = 1
               AND dn.is_return = 1
-              AND (dn.cause_of_return = 'Repair' OR dn.return_reason IN ('Repair', 'In-House Repair'))
+              AND dn.name = %s
+              AND {RETURN_CAUSE_SQL} IN ('Repair', 'In-House Repair')
+              -- dn.name is already the event get_latest_delivery() chose; it can be
+              -- an earlier return still owed after a re-shipment, so no
+              -- LATEST_DELIVERY_SQL here.
               AND sn.status = 'Active'
               AND (sn.reserved_sales_order IS NULL OR sn.reserved_sales_order = '' OR sn.reserved_sales_order = %s)
-        """, (so_name, so_name), as_dict=True)
+        """, (so_name, latest_delivery["name"], so_name), as_dict=True)
 
         if returned_serials:
             so_sale_type = frappe.db.get_value("Sales Order", so_name, "sale_type") or ""
@@ -1629,14 +1677,18 @@ def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, r
                     },
                     update_modified=True
                 )
-                # Set initial_allocated_department once — first allocation wins, never overwritten
-                r_dept = r_sn.get("department") or frappe.db.get_value("Serial No", r_sn["name"], "department")
-                if r_dept:
+                # initial_allocated_department = where the unit was when THIS order
+                # reserved it. Stamped on every new reservation: the old "first
+                # allocation wins" rule kept a value from an earlier, released
+                # reservation (SAL-ORD-2026-09586 showed Inward for a unit taken
+                # from Packing & Dispatch). A unit already bound to this order is
+                # left alone so hourly re-runs don't move the stamp.
+                r_dept = r_sn.get("department")
+                if r_dept and r_sn.get("prev_reserved_so") != so_name:
                     frappe.db.sql("""
                         UPDATE `tabSerial No`
                         SET initial_allocated_department = %s
                         WHERE name = %s
-                          AND (initial_allocated_department IS NULL OR initial_allocated_department = '')
                     """, (r_dept, r_sn["name"]))
                 to_allocate -= 1
                 allocated_count += 1
@@ -1647,11 +1699,26 @@ def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, r
         unassign_serials(so_name, item_code, abs(to_allocate))
 
     elif to_allocate > 0:
-        if is_customer_return_sales_order(so_name):
+        if is_repair:
             # Customer return orders (Repair) must only be fulfilled by their specific returned unit(s).
             # Do not allocate generic inventory from warehouse pools.
             create_unallocated_log(so_name, item_code, to_allocate, "Waiting for returned customer unit")
             return to_allocate
+
+        # No fresh stock until the order is approved. Existing reservations are
+        # left alone; ticking Approved re-runs this via on_update_after_submit().
+        from nj_features.services.reservation_service import is_sales_order_approved
+        if not is_sales_order_approved(so_name):
+            create_unallocated_log(so_name, item_code, to_allocate, "Sales Order not approved")
+            return to_allocate
+
+        # Replace: take the unit service named on the BoldDesk ticket first.
+        if return_cause(latest_delivery) == "Replace":
+            from nj_features.services.return_allocation import reserve_bold_desk_replacement, return_dn_serials
+            if reserve_bold_desk_replacement(so_name, item_code, return_dn_serials(latest_delivery["name"])):
+                to_allocate -= 1
+                if to_allocate <= 0:
+                    return 0
 
         search_order = (eligible_depts or []) + (remaining_depts or [])
         total_allocated = assign_serials(so_name, item_code, to_allocate, search_order)
@@ -1679,7 +1746,7 @@ def assign_serials(so_name, item_code, to_allocate, departments):
         _cfg_tuple_from_item,
         _get_equivalent_parent_models,
     )
-    from nj_features.services.reservation_service import get_effective_order_source
+    from nj_features.services.reservation_service import get_item_order_source
 
     allocated_count = 0
     needed_qty = to_allocate
@@ -1703,7 +1770,7 @@ def assign_serials(so_name, item_code, to_allocate, departments):
             ):
                 return False
 
-            effective_source = get_effective_order_source(so_name)
+            effective_source = get_item_order_source(so_name, item_code)
             frappe.db.sql("""
                 UPDATE `tabSerial No`
                 SET reserved_sales_order = %s,
@@ -1729,13 +1796,15 @@ def assign_serials(so_name, item_code, to_allocate, departments):
             curr_wh = sn_dict.get("warehouse") if sn_dict else frappe.db.get_value("Serial No", sn_name, "warehouse")
             curr_dept = dept_name or (sn_dict.get("department") if sn_dict else frappe.db.get_value("Serial No", sn_name, "department"))
 
-            # Set initial_allocated_department once — first allocation wins, never overwritten
+            # Stamped on every new reservation (the UPDATE above only succeeds on
+            # an unreserved unit), so it is always the department this order took
+            # the unit from - never one left over from an earlier, released
+            # reservation (see the Repair path in adjust_serial_allocations).
             if curr_dept:
                 frappe.db.sql("""
                     UPDATE `tabSerial No`
                     SET initial_allocated_department = %s
                     WHERE name = %s
-                      AND (initial_allocated_department IS NULL OR initial_allocated_department = '')
                 """, (curr_dept, sn_name))
 
             log_msg = (
@@ -2257,6 +2326,16 @@ def get_eta_breakdown_fieldname():
 
 
 @frappe.whitelist()
+def get_sales_order_allocation_block_reason(so_name):
+    doc = frappe.get_doc("Sales Order", so_name)
+    doc.check_permission("read")
+    if doc.docstatus != 1 or doc.status in ("Completed", "Closed", "Cancelled"):
+        return ""
+    from nj_features.services.return_allocation import get_allocation_block_reason
+    return get_allocation_block_reason(so_name)
+
+
+@frappe.whitelist()
 def get_sales_order_eta_breakdown(so_name):
     """Whitelisted helper if you want to fetch SO ETA breakdown from UI later."""
     departments = get_departments()
@@ -2599,10 +2678,10 @@ def compute_sales_order_delivery_date(so_name, return_reason=False, for_promise=
 
                 # Rebuild days (business rule 2026-09-25). Counted from the order
                 # date and counting DOWN, so every hourly run lands on the same
-                # date instead of "today + 4" sliding forward. Only while the
+                # date instead of "today + N" sliding forward. Only while the
                 # machine is not yet the ordered item: the allocation remark
                 # (C2/C3/C4) stays on a serial after it is rebuilt, so it must not
-                # keep a finished machine on +4 until it ships.
+                # keep a finished machine on the rebuild days until it ships.
                 needs_rebuild = bool(
                     (to_make and to_make != curr_ic) or curr_ic not in so_all_target_items
                 )

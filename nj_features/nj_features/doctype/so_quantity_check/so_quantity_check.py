@@ -580,6 +580,11 @@ def updting_sla_department():
         """, as_dict=True)
         item_to_variant_map = {r.item_code: str(r.shopify_variant_id).strip() for r in bundle_variant_rows}
 
+        # Rebuild days for a non-exact match - the same constant the order's
+        # committed date uses, so the listing ETD and the promise agree.
+        # Imported here for the same import-cycle reason as RTO_EXCLUSION_SQL.
+        from nj_features.overrides.sales_order import RECONFIG_SLA_DAYS
+
         # Fetch all rows from tabSO Quantity Check to calculate department-specific SLA per item_group
         soqc_rows = frappe.db.sql("""
             SELECT sqc.name, sqc.item_code, i.item_group, sqc.parent1, i.variant_of
@@ -603,20 +608,20 @@ def updting_sla_department():
                 cand_name, cand_seq = p1_map[item_code]
                 candidate_slas.append(calculate_total_sla(cand_name, cand_seq, item_grp=item_grp))
 
-            # Priority 2: Same Shopify Variant ID (+2 extra days)
+            # Priority 2: Same Shopify Variant ID (+RECONFIG_SLA_DAYS)
             if variant_id and variant_id in p2_map:
                 cand_name, cand_seq = p2_map[variant_id]
-                candidate_slas.append(calculate_total_sla(cand_name, cand_seq, item_grp=item_grp) + 2)
+                candidate_slas.append(calculate_total_sla(cand_name, cand_seq, item_grp=item_grp) + RECONFIG_SLA_DAYS)
 
-            # Priority 3: Parent Model + Processor (+2 extra days)
+            # Priority 3: Parent Model + Processor (+RECONFIG_SLA_DAYS)
             if parent1 and parent1 in p3_map:
                 cand_name, cand_seq = p3_map[parent1]
-                candidate_slas.append(calculate_total_sla(cand_name, cand_seq, item_grp=item_grp) + 2)
+                candidate_slas.append(calculate_total_sla(cand_name, cand_seq, item_grp=item_grp) + RECONFIG_SLA_DAYS)
 
-            # Priority 4: Parent Base Model variant_of (+2 extra days)
+            # Priority 4: Parent Base Model variant_of (+RECONFIG_SLA_DAYS)
             if variant_of and variant_of in p4_map:
                 cand_name, cand_seq = p4_map[variant_of]
-                candidate_slas.append(calculate_total_sla(cand_name, cand_seq, item_grp=item_grp) + 2)
+                candidate_slas.append(calculate_total_sla(cand_name, cand_seq, item_grp=item_grp) + RECONFIG_SLA_DAYS)
 
             if candidate_slas:
                 sla_val = min(candidate_slas)

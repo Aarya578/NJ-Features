@@ -873,6 +873,7 @@ def stage_targeted_variants(variant_ids, settings, pre_order_data_ok=True):
             resolve_pre_order_claims,
             _effective_live_qty,
             pre_order_etd_allows,
+            pre_order_group_allows,
         )
         flags = get_inventory_sync_flags()
 
@@ -962,29 +963,31 @@ def stage_targeted_variants(variant_ids, settings, pre_order_data_ok=True):
             pre_order_qty = safe_float(row.total_pre_order_qty) or 0
 
             hold_pre_order = False
-            etd_is_pre = pre_order_etd_allows(row, flags)
+            group_is_pre = pre_order_group_allows(getattr(row, "item_groups", None))
+            etd_is_pre = pre_order_etd_allows(row, flags) and group_is_pre
 
             if live_qty > 0:
                 desired_qty = float(live_qty)
                 if etd_is_pre:
                     is_pre_order = 1
-                    # Save what Shopify actually gets (the shelf qty), not the pool qty.
-                    pre_order_qty = live_qty
+                    # shopify_pre_order_qty keeps the real pool: the "Continue
+                    # selling" rule (pre-order qty > 2) reads it.
                     update_status += f"[PreOrderLiveSynced→{desired_qty:g}] "
                 else:
                     is_pre_order = 0
             elif pre_order_qty > 0 and etd_is_pre:
-                # Threshold already applied in update_pre_order_qty (company quantity).
-                desired_qty = float(pre_order_qty)
+                # Ready quantity only (2026-10-13) - same rule as create_rq_doc().
+                desired_qty = 0.0
                 is_pre_order = 1
-                update_status += f"[PreOrderSynced→{desired_qty:g}] "
+                update_status += f"[PreOrderFlagOnly pool={pre_order_qty:g}] "
             elif pre_order_qty > 0:
-                # ETD too short (or missing) - same rule as create_rq_doc().
+                # ETD too short (or missing), or not a pre-order item group - same
+                # rule as create_rq_doc().
                 update_status += (
                     f"[PreOrderSkipped ETD={safe_float(getattr(row, 'etd_days', None)) or 0:g}"
                     f"<={flags['pre_order_min_etd_days']}] "
+                    if group_is_pre else "[PreOrderSkipped ItemGroup] "
                 )
-                pre_order_qty = 0
                 desired_qty = 0.0
                 is_pre_order = 0
             elif not pre_order_data_ok:
@@ -1021,10 +1024,11 @@ def stage_targeted_variants(variant_ids, settings, pre_order_data_ok=True):
                 ORDER BY modified DESC
             """, tuple(params), as_dict=True)
 
-            # Breaker tripped: keep whatever this variant already advertises.
+            # Breaker tripped: keep the pre-order state this variant already
+            # advertises. The quantity is the ready stock only (0 here).
             if hold_pre_order:
                 if existing:
-                    desired_qty = safe_float(existing[0].get("updated_qty")) or 0.0
+                    desired_qty = 0.0
                     pre_order_qty = safe_float(existing[0].get("shopify_pre_order_qty")) or 0
                     is_pre_order = int(existing[0].get("shopify_pre_order_enabled") or 0)
                 else:
@@ -1040,6 +1044,11 @@ def stage_targeted_variants(variant_ids, settings, pre_order_data_ok=True):
                 existing_doc = existing[0]
                 existing_etd = str(existing_doc.get("estimated_time_of_dispatch") or "").strip()
                 new_etd = str(getattr(row, "estimated_time_of_dispatch", "") or "").strip()
+                # SLA is empty while the full sync rebuilds SO Quantity Check; an
+                # order sync landing in that window blanked the ETD on 12 listings
+                # with stock (2026-10-07 12:05). Keep the last known ETD instead.
+                if not new_etd and existing_etd and live_qty > 0:
+                    new_etd = existing_etd
 
                 is_not_found = (
                     existing_doc.status == "Error" 

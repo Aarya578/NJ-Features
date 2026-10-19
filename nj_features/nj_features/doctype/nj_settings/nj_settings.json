@@ -19,7 +19,9 @@
   "user",
   "section_break_a91ou",
   "table_atxpl",
-  "value_rp"
+  "value_rp",
+  "section_break_item_group",
+  "item_group_table"
  ],
  "fields": [
   {
@@ -115,6 +117,17 @@
    "ignore_xss_filter": 1,
    "label": "Value RP",
    "reqd": 1
+  },
+  {
+   "fieldname": "section_break_item_group",
+   "fieldtype": "Section Break",
+   "label": "Item Group Settings"
+  },
+  {
+   "fieldname": "item_group_table",
+   "fieldtype": "Table",
+   "label": "Item Group Table",
+   "options": "NJ Settings Item Group Table"
   }
  ],
  "links": [],

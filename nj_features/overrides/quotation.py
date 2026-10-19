@@ -1,3 +1,5 @@
+import math
+
 import frappe
 from frappe.model.document import Document
 from erpnext.selling.doctype.quotation.quotation import Quotation
@@ -5,109 +7,209 @@ from frappe.model.mapper import get_mapped_doc
 from frappe.utils import nowdate, getdate
 from datetime import date
 
-# Reuse the SAME department/eligibility helpers Sales Order uses, but do
-# NOT reuse its calculate_item_eta() anymore — that function silently
-# returns a "confident" ETA even when a partial shortfall is never fully
-# covered (e.g. 120 required, only 110 found anywhere -> it still returns
-# an ETA instead of falling back). This standalone version below fixes
-# that specifically for Quotation, without touching Sales Order's file.
+# Quotation ETA uses the SAME matching rules as the NJ Inventory Sync ETD
+# (updting_sla_department in so_quantity_check.py), so a quote and the
+# Shopify listing tell the customer the same thing:
+#   1. Exact item code               -> department SLA
+#   2. Same Shopify variant           -> department SLA + reconfig days
+#   3. Same model + processor         -> department SLA + reconfig days
+#   4. Same base model (variant_of)   -> department SLA + reconfig days
+# The fastest match wins. Before 2026-10-14 the quote matched the exact
+# item code only, so a variant with no finished stock (e.g. 16 GB / 1 TB
+# while 16 GB / 512 GB sat in Packing) fell straight to 45 days.
 #
-# We also do NOT import/use anything that reserves serial numbers
-# (assign_serials / adjust_serial_allocations) — a Quotation must never
-# lock real inventory, it is only an estimate at this stage.
+# One difference from the sync: the sync ETD is the single most advanced
+# unit, but a quote can be for 10+ units. Here a match only counts if it
+# holds the FULL quoted qty, and the ETA is the slowest unit needed to
+# reach that qty. Lines on the same quote never count the same serial
+# twice.
 #
-# add_working_days() is also imported from Sales Order — it's a better
-# working-day calculator than the old Sunday-only skip logic: it walks
-# day by day and skips BOTH Sundays AND company holidays (from the
-# Holiday List), not just Sundays. Reusing it keeps Quotation's delivery
-# date logic consistent with Sales Order's.
+# Nothing here reserves serials - a Quotation must never lock inventory.
 #
-# _get_dept_effective_sla() and get_dept_warehouses() are also imported —
-# using the SAME SLA-resolution rules as Sales Order (Packing & Dispatch
-# hardcoded to 1 day, Inward hardcoded to 1 day, everything else clamped
-# to a 1-15 day range) instead of raw dept.min_aging_days, which could be
-# 0 or unset and silently produce a same-day ETA that wasn't accurate.
-from nj_features.overrides.sales_order import (
-    get_departments,
-    _is_dept_applicable,
-    add_working_days,
-    _get_dept_effective_sla,
-    get_dept_warehouses,
-)
+# add_working_days() is imported from Sales Order: skips Sundays AND
+# company holidays (Holiday List).
+from nj_features.overrides.sales_order import add_working_days, RECONFIG_SLA_DAYS
 
-# Worst-case fallback (days) when NO item on the quotation has any stock
-# anywhere in any department, OR when the full required quantity is never
-# fully covered across all departments (partial shortfall). Matches the
-# "Inward" department SLA used elsewhere in the codebase as the realistic
-# worst case.
+# Worst-case fallback (days) when no match holds the full quoted qty
+# (zero stock, or a partial shortfall) - realistic procurement lead time.
 NO_STOCK_FALLBACK_DAYS = 45
 
+# Extra days for a non-exact match (RAM/SSD swap). One shared constant
+# with Sales Order and the Shopify ETD (6 days since 2026-10-14).
+RECONFIG_EXTRA_DAYS = RECONFIG_SLA_DAYS
 
-def calculate_item_eta_for_quotation(item_code, required_qty, departments):
+MIN_PIPELINE_SEQ = 1
+
+
+def _get_pipeline_departments():
+    """Pipeline departments with the sync's SLA overrides applied."""
+    depts = frappe.db.sql("""
+        SELECT name, department_sequence, department_sla, sla_item_groups
+        FROM `tabDepartment`
+        WHERE department_sequence >= %s
+        ORDER BY department_sequence ASC
+    """, (MIN_PIPELINE_SEQ,), as_dict=True)
+
+    # Same overrides as the sync: Packing & Dispatch = 1, Sales = 1,
+    # Inward = 1, everything else clamped to 0-15.
+    for d in depts:
+        d_name = (d.get("name") or "").lower()
+        if "packing & dispatch" in d_name or "sales" in d_name or "inward" in d_name:
+            d["department_sla"] = 1
+        else:
+            d["department_sla"] = min(max(int(d.get("department_sla") or 0), 0), 15)
+    return depts
+
+
+def _is_sla_dept_applicable(dept_row, item_grp):
+    """Copy of the sync's is_dept_applicable()."""
+    dept_name = str(dept_row.get("name") or "").lower()
+    if "packing & dispatch" in dept_name or "sales" in dept_name:
+        return True
+    if not item_grp:
+        return False
+    groups_str = str(dept_row.get("sla_item_groups") or "").strip()
+    if not groups_str or groups_str.lower() in ("none", "null"):
+        return False
+    allowed = [g.strip().lower() for g in groups_str.split(",") if g.strip()]
+    return item_grp.strip().lower() in allowed
+
+
+def _total_sla_from(dept_name, dept_seq, depts, item_grp):
+    """Copy of the sync's calculate_total_sla(): days for a unit sitting in
+    dept_name to reach dispatch (its own SLA + every later department,
+    +10%, capped at 45)."""
+    d_name_lower = (dept_name or "").lower()
+    if "packing & dispatch" in d_name_lower or "sales" in d_name_lower:
+        return 1
+
+    cand_sla = 0
+    for d in depts:
+        if d.get("name") == dept_name:
+            cand_sla = d.get("department_sla", 0)
+            break
+
+    seq_max_sla = {}
+    for d in depts:
+        if not _is_sla_dept_applicable(d, item_grp):
+            continue
+        if "inward" in (d.get("name") or "").lower():
+            continue
+        seq = d.get("department_sequence")
+        sla = d.get("department_sla") or 0
+        if seq not in seq_max_sla or sla > seq_max_sla[seq]:
+            seq_max_sla[seq] = sla
+
+    max_seq = max(seq_max_sla.keys()) if seq_max_sla else MIN_PIPELINE_SEQ
+
+    total = cand_sla
+    for s in range(dept_seq + 1, max_seq + 1):
+        if s in seq_max_sla:
+            total += seq_max_sla[s]
+    return min(math.ceil(total * 1.10), 45)
+
+
+def _get_match_tiers(item_code):
+    """[(label, extra_days, [item_codes])] in the sync's priority order."""
+    tiers = [("exact item", 0, [item_code])]
+
+    variant_ids = frappe.db.sql_list("""
+        SELECT DISTINCT pb.shopify_variant_id
+        FROM `tabProduct Bundle Item` pbi
+        INNER JOIN `tabProduct Bundle` pb ON pb.name = pbi.parent
+        WHERE pbi.item_code = %s
+          AND pb.shopify_variant_id IS NOT NULL AND pb.shopify_variant_id != ''
+          AND COALESCE(pb.disable, 0) = 0
+    """, (item_code,))
+    if variant_ids:
+        placeholders = ", ".join(["%s"] * len(variant_ids))
+        codes = frappe.db.sql_list(f"""
+            SELECT DISTINCT pbi.item_code
+            FROM `tabProduct Bundle Item` pbi
+            INNER JOIN `tabProduct Bundle` pb ON pb.name = pbi.parent
+            WHERE pb.shopify_variant_id IN ({placeholders})
+              AND COALESCE(pb.disable, 0) = 0
+        """, variant_ids)
+        tiers.append(("same Shopify variant", RECONFIG_EXTRA_DAYS, codes))
+
+    variant_of = frappe.db.get_value("Item", item_code, "variant_of")
+    if variant_of:
+        processor = frappe.db.get_value(
+            "Item Variant Attribute",
+            {"parent": item_code, "attribute": "Processor Type1"},
+            "attribute_value",
+        ) or ""
+        proc_codes = frappe.db.sql_list("""
+            SELECT i.name
+            FROM `tabItem` i
+            LEFT JOIN `tabItem Variant Attribute` proc
+                ON proc.parent = i.name AND proc.attribute = 'Processor Type1'
+            WHERE i.variant_of = %s
+              AND COALESCE(proc.attribute_value, '') = %s
+        """, (variant_of, processor))
+        tiers.append(("same model + processor", RECONFIG_EXTRA_DAYS, proc_codes))
+
+        model_codes = frappe.db.sql_list(
+            "SELECT name FROM `tabItem` WHERE variant_of = %s", (variant_of,)
+        )
+        tiers.append(("same model", RECONFIG_EXTRA_DAYS, model_codes))
+
+    return [t for t in tiers if t[2]]
+
+
+def _get_free_serials(item_codes):
+    """Unreserved serials in pipeline departments - same filters as the sync."""
+    placeholders = ", ".join(["%s"] * len(item_codes))
+    return frappe.db.sql(f"""
+        SELECT s.name, d.name AS dept_name, d.department_sequence AS dept_seq
+        FROM `tabSerial No` s
+        INNER JOIN `tabWarehouse` w ON w.name = s.warehouse
+        INNER JOIN `tabDepartment` d ON d.name = w.department
+        WHERE s.item_code IN ({placeholders})
+          AND (s.reserved_sales_order IS NULL OR s.reserved_sales_order = '')
+          AND s.is_replace = 0
+          AND (s.return_reason IS NULL OR s.return_reason = ''
+               OR s.return_reason NOT IN ('Repair', 'Replace'))
+          AND d.department_sequence >= %s
+    """, list(item_codes) + [MIN_PIPELINE_SEQ], as_dict=True)
+
+
+def calculate_item_eta_for_quotation(item_code, item_group, required_qty, depts, claimed):
     """
-    Standalone ETA calculation for Quotation only — does NOT affect Sales
-    Order (nj_features.overrides.sales_order.calculate_item_eta is left
-    untouched).
+    Days until the full required_qty of item_code can dispatch, using the
+    sync's four match tiers. Returns (days, label) or None when no tier
+    holds the full qty (caller applies NO_STOCK_FALLBACK_DAYS).
 
-    Walks department by department (in SLA order), counting unreserved
-    serials available at each one, until the full required_qty is found.
-
-    Fix vs. the Sales Order version: if the loop finishes checking every
-    department and the full required_qty was NEVER fully covered (a
-    partial shortfall, e.g. 120 required but only 110 found across every
-    department combined), this returns None instead of silently returning
-    the accumulated days as if the full quantity was available. The
-    caller treats None as "no confident ETA" and applies the
-    NO_STOCK_FALLBACK_DAYS fallback — the same fallback already used for
-    the zero-stock case.
-
-    Uses the SAME SLA-resolution rules as Sales Order via
-    _get_dept_effective_sla() (Packing & Dispatch = 1 day, Inward = 1
-    day, everything else clamped to 1-15 days) instead of raw
-    dept.min_aging_days, which could be 0/unset and produce a misleading
-    same-day ETA.
+    claimed: serials already counted for earlier lines of this quote;
+    serials picked here are added to it.
     """
-    accumulated_days = 0
-    remaining_qty = required_qty
+    required_qty = max(int(math.ceil(required_qty or 1)), 1)
+    sla_cache = {}
+    best = None
 
-    for dept in departments:
-        accumulated_days += _get_dept_effective_sla(dept)
-        dept_name = dept.get("name") if isinstance(dept, dict) else dept.name
-
-        warehouses = get_dept_warehouses(dept_name)
-
-        if not warehouses:
+    for label, extra_days, codes in _get_match_tiers(item_code):
+        serials = [s for s in _get_free_serials(codes) if s.name not in claimed]
+        if len(serials) < required_qty:
             continue
 
-        placeholders = ', '.join(['%s'] * len(warehouses))
+        for s in serials:
+            key = (s.dept_name, s.dept_seq)
+            if key not in sla_cache:
+                sla_cache[key] = _total_sla_from(s.dept_name, s.dept_seq, depts, item_group)
+            s.days = sla_cache[key]
 
-        query = f"""
-            SELECT COUNT(*)
-            FROM `tabSerial No`
-            WHERE
-                item_code = %s
-                AND warehouse IN ({placeholders})
-                AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM `tabDelivery Note Item`
-                    WHERE serial_no = `tabSerial No`.name
-                        AND docstatus = 1
-                )
-        """
+        # Fastest units first; the ETA is the slowest one needed.
+        serials.sort(key=lambda s: s.days)
+        picked = serials[:required_qty]
+        days = picked[-1].days + extra_days
 
-        params = [item_code] + warehouses
-        available_count = frappe.db.sql(query, params)[0][0] or 0
+        if best is None or days < best[0]:
+            best = (days, f"{label}, slowest unit in {picked[-1].dept_name}", picked)
 
-        if available_count >= remaining_qty:
-            return accumulated_days
-        else:
-            remaining_qty -= available_count
-
-    # Loop finished checking every department. Only trust this ETA if the
-    # full required_qty was actually covered (remaining_qty hit zero).
-    # Any leftover shortfall -> None -> caller applies the 45-day fallback.
-    return accumulated_days if remaining_qty <= 0 else None
+    if not best:
+        return None
+    claimed.update(s.name for s in best[2])
+    return best[0], best[1]
 
 
 class CustomQuotation(Quotation):
@@ -162,19 +264,18 @@ def bypass_so_permission(quotation_name):
         if not target.get("order_id"):
             target.order_id = source.get("order_id") or source.name
 
-        # 🔹 Carry forward the Quotation's calculated Request Delivery Date
-        # (fastest-item stock estimate, calculated by the "Calculate ETA"
-        # button) into Sales Order's committed_delivery_date — the same
-        # "freeze once, never overwrite" field Sales Order already uses,
-        # before its own ETA engine recalculates "Delivery Date" on submit.
+        # 🔹 Seed the visible Delivery Date from the Quotation's Request
+        # Delivery Date so it isn't blank.
+        #
+        # committed_delivery_date is deliberately NOT copied (2026-10-13):
+        # Sales Order works it out itself on first submit from where the
+        # allocated machines actually are. A copied Quotation date skipped
+        # that, and since allocation reads it to pick its starting
+        # department, a far-out quote date sent the order upstream while
+        # ready stock sat in Packing.
         requested = source.get("request_delivery_date")
-        if requested and frappe.db.has_column("Sales Order", "committed_delivery_date"):
-            if not target.get("committed_delivery_date"):
-                target.committed_delivery_date = requested
-            # Also seed the visible Delivery Date field so it isn't blank
-            # until the ETA engine recalculates it on submit.
-            if not target.get("delivery_date"):
-                target.delivery_date = requested
+        if requested and not target.get("delivery_date"):
+            target.delivery_date = requested
 
     # Map Quotation -> Sales Order with proper link fields
     so = get_mapped_doc(
@@ -231,32 +332,58 @@ def calculate_delivery_dates_for_quotation(quotation_name):
           (previously frozen after the first click — that freeze has been
           removed so every click updates both fields together).
 
-    If NO item has any stock anywhere, OR if the full required quantity
-    of any item is never fully covered across all departments (partial
-    shortfall), falls back to NO_STOCK_FALLBACK_DAYS.
+    Per-line days come from calculate_item_eta_for_quotation() (same
+    match rules as the Inventory Sync ETD). A serialised line whose full
+    qty isn't covered by any match counts as NO_STOCK_FALLBACK_DAYS -
+    before 2026-10-14 such a line was silently dropped, so a quote with
+    one short line still showed the other line's fast date. Non-serialised
+    lines (warranty/services) are skipped.
     """
     doc = frappe.get_doc("Quotation", quotation_name)
 
     if not doc.items:
         frappe.throw("Quotation has no items to calculate delivery dates for")
 
-    departments = get_departments()
+    departments = _get_pipeline_departments()
+    claimed = set()
     eta_days_list = []
+    line_notes = []
 
     for item in doc.items:
-        item_group = frappe.db.get_value("Item", item.item_code, "item_group")
-        item_depts = [d for d in departments if _is_dept_applicable(d, item_group)]
+        item_group, has_serial_no = frappe.db.get_value(
+            "Item", item.item_code, ["item_group", "has_serial_no"]
+        ) or (None, 0)
 
-        eta_days = calculate_item_eta_for_quotation(item.item_code, item.qty or 1, item_depts)
+        # Warranty/service add-ons share Shopify bundles with laptops, so the
+        # variant match would let them claim laptop serials. Skip them.
+        if not has_serial_no:
+            continue
 
-        if eta_days is not None:
-            eta_days_list.append(eta_days)
+        result = calculate_item_eta_for_quotation(
+            item.item_code, item_group, item.qty or 1, departments, claimed
+        )
+
+        if result is not None:
+            eta_days_list.append(result[0])
+            line_notes.append(f"Row {item.idx}: {result[0]} working days ({result[1]})")
+        elif has_serial_no:
+            eta_days_list.append(NO_STOCK_FALLBACK_DAYS)
+            line_notes.append(
+                f"Row {item.idx}: {NO_STOCK_FALLBACK_DAYS} working days "
+                f"(not enough free stock of this model for qty {item.qty:g})"
+            )
+
+    frappe.msgprint(
+        msg="<br>".join(line_notes) or "No stock items on this quotation.",
+        title="ETA Breakdown",
+        indicator="blue",
+    )
 
     if eta_days_list:
         min_eta_days = min(eta_days_list)   # fastest item — for Request Delivery Date
         max_eta_days = max(eta_days_list)   # slowest item — for Estimated Delivery Date
     else:
-        # No item anywhere had full stock coverage — worst case for both
+        # No stock lines at all (services only) — worst case for both
         min_eta_days = max_eta_days = NO_STOCK_FALLBACK_DAYS
 
     # Request Delivery Date = today + fastest item's SLA (MIN across all

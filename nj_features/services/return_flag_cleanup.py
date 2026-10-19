@@ -29,27 +29,106 @@ RETURN_CAUSES = ("Repair", "Replace")
 MAX_RETRIES = 3
 
 
-def _clear_one(serial_no):
+FINISHED_SO_SQL = "(so.status IN ('Closed', 'Completed') OR so.per_delivered = 100)"
+
+
+def _split_serials(value):
+    return {s.strip() for s in (value or "").replace(",", "\n").split("\n") if s.strip()}
+
+
+def _return_sales_order(serial_no):
+    """The order on the latest submitted Repair/Replace return DN carrying this serial.
+
+    Needed because sales_order_id cannot be relied on: a return DN wipes the
+    customer details off the serial, sales_order_id included
+    (delivery_note.py, the `not preserve_customer_details` block). On 2026-10-05
+    58 of the 66 unreserved Repair/Replace-tagged units in sellable departments
+    had it blank, so the original JOIN on sales_order_id never saw them - e.g.
+    NJ-LP-500007 sat in Adaptor QC flagged Replace for an order (SAL-ORD-2026-08335)
+    that was already Closed, and SAL-ORD-2026-09589 was given an L2 unit instead.
+    The return DN always records the order, so it is the reliable link.
+    """
+    like = f"%{serial_no}%"
+    rows = frappe.db.sql(
+        """
+        SELECT dni.against_sales_order AS sales_order, dni.serial_no
+        FROM `tabDelivery Note Item` dni
+        INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
+        WHERE dn.docstatus = 1 AND dn.is_return = 1
+          AND dn.cause_of_return IN %s
+          AND dni.serial_no LIKE %s
+        ORDER BY dn.posting_date DESC, dn.creation DESC
+        """,
+        (RETURN_CAUSES, like),
+        as_dict=True,
+    )
+    for row in rows:
+        if row.sales_order and serial_no in _split_serials(row.serial_no):
+            return row.sales_order
+
+    # Bundled (SKU) lines can carry the serial on the packed item instead.
+    rows = frappe.db.sql(
+        """
+        SELECT pi.serial_no,
+               (SELECT dni.against_sales_order FROM `tabDelivery Note Item` dni
+                WHERE dni.parent = dn.name AND IFNULL(dni.against_sales_order, '') != ''
+                LIMIT 1) AS sales_order
+        FROM `tabPacked Item` pi
+        INNER JOIN `tabDelivery Note` dn ON dn.name = pi.parent AND pi.parenttype = 'Delivery Note'
+        WHERE dn.docstatus = 1 AND dn.is_return = 1
+          AND dn.cause_of_return IN %s
+          AND pi.serial_no LIKE %s
+        ORDER BY dn.posting_date DESC, dn.creation DESC
+        """,
+        (RETURN_CAUSES, like),
+        as_dict=True,
+    )
+    for row in rows:
+        if row.sales_order and serial_no in _split_serials(row.serial_no):
+            return row.sales_order
+    return None
+
+
+def _origin_sales_orders(serial_no, sales_order_id):
+    """Every order this flag could still belong to. All of them must be finished."""
+    orders = {so for so in (sales_order_id, _return_sales_order(serial_no)) if so}
+    return sorted(orders)
+
+
+def _is_finished(sales_order):
+    return bool(frappe.db.sql(
+        f"SELECT 1 FROM `tabSales Order` so WHERE so.name = %s AND {FINISHED_SO_SQL}",
+        (sales_order,),
+    ))
+
+
+def _clear_one(serial_no, sales_orders):
     """Clear one serial in its own transaction, retrying on lock contention.
 
     Per-row rather than one bulk UPDATE: the planner and the allocation jobs
     write to `tabSerial No` continuously, and a batched transaction deadlocks
     against them and rolls back the whole batch.
+
+    The finished-order check is repeated inside the UPDATE so an order reopened
+    between the candidate scan and this write keeps its flag.
     """
+    placeholders = ", ".join(["%s"] * len(sales_orders))
     for attempt in range(MAX_RETRIES):
         try:
             frappe.db.sql(
-                """
+                f"""
                 UPDATE `tabSerial No` sn
-                JOIN `tabSales Order` so ON so.name = sn.sales_order_id
                 SET sn.return_reason = NULL, sn.modified = NOW()
                 WHERE sn.name = %s
                   AND sn.return_reason IN %s
                   AND (sn.reserved_sales_order IS NULL OR sn.reserved_sales_order = '')
                   AND sn.status = 'Active'
-                  AND (so.status IN ('Closed', 'Completed') OR so.per_delivered = 100)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM `tabSales Order` so
+                      WHERE so.name IN ({placeholders}) AND NOT {FINISHED_SO_SQL}
+                  )
                 """,
-                (serial_no, RETURN_CAUSES),
+                (serial_no, RETURN_CAUSES, *sales_orders),
             )
             changed = (
                 frappe.db._cursor.rowcount > 0
@@ -67,22 +146,35 @@ def _clear_one(serial_no):
     return False
 
 
+def get_finished_return_flags():
+    """Unreserved Active serials still flagged Repair/Replace whose order(s) are finished.
+
+    Returns [{serial_no, sales_orders}]. A serial with no traceable order at all
+    is left alone - it may still be a customer's machine.
+    """
+    flagged = frappe.db.sql(
+        """
+        SELECT sn.name, IFNULL(sn.sales_order_id, '') AS sales_order_id
+        FROM `tabSerial No` sn
+        WHERE sn.status = 'Active'
+          AND sn.return_reason IN %s
+          AND (sn.reserved_sales_order IS NULL OR sn.reserved_sales_order = '')
+        """,
+        (RETURN_CAUSES,),
+        as_dict=True,
+    )
+    finished = []
+    for row in flagged:
+        orders = _origin_sales_orders(row.name, row.sales_order_id)
+        if orders and all(_is_finished(so) for so in orders):
+            finished.append({"serial_no": row.name, "sales_orders": orders})
+    return finished
+
+
 def clear_completed_return_flags():
     """Scheduled: release serials whose return cycle has finished."""
     try:
-        candidates = frappe.db.sql(
-            """
-            SELECT sn.name
-            FROM `tabSerial No` sn
-            JOIN `tabSales Order` so ON so.name = sn.sales_order_id
-            WHERE sn.status = 'Active'
-              AND sn.return_reason IN %s
-              AND (sn.reserved_sales_order IS NULL OR sn.reserved_sales_order = '')
-              AND (so.status IN ('Closed', 'Completed') OR so.per_delivered = 100)
-            """,
-            (RETURN_CAUSES,),
-            as_dict=True,
-        )
+        candidates = get_finished_return_flags()
 
         if not candidates:
             return
@@ -90,12 +182,12 @@ def clear_completed_return_flags():
         cleared = failed = 0
         for row in candidates:
             try:
-                if _clear_one(row.name):
+                if _clear_one(row["serial_no"], row["sales_orders"]):
                     cleared += 1
             except Exception:
                 failed += 1
                 log_error(
-                    f"Could not clear return_reason on {row.name}: {frappe.get_traceback()}",
+                    f"Could not clear return_reason on {row['serial_no']}: {frappe.get_traceback()}",
                     "clear_completed_return_flags",
                 )
 

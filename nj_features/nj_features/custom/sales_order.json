@@ -1661,7 +1661,7 @@
    "name": "Sales Order-sale_type",
    "no_copy": 0,
    "non_negative": 0,
-   "options": "\nAmazon\nNJ-Website-B2B\nNJ-Website-B2C\nNJ-Direct-B2B\nNJ-Direct-B2C\nDistributor\nFranchisee\nEducational Institutes\nFlipkart\nCharges",
+   "options": "\nAmazon\nNJ-Website-B2B\nNJ-Website-B2C\nNJ-Direct-B2B\nNJ-Direct-B2C\nDistributor\nFranchisee\nEducational Institutes\nFlipkart\nCharges\nDemo-Unit",
    "owner": "Administrator",
    "parent": null,
    "parentfield": null,

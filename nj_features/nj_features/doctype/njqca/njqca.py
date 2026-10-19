@@ -220,7 +220,7 @@ def get_inspection_type():
         frappe.msgprint("<b>Inspection Type</b> is not updated in either <b>Role Profile</b> or <b>Department: {0}</b>".format(department))
         return None
     
-def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_defective=None, re_check=None):
+def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_defective=None, re_check=None, existing_qi_name=None):
     try:
         njqca_qi_trace("open_draft_qi_start", self.name, {
             "serial_no": self.serial_no,
@@ -271,6 +271,38 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
 
         create_new_qi = True
         new_qi = None
+        # Flutter: reuse the exact linked draft QI.
+        if existing_qi_name:
+            new_qi = frappe.get_doc(
+                "NJ Quality Inspection",
+                existing_qi_name
+            )
+
+            if new_qi.docstatus != 0:
+                frappe.throw(
+                    "Cannot sync NJQCA: QI {0} is not in Draft."
+                    .format(existing_qi_name)
+                )
+
+            if new_qi.get("njqca_laptop_name") != self.name:
+                frappe.throw(
+                    "QI {0} is linked to another NJQCA."
+                    .format(existing_qi_name)
+                )
+
+            if new_qi.get("inspection_type") != inspection_type:
+                frappe.throw(
+                    "QI {0} has a different Inspection Type."
+                    .format(existing_qi_name)
+                )
+
+            if new_qi.get("barcode") != serial_num:
+                frappe.throw(
+                    "QI {0} has a different Serial No."
+                    .format(existing_qi_name)
+                )
+
+            create_new_qi = False
         
         sync_njqca_qis = frappe.get_list(
             'NJ Quality Inspection',
@@ -321,14 +353,14 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
                 "existing_qis": existing_qis
             })
 
-        if sync_njqca_qis:
+        if not existing_qi_name and sync_njqca_qis:
             latest_qi = sync_njqca_qis[0]
             time_diff = frappe.utils.time_diff_in_seconds(frappe.utils.now_datetime(), latest_qi.creation)
             log_error(str(time_diff)+str(latest_qi.name),"time_diff for serial no "+str(serial_num)+" in open draft qi")
             if time_diff < 3600:
                 new_qi = frappe.get_doc('NJ Quality Inspection', latest_qi.name)
                 create_new_qi = False
-        elif existing_qis:
+        elif not existing_qi_name and not sync_njqca_qis and existing_qis:
             latest_qi = existing_qis[0]
             time_diff = frappe.utils.time_diff_in_seconds(frappe.utils.now_datetime(), latest_qi.creation)
             if time_diff < 1200:
@@ -2612,6 +2644,104 @@ def _release_rfq_serial_no(docname, serial_no):
             "traceback": frappe.get_traceback()
         }, error=True)
 
+def get_existing_flutter_njqca_qi(doc):
+    """
+    Reuse the QI already linked to a Flutter-created NJQCA.
+
+    Does not submit NJQCA.
+    Does not create, delete, or modify any QI.
+    Does not change RFQ or non-Flutter behavior.
+    """
+
+    # Preserve the existing RFQ flow.
+    if doc.get("rfq_id"):
+        return None
+
+    # Apply only to NJQCA created from Flutter.
+    is_flutter_njqca = any(
+        str(row.get("parameter") or "").strip()
+        == "NJQCA_Created_From_Flutter"
+        and str(row.get("value") or "").strip() == "1"
+        for row in (doc.get("njqca_result_parameters") or [])
+    )
+
+    if not is_flutter_njqca:
+        return None
+
+    qi_name = str(doc.get("qi_name") or "").strip()
+
+    # No linked QI: preserve normal QI creation behavior.
+    if not qi_name:
+        return None
+
+    # Linked QI must actually exist.
+    if not frappe.db.exists("NJ Quality Inspection", qi_name):
+        frappe.throw(
+            "The Quality Inspection linked to this Flutter NJQCA "
+            "does not exist: {0}".format(qi_name)
+        )
+
+    qi = frappe.get_doc("NJ Quality Inspection", qi_name)
+
+    # Never reuse a QI linked to another NJQCA.
+    if qi.get("njqca_laptop_name") != doc.name:
+        frappe.throw(
+            "Quality Inspection {0} is not linked to NJQCA {1}."
+            .format(qi_name, doc.name)
+        )
+
+    # Verify inspection type.
+    if qi.get("inspection_type") != doc.get("inspection_type"):
+        frappe.throw(
+            "Quality Inspection {0} has a different Inspection Type."
+            .format(qi_name)
+        )
+
+    # Use the same serial identity rules as open_draft_qi().
+    is_component = frappe.db.get_value(
+        "Item Group",
+        doc.item_group,
+        "is_component"
+    )
+
+    expected_serial = (
+        doc.get("component_serial_no")
+        if is_component == 1
+        else doc.get("serial_no")
+    )
+
+    if expected_serial and qi.get("barcode") != expected_serial:
+        frappe.throw(
+            "Quality Inspection {0} is linked to a different Serial No."
+            .format(qi_name)
+        )
+
+    # Do not reuse a cancelled QI.
+    if qi.docstatus == 2:
+        frappe.throw(
+            "Linked Quality Inspection {0} is cancelled."
+            .format(qi_name)
+        )
+
+    base_url = frappe.db.get_value(
+        "NJ Settings",
+        {"parameter": "njpluse_url_for_qi"},
+        "value"
+    )
+
+    if not base_url:
+        frappe.throw("NJPulse URL is not found in NJ Settings.")
+
+    return {
+        "qi_name": qi_name,
+        "njpulse_url": "{0}qi/{1}/0".format(
+            base_url.rstrip("/") + "/",
+            qi_name
+        ),
+        "msg_pnt": "Existing Flutter Quality Inspection reused: {0}"
+                   .format(qi_name),
+        "base_url": base_url
+    }
 
 @frappe.whitelist()
 def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, qi_type=None):
@@ -2689,7 +2819,40 @@ def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, 
                 "reason": "Power On is not Yes",
                 "power_on": doc.power_on
             }
+        
+        # Flutter-only: reuse an already-linked QI.
+        # Do not create another QI during manual ERP submission.
+        existing_flutter_qi = get_existing_flutter_njqca_qi(doc)
 
+        if existing_flutter_qi:
+            qi_name = existing_flutter_qi.get("qi_name")
+
+            njqca_qi_trace(
+                "flutter_existing_qi_sync_start",
+                docname,
+                {"qi_name": qi_name}
+            )
+
+            qi_draft_data = open_draft_qi(
+                doc,
+                component_serial_no,
+                brand,
+                model,
+                is_defective="1" if qi_type == "is_defective" else None,
+                re_check="1" if qi_type == "re_check" else None,
+                existing_qi_name=qi_name
+            )
+
+            njqca_qi_trace(
+                "flutter_existing_qi_sync_completed",
+                docname,
+                {
+                    "qi_name": qi_name,
+                    "result": qi_draft_data
+                }
+            )
+
+            return qi_draft_data
         njqca_qi_trace("before_open_draft_qi", docname, {
             "qi_type": qi_type,
             "serial_no": doc.serial_no,
@@ -4051,9 +4214,9 @@ def get_model(manufacturer_model=None, item_group=None, brand=None, components=N
     if not manufacturer_model:
         return model_list
 
-    model_override = check_manufacturer_model_exceptions(manufacturer_model, components)
-    if model_override:
-        return [{'model': model_override}]
+    # model_override = check_manufacturer_model_exceptions(manufacturer_model, components)
+    # if model_override:
+    #     return [{'model': model_override}]
 
     query = """SELECT DISTINCT mmc.parent AS model
                FROM `tabManufacturer Model Child` AS mmc
@@ -6541,9 +6704,9 @@ def create_serial_no_based_on_rfq(serial_info):
 def validate_model(model, manufacturer_model, components=None):
     try:
         if manufacturer_model and model:
-            model_override = check_manufacturer_model_exceptions(manufacturer_model, components)
-            if model_override and model_override == model:
-                return "1"
+            # model_override = check_manufacturer_model_exceptions(manufacturer_model, components)
+            # if model_override and model_override == model:
+            #     return "1"
             query = """
                 select parent from `tabManufacturer Model Child` where manufacturer_model=%s and parent=%s;
             """

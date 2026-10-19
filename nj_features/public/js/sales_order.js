@@ -1,6 +1,27 @@
 frappe.ui.form.on('Sales Order', {
     
     refresh: function(frm) {
+        // Show the current return block, rather than relying on old shortage logs.
+        if (!frm.is_new() && frm.doc.docstatus === 1) {
+            const order_name = frm.doc.name;
+            frappe.call({
+                method: 'nj_features.overrides.sales_order.get_sales_order_allocation_block_reason',
+                args: { so_name: order_name },
+                callback: function(r) {
+                    if (frm.doc.name !== order_name) return;
+                    if (frm._allocation_block_intro) {
+                        frm._allocation_block_intro.remove();
+                        frm._allocation_block_intro = null;
+                    }
+                    if (r.message) {
+                        frm._allocation_block_intro = frm.dashboard.add_comment(
+                            frappe.utils.escape_html(r.message), 'orange', true
+                        );
+                    }
+                }
+            });
+        }
+
         // frm.page.remove_inner_button('Sales Invoice', 'Create');
         if (frm.doc.status !== 'Closed' && frm.doc.status !== 'On Hold' && frm.doc.docstatus === 1) {
             frm.add_custom_button('Initiate Refund', function () {

@@ -4189,6 +4189,50 @@ def check_manufacturer_model_exceptions(manufacturer_model, components=None):
 
     return None
 
+def _get_njqca_generic_model():
+    generic_model = frappe.db.get_value(
+        'NJ Settings',
+        {
+            'module': 'NJ Features',
+            'doc_type': 'NJQCA',
+            'parameter': 'generic_model_for_njqca',
+        },
+        'value',
+    )
+    generic_model = (generic_model or '').strip()
+
+    if not generic_model:
+        frappe.throw(
+            "Generic Model is not configured in <b>NJ Settings</b>. "
+            "Please configure parameter <b>generic_model_for_njqca</b>."
+        )
+
+    model_is_active = frappe.db.get_value('Models', generic_model, 'active')
+    if model_is_active is None:
+        frappe.throw(
+            f"Generic Model <b>{generic_model}</b> configured in NJ Settings "
+            "does not exist in the <b>Models</b> doctype."
+        )
+
+    if not model_is_active:
+        frappe.throw(
+            f"Generic Model <b>{generic_model}</b> configured in NJ Settings is inactive."
+        )
+
+    return generic_model
+
+
+def _get_models_for_manufacturer_model(manufacturer_model):
+    return frappe.db.sql(
+        """SELECT DISTINCT mmc.parent AS model
+           FROM `tabManufacturer Model Child` AS mmc
+           WHERE mmc.manufacturer_model = %s
+           ORDER BY mmc.parent""",
+        (manufacturer_model,),
+        as_dict=True,
+    )
+
+
 @frappe.whitelist()
 def get_model(manufacturer_model=None, item_group=None, brand=None, components=None):
     query, model_list = '', []
@@ -4219,15 +4263,15 @@ def get_model(manufacturer_model=None, item_group=None, brand=None, components=N
     # if model_override:
     #     return [{'model': model_override}]
 
-    query = """SELECT DISTINCT mmc.parent AS model
-               FROM `tabManufacturer Model Child` AS mmc
-               LEFT JOIN `tabMake Child` AS mc ON mc.parent = mmc.parent
-               WHERE mmc.manufacturer_model = %s
-               ORDER BY mmc.parent"""
-    model_list = frappe.db.sql(query, (manufacturer_model,), as_dict=True)
+    model_list = _get_models_for_manufacturer_model(manufacturer_model)
 
     if not model_list:
-        frappe.msgprint(f"Manufacturer Model: <strong>{manufacturer_model}</strong> not found. Please contact <strong>NPD department</strong> for mapping the model.")
+        generic_model = _get_njqca_generic_model()
+        frappe.msgprint(
+            f"Manufacturer Model <strong>{manufacturer_model}</strong> is not mapped. "
+            f"Generic Model <strong>{generic_model}</strong> has been selected."
+        )
+        return [{'model': generic_model}]
 
     return model_list
 
@@ -6705,14 +6749,15 @@ def create_serial_no_based_on_rfq(serial_info):
 def validate_model(model, manufacturer_model, components=None):
     try:
         if manufacturer_model and model:
-            # model_override = check_manufacturer_model_exceptions(manufacturer_model, components)
-            # if model_override and model_override == model:
-            #     return "1"
-            query = """
-                select parent from `tabManufacturer Model Child` where manufacturer_model=%s and parent=%s;
-            """
-            result=frappe.db.sql(query,(manufacturer_model,model),as_dict=1)
-            if result is not None and len(result)>0:
+            model_override = check_manufacturer_model_exceptions(manufacturer_model, components)
+            if model_override and model_override == model:
+                return "1"
+
+            mapped_models = _get_models_for_manufacturer_model(manufacturer_model)
+            if any(row.get('model') == model for row in mapped_models):
+                return "1"
+
+            if not mapped_models and model == _get_njqca_generic_model():
                 return "1"
         return "0"
     

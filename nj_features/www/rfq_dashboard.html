@@ -1,44 +1,74 @@
 {% extends "templates/web.html" %}
 
-{% block title %}{{ _("RFQ QC Dashboard") }}{% endblock %}
-
-{% block head_include %}
-{{ super() }}
-<link rel="stylesheet" href="/assets/nj_features/css/rfq_dashboard_shared.css">
-{% endblock %}
+{% block title %}{{ _("RFQ Quotation Workbench") }}{% endblock %}
 
 {% block page_content %}
-<div class="public-rfq-dashboard">
-	<div class="dashboard-header">
-		<div>
-			<h1>{{ _("RFQ QC Dashboard") }}</h1>
-			<p class="text-muted">{{ _("Read-only supplier quality dashboard") }}</p>
+<div class="supplier-rfq-workbench">
+	<header class="rfq-workbench-topbar">
+		<div class="rfq-brand">NEWJAISA</div>
+		<div class="rfq-breadcrumb">{{ _("Buying") }} › {{ _("RFQ") }} › <strong id="breadcrumb-rfq">—</strong> › {{ _("Quotation Workbench") }}</div>
+		<div class="rfq-top-actions">
+			<button class="btn rfq-create-qi" type="button" disabled>{{ _("Create QI") }}</button>
+			<button class="btn rfq-ui-only" type="button">{{ _("Recalculate from QC") }}</button>
+			<button class="btn rfq-ui-only" type="button">{{ _("Export XLSX") }}</button>
 		</div>
-		<button class="btn btn-primary" id="refresh-dashboard" type="button">
-			{{ _("Refresh") }}
-		</button>
-	</div>
+	</header>
 
-	<div class="dashboard-filters">
-		<div class="form-group">
-			<label for="dashboard-supplier">{{ _("Supplier") }}</label>
-			<select class="form-control" id="dashboard-supplier" disabled>
-				<option value="">{{ _("Loading...") }}</option>
-			</select>
+	<main class="rfq-workbench-content">
+		<section class="rfq-filter-panel">
+			<div><label for="dashboard-supplier">{{ _("Supplier") }}</label><select class="form-control" id="dashboard-supplier" disabled><option value="">{{ _("Loading...") }}</option></select></div>
+			<div><label for="dashboard-rfq">{{ _("Request for Quotation") }}</label><select class="form-control" id="dashboard-rfq" disabled><option value="">{{ _("Select RFQ") }}</option></select></div>
+		</section>
+
+		<div class="dashboard-message" id="dashboard-message">{{ _("Validating dashboard link...") }}</div>
+
+		<div class="dashboard-content d-none" id="dashboard-content">
+			<section class="rfq-overview-card">
+				<div class="rfq-overview-head">
+					<div class="rfq-title-block">
+						<div><h2 data-value="rfq_name">{{ _("Select an RFQ") }}</h2><span class="rfq-status-pill" data-value="status">—</span></div>
+						<p><strong data-value="supplier">—</strong> · <span data-value="company">—</span></p>
+					</div>
+					<div class="rfq-overview-meta">
+						<div><span>{{ _("RFQ Date") }}</span><strong data-value="rfq_date">—</strong></div>
+						<div><span>{{ _("Required Date") }}</span><strong data-value="required_date">—</strong></div>
+						<div><span>{{ _("Total Items") }}</span><strong data-value="total_items">—</strong></div>
+						<div><span>{{ _("Currency") }}</span><strong data-value="currency">—</strong></div>
+					</div>
+				</div>
+				<div class="rfq-kpi-grid">
+					<div class="rfq-kpi"><span>{{ _("Units in Lot") }}</span><strong data-value="units_in_lot">0</strong><small data-value="models">0 {{ _("models") }}</small></div>
+					<div class="rfq-kpi"><span>{{ _("Units Inspected") }}</span><strong data-value="units_inspected">0</strong><small>{{ _("Submitted NJQCA") }}</small></div>
+					<div class="rfq-kpi"><span>{{ _("Function-Tested") }}</span><strong data-value="function_tested">0</strong><small>{{ _("Submitted quality inspections") }}</small></div>
+					<div class="rfq-kpi"><span>{{ _("Grade A Value") }}</span><strong data-value="grade_a_value">₹0.00</strong><small>{{ _("before deduction") }}</small></div>
+					<div class="rfq-kpi rfq-kpi-negative"><span>{{ _("Deductions") }}</span><strong data-value="deductions">₹0.00</strong><small data-value="deduction_percent">0% {{ _("of Grade A") }}</small></div>
+					<div class="rfq-kpi"><span>{{ _("Manual Overrides") }}</span><strong>3</strong><small>{{ _("models edited") }}</small></div>
+					<div class="rfq-kpi rfq-kpi-offer"><span>{{ _("Net Lot Offer") }}</span><strong data-value="net_lot_offer">₹0.00</strong><small data-value="net_unit_average">₹0.00 / {{ _("unit avg") }}</small></div>
+				</div>
+			</section>
+
+			<section class="rfq-model-summary-card">
+				<div class="rfq-model-summary-head">
+					<span class="rfq-section-number">01</span>
+					<div><h3>{{ _("Model summary & final rates") }}</h3><p>{{ _("Deduction per unit is computed from the component matrix. This table reflects the read-only roll-up.") }}</p></div>
+					<div class="rfq-read-only">🔒 {{ _("Read-only roll-up") }}</div>
+					<button class="btn btn-default btn-sm rfq-ui-only" type="button">{{ _("Go to matrix") }}</button>
+				</div>
+				<div class="rfq-model-toolbar">
+					<input class="form-control rfq-model-search" placeholder="{{ _("Search model or processor") }}">
+					<button class="btn btn-xs rfq-type-filter is-active" data-type="all" type="button">{{ _("All types") }}</button>
+					<button class="btn btn-xs rfq-type-filter" data-type="laptop" type="button">{{ _("Laptop") }}</button>
+					<button class="btn btn-xs rfq-type-filter" data-type="desktop" type="button">{{ _("Desktop") }}</button>
+					<button class="btn btn-xs rfq-type-filter" data-type="mac" type="button">{{ _("Mac") }}</button>
+					<button class="btn btn-xs rfq-placeholder-filter" type="button">{{ _("Non-working only") }}</button>
+					<button class="btn btn-xs rfq-placeholder-filter" type="button">{{ _("Overridden only") }}</button>
+				</div>
+				<div class="rfq-model-table-scroll"><table class="rfq-model-table">
+					<thead><tr><th>{{ _("Type") }}</th><th>{{ _("Model") }}</th><th>{{ _("Processor") }}</th><th>{{ _("RAM") }}</th><th>{{ _("SSD") }}</th><th>{{ _("Screen") }}</th><th>{{ _("Segment") }}</th><th>{{ _("Status") }}</th><th>{{ _("Qty") }}</th><th>{{ _("Grade A Rate") }}</th><th>{{ _("Deduction / Unit") }}</th><th>{{ _("Final Rate") }}</th><th>{{ _("Line Total") }}</th></tr></thead>
+					<tbody></tbody><tfoot></tfoot>
+				</table></div>
+			</section>
 		</div>
-		<div class="form-group">
-			<label for="dashboard-rfq">{{ _("RFQ") }}</label>
-			<select class="form-control" id="dashboard-rfq" disabled>
-				<option value="">{{ _("Select RFQ") }}</option>
-			</select>
-		</div>
-	</div>
-
-	<div class="dashboard-message" id="dashboard-message">
-		{{ _("Validating dashboard link...") }}
-	</div>
-
-	<div class="dashboard-content d-none" id="dashboard-content"></div>
+	</main>
 </div>
-<script src="/assets/nj_features/js/rfq_dashboard_renderer.js"></script>
 {% endblock %}

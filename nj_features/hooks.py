@@ -128,6 +128,7 @@ doc_events = {
             "nj_features.nj_features.doctype.nj_repack.nj_repack.on_submit",
     },
     "NJ Quality Inspection": {
+        "before_insert": "nj_features.nj_features.page.inventory_dashboard_.inventory_dashboard_.before_insert_nj_quality_inspection",
         "on_update": "nj_features.nj_features.doctype.department_recommendation_engine.department_recommendation_engine.apply_recommendation_rules",
         "on_submit": "nj_features.nj_features.doctype.department_recommendation_engine.department_recommendation_engine.apply_recommendation_rules",
         "on_update_after_submit": "nj_features.nj_features.doctype.department_recommendation_engine.department_recommendation_engine.apply_recommendation_rules",
@@ -192,6 +193,9 @@ doc_events = {
         "on_submit": [
             "nj_features.nj_features.api.shopify_inventory_targeted.trigger_inventory_sync_from_sales_order",
             "nj_features.nj_features.api.zoho_status_sync.on_sales_order_submit",
+        ],
+        "on_update_after_submit": [
+            "nj_features.nj_features.api.zoho_status_sync.on_sales_order_update_after_submit",
         ],
         "on_cancel": "nj_features.nj_features.api.zoho_status_sync.on_sales_order_cancel",
     },
@@ -290,10 +294,10 @@ scheduler_events = {
         ],
 
         # Runs every minute
-        "*/1 * * * *": [
-            "nj_features.nj_features.api.zoho_quotation_sync.poll_zoho_deals_and_create_quotations",
-            "nj_features.nj_features.api.zoho_quote_sync.poll_zoho_quotes_and_create_quotations",
-        ],
+        # "*/1 * * * *": [
+        #     "nj_features.nj_features.api.zoho_quotation_sync.poll_zoho_deals_and_create_quotations",
+        #     "nj_features.nj_features.api.zoho_quote_sync.poll_zoho_quotes_and_create_quotations",
+        # ],
 
         # Runs every 12 hours: 12 AM and 12 PM server time
         "0 */12 * * *": [

@@ -19,6 +19,7 @@ class RFQQuotationWorkbench {
 				<div class="rfq-brand">NEWJAISA</div>
 				<div class="rfq-breadcrumb">${__("Buying")} › ${__("RFQ")} › <strong class="rfq-breadcrumb-name">—</strong> › ${__("Quotation Workbench")}</div>
 				<div class="rfq-top-actions">
+					<button class="btn rfq-create-manual-qi">${__("Create Manual QI")}</button>
 					<button class="btn rfq-ui-only">${__("Recalculate from QC")}</button>
 					<button class="btn rfq-ui-only">${__("Export XLSX")}</button>
 					<button class="btn btn-light rfq-ui-only">${__("Generate Quotation")}</button>
@@ -74,8 +75,70 @@ class RFQQuotationWorkbench {
 						<tfoot></tfoot>
 					</table></div>
 				</section>
+				<section class="rfq-qc-record-card">
+					<div class="rfq-qc-record-head">
+						<span class="rfq-section-number">02</span>
+						<div>
+							<h3>${__("Serial-level QC record")}</h3>
+							<p>${__("Every inspection row from NJ Quality Inspection for this RFQ. Blank cells were not tested on that unit.")}</p>
+						</div>
+						<span class="rfq-qc-counter">${__("Showing 8 of 412")}</span>
+						<button class="btn btn-default btn-sm rfq-ui-only">${__("Open full QC list")}</button>
+					</div>
+					<div class="rfq-qc-toolbar">
+						<input class="form-control rfq-qc-search" placeholder="${__("Search serial number")}">
+						<button class="btn btn-xs rfq-qc-filter is-active" data-qc-filter="all">${__("All models")}</button>
+						<button class="btn btn-xs rfq-qc-filter" data-qc-filter="grade_c">${__("Has Grade C")}</button>
+						<button class="btn btn-xs rfq-qc-filter" data-qc-filter="tested">${__("Function-tested only")}</button>
+						<button class="btn btn-xs rfq-qc-filter" data-qc-filter="flagged">${__("Flagged by inspector")}</button>
+					</div>
+					<div class="rfq-qc-table-scroll"><table class="rfq-qc-table">
+						<thead>
+							<tr>
+								<th>${__("Serial No.")}</th>
+								<th>${__("QI Name")}</th>
+								<th>${__("Model")}</th>
+								<th>${__("QC Date")}</th>
+								<th>${__("Inspection Type")}</th>
+								<th>${__("Body A")}</th>
+								<th>${__("Body D Base Cover")}</th>
+								<th>${__("Camera")}</th>
+								<th>${__("Speaker")}</th>
+								<th>${__("Hinges")}</th>
+								<th>${__("Fan")}</th>
+								<th>${__("Touchpad Button")}</th>
+								<th>${__("WiFi Card")}</th>
+								<th>${__("Power Button")}</th>
+								<th>${__("Motherboard")}</th>
+								<th>${__("Software Configuration")}</th>
+								<th>${__("Body B")}</th>
+								<th>${__("Laptop Storage")}</th>
+								<th>${__("Display")}</th>
+								<th>${__("Battery")}</th>
+								<th>${__("Laptop RAM")}</th>
+								<th>${__("Body C Touchpad")}</th>
+								<th>${__("Body D")}</th>
+								<th>${__("Keyboard")}</th>
+								<th>${__("Deduction")}</th>
+							</tr>
+						</thead>
+						<tbody></tbody>
+					</table></div>
+					<div class="rfq-qc-legend">
+						<span><span class="rfq-grade-badge grade-a">A</span> ${__("as-new")}</span>
+						<span><span class="rfq-grade-badge grade-b">B</span> ${__("minor wear, no deduction")}</span>
+						<span><span class="rfq-grade-badge grade-d">D</span> ${__("defective, 20% of component value")}</span>
+						<span><span class="rfq-grade-badge grade-c">C</span> ${__("failed or missing, 100% of component value")}</span>
+						<span><span class="rfq-grade-badge grade-dash">—</span> ${__("not tested on this unit, scaled from sample")}</span>
+					</div>
+				</section>
 			</div>
 		</div>`).appendTo(this.page.body);
+
+		this.$body.find(".rfq-create-manual-qi").on("click", (event) => {
+			event.preventDefault();
+			this.openCreateManualQiDialog();
+		});
 
 		this.$body.find(".rfq-ui-only").on("click", (event) => {
 			event.preventDefault();
@@ -92,6 +155,188 @@ class RFQQuotationWorkbench {
 			this.renderModelRows();
 		});
 		this.$body.find(".rfq-placeholder-filter").on("click", (event) => event.preventDefault());
+
+		this.activeQcFilter = "all";
+		this.$body.find(".rfq-qc-search").on("input", () => this.renderSerialQcRows());
+		this.$body.find(".rfq-qc-filter").on("click", (event) => {
+			event.preventDefault();
+			this.activeQcFilter = $(event.currentTarget).attr("data-qc-filter");
+			this.$body.find(".rfq-qc-filter").removeClass("is-active");
+			$(event.currentTarget).addClass("is-active");
+			this.renderSerialQcRows();
+		});
+	}
+
+	openCreateManualQiDialog() {
+		const rfq = this.rfqField ? this.rfqField.get_value() : "";
+		if (!rfq) {
+			frappe.msgprint(__("Please select a Request for Quotation (RFQ) first."));
+			return;
+		}
+
+		const dialog = new frappe.ui.Dialog({
+			title: __("Create Manual QI"),
+			fields: [
+				{
+					fieldname: "ext_serial_no",
+					label: __("EXT Serial No"),
+					fieldtype: "Data",
+					read_only: 1
+				},
+				{
+					fieldname: "item_code",
+					label: __("Item Code"),
+					fieldtype: "Link",
+					options: "Item",
+					reqd: 1,
+					onchange: () => {
+						const item_code = dialog.get_value("item_code");
+						if (!item_code) {
+							dialog.set_value("item_wizard", "");
+							dialog._item_wizard_data = null;
+							return;
+						}
+						frappe.call({
+							method: "nj_features.nj_features.page.inventory_dashboard_.inventory_dashboard_.get_item_wizard_for_item",
+							args: { item_code: item_code },
+							callback: (r) => {
+								if (r.message && r.message.name) {
+									dialog.set_value("item_wizard", r.message.name);
+									dialog._item_wizard_data = r.message;
+								} else {
+									dialog.set_value("item_wizard", "");
+									dialog._item_wizard_data = null;
+									frappe.msgprint(__("Item Wizard not found for Item Code: {0}", [item_code]));
+								}
+							},
+							error: () => {
+								dialog.set_value("item_wizard", "");
+								dialog._item_wizard_data = null;
+							}
+						});
+					}
+				},
+				{
+					fieldname: "item_wizard",
+					label: __("Item Wizard"),
+					fieldtype: "Link",
+					options: "Item Wizards",
+					read_only: 1
+				}
+			],
+			primary_action_label: __("Create QI"),
+			primary_action: (values) => {
+				if (!values.ext_serial_no) {
+					frappe.msgprint(__("First generate EXT Serial No"));
+					return;
+				}
+				if (!values.item_code) {
+					frappe.msgprint(__("Please select Item Code"));
+					return;
+				}
+				if (!values.item_wizard) {
+					frappe.msgprint(__("Item Wizard not found for the selected Item Code"));
+					return;
+				}
+
+				frappe.call({
+					method: "nj_features.nj_features.page.inventory_dashboard_.inventory_dashboard_.get_manual_qi_context",
+					args: {
+						item_code: values.item_code,
+						item_wizard: values.item_wizard,
+						ext_serial_no: values.ext_serial_no,
+						rfq: rfq
+					},
+					callback: (r) => {
+						const ctx = r.message || {};
+						dialog.hide();
+						frappe.route_options = {
+							barcode: values.ext_serial_no,
+							item_code: values.item_code,
+							item_wizard: values.item_wizard,
+							item_group: ctx.item_group || "",
+							brand: ctx.brand || "",
+							model: ctx.model || "",
+							department: ctx.department || "",
+							warehouse: ctx.work_warehouse || "",
+							rfq_id: rfq
+						};
+						frappe.model.with_doctype("NJ Quality Inspection", () => {
+							const new_name = frappe.model.make_new_doc_and_get_name("NJ Quality Inspection");
+							const new_doc = locals["NJ Quality Inspection"] && locals["NJ Quality Inspection"][new_name];
+							if (new_doc) {
+								new_doc.barcode = values.ext_serial_no;
+								new_doc.item_code = values.item_code;
+								new_doc.item_wizard = values.item_wizard;
+								new_doc.item_group = ctx.item_group || "";
+								new_doc.brand = ctx.brand || "";
+								new_doc.model = ctx.model || "";
+								new_doc.department = ctx.department || "";
+								new_doc.warehouse = ctx.work_warehouse || "";
+								new_doc.rfq_id = rfq;
+							}
+							frappe.set_route("Form", "NJ Quality Inspection", new_name);
+						});
+					}
+				});
+			}
+		});
+
+		dialog.set_secondary_action_label(__("Generate EXT SN"));
+		dialog.set_secondary_action(() => {
+			const existing_sn = dialog.get_value("ext_serial_no");
+			if (existing_sn) {
+				frappe.msgprint(__("Already serial no generated: {0}", [existing_sn]));
+				return;
+			}
+
+			const item_code = dialog.get_value("item_code");
+			if (!item_code) {
+				frappe.msgprint(__("Please select Item Code first."));
+				return;
+			}
+
+			frappe.call({
+				method: "nj_features.nj_features.page.inventory_dashboard_.inventory_dashboard_.generate_ext_serial_no",
+				args: {
+					rfq: rfq,
+					item_code: item_code
+				},
+				callback: (r) => {
+					if (r.message) {
+						const serial_no = typeof r.message === "object" ? r.message.serial_no : r.message;
+						const returned_item_code = typeof r.message === "object" ? r.message.item_code : null;
+						dialog.set_value("ext_serial_no", serial_no);
+						if (!dialog.get_value("item_code") && returned_item_code) {
+							dialog.set_value("item_code", returned_item_code);
+						}
+						frappe.show_alert({
+							message: __("Generated EXT Serial No: {0}", [serial_no]),
+							indicator: "green"
+						});
+					}
+				}
+			});
+		});
+
+		// Filter item_code to items associated with this RFQ
+		frappe.call({
+			method: "nj_features.nj_features.doctype.njqca.njqca.get_item_code_from_rfq_id",
+			args: { rfq_id: rfq },
+			callback: (r) => {
+				const items = (r.message || []).map((x) => x.item_code).filter(Boolean);
+				if (items.length) {
+					dialog.get_field("item_code").get_query = () => ({
+						filters: { name: ["in", items] }
+					});
+					if (items.length === 1) {
+						dialog.set_value("item_code", items[0]);
+					}
+				}
+			}
+		});
+
+		dialog.show();
 	}
 
 	makeFilters() {
@@ -179,6 +424,8 @@ class RFQQuotationWorkbench {
 		this.$body.find(".rfq-model-search").val("");
 		this.$body.find(".rfq-type-filter").removeClass("is-active").filter('[data-type="all"]').addClass("is-active");
 		this.renderModelRows();
+		this.serialQcRows = data.serial_qc_rows || [];
+		this.renderSerialQcRows();
 	}
 
 	resetWorkbench() {
@@ -197,6 +444,8 @@ class RFQQuotationWorkbench {
 		this.$body.find(".rfq-breadcrumb-name").text("—");
 		this.modelRows = [];
 		this.renderModelRows();
+		this.serialQcRows = [];
+		this.renderSerialQcRows();
 	}
 
 	normalizeType(value) {
@@ -219,7 +468,7 @@ class RFQQuotationWorkbench {
 			<td><span class="rfq-type-pill rfq-type-${this.normalizeType(row.type)}">${escape(row.type || "")}</span></td>
 			<td class="rfq-model-name">${escape(row.model || "")}</td>
 			<td>${escape(row.processor || "")}</td><td>${escape(row.ram || "")}</td><td>${escape(row.ssd || "")}</td><td>${escape(row.screen || "")}</td>
-			<td></td><td><span class="rfq-status-badge ${row.status === "Working" ? "is-working" : "is-not-working"}">${escape(row.status || "")}</span></td><td class="rfq-model-qty">${format_number(row.qty || 0, null, 2)}</td><td class="rfq-grade-a-rate">${row.grade_a_rate === null || row.grade_a_rate === undefined ? "" : format_currency(row.grade_a_rate, this.currency)}</td><td class="rfq-deduction-rate">${format_currency(row.deduction_per_unit || 0, this.currency)}</td><td class="rfq-final-rate">${row.final_rate === null || row.final_rate === undefined ? "" : format_currency(row.final_rate, this.currency)}</td><td class="rfq-line-total">${row.line_total === null || row.line_total === undefined ? "" : format_currency(row.line_total, this.currency)}</td>
+			<td>${escape(row.segment || "")}</td><td><span class="rfq-status-badge ${row.status === "Working" ? "is-working" : "is-not-working"}">${escape(row.status || "")}</span></td><td class="rfq-model-qty">${format_number(row.qty || 0, null, 2)}</td><td class="rfq-grade-a-rate">${row.grade_a_rate === null || row.grade_a_rate === undefined ? "" : format_currency(row.grade_a_rate, this.currency)}</td><td class="rfq-deduction-rate">${format_currency(row.deduction_per_unit || 0, this.currency)}</td><td class="rfq-final-rate">${row.final_rate === null || row.final_rate === undefined ? "" : format_currency(row.final_rate, this.currency)}</td><td class="rfq-line-total">${row.line_total === null || row.line_total === undefined ? "" : format_currency(row.line_total, this.currency)}</td>
 		</tr>`).join("");
 		this.$body.find(".rfq-model-table tbody").html(body || `<tr><td colspan="13" class="rfq-model-empty">${__("No matching RFQ items found.")}</td></tr>`);
 		const totalQty = rows.reduce((total, row) => total + Number(row.qty || 0), 0);
@@ -236,6 +485,67 @@ class RFQQuotationWorkbench {
 			<td><strong>${format_currency(averageFinalRate, this.currency)}</strong> <small>${__("avg")}</small></td>
 			<td><strong>${format_currency(lineTotal, this.currency)}</strong></td>
 		</tr>`);
+	}
+
+	renderSerialQcRows() {
+		const escape = frappe.utils.escape_html;
+		const search = String(this.$body.find(".rfq-qc-search").val() || "").trim().toLowerCase();
+		const rows = this.serialQcRows || [];
+
+		const gradeBadge = (grade) => {
+			const g = String(grade || "").trim().toUpperCase();
+			if (g === "A") return `<span class="rfq-grade-badge grade-a">A</span>`;
+			if (g === "B") return `<span class="rfq-grade-badge grade-b">B</span>`;
+			if (g === "C") return `<span class="rfq-grade-badge grade-c">C</span>`;
+			if (g === "D") return `<span class="rfq-grade-badge grade-d">D</span>`;
+			return `<span class="rfq-grade-badge grade-dash">—</span>`;
+		};
+
+		const filtered = rows.filter((row) => {
+			const matchesSearch = !search || `${row.serial_no || ""} ${row.qi_name || ""} ${row.model || ""}`.toLowerCase().includes(search);
+			if (!matchesSearch) return false;
+			if (this.activeQcFilter === "grade_c") {
+				return Object.values(row).includes("C");
+			}
+			if (this.activeQcFilter === "tested") {
+				return String(row.inspection_type || "").toLowerCase().includes("full");
+			}
+			if (this.activeQcFilter === "flagged") {
+				return Number(row.deduction || 0) > 0;
+			}
+			return true;
+		});
+
+		const body = filtered.map((row) => `<tr>
+			<td class="rfq-qc-serial">${escape(row.serial_no || "")}</td>
+			<td><a href="/app/nj-quality-inspection/${encodeURIComponent(row.qi_name || "")}" target="_blank" class="rfq-qc-name" title="${escape(row.qi_name || "")}">${escape(row.qi_name || "")}</a></td>
+			<td><span class="rfq-qc-model" title="${escape(row.model || "")}">${escape(row.model || "")}</span></td>
+			<td>${escape(row.qc_date || "")}</td>
+			<td><span class="rfq-depth-pill ${String(row.inspection_type || "").toLowerCase().includes("full") ? "is-full" : "is-spec"}">${escape(row.inspection_type || "—")}</span></td>
+			<td>${gradeBadge(row.body_a)}</td>
+			<td>${gradeBadge(row.body_d_base_cover)}</td>
+			<td>${gradeBadge(row.camera)}</td>
+			<td>${gradeBadge(row.speaker)}</td>
+			<td>${gradeBadge(row.hinges)}</td>
+			<td>${gradeBadge(row.fan)}</td>
+			<td>${gradeBadge(row.touchpad_button)}</td>
+			<td>${gradeBadge(row.wifi_card)}</td>
+			<td>${gradeBadge(row.power_button)}</td>
+			<td>${gradeBadge(row.motherboard)}</td>
+			<td>${gradeBadge(row.software_configuration)}</td>
+			<td>${gradeBadge(row.body_b)}</td>
+			<td>${gradeBadge(row.laptop_storage)}</td>
+			<td>${gradeBadge(row.display)}</td>
+			<td>${gradeBadge(row.battery)}</td>
+			<td>${gradeBadge(row.laptop_ram)}</td>
+			<td>${gradeBadge(row.body_c_touchpad)}</td>
+			<td>${gradeBadge(row.body_d)}</td>
+			<td>${gradeBadge(row.keyboard)}</td>
+			<td class="rfq-qc-deduction">${row.deduction ? format_currency(row.deduction, this.currency) : (row.deduction === 0 ? format_currency(0, this.currency) : "—")}</td>
+		</tr>`).join("");
+
+		this.$body.find(".rfq-qc-table tbody").html(body || `<tr><td colspan="25" class="rfq-model-empty">${__("No inspection records found for this RFQ.")}</td></tr>`);
+		this.$body.find(".rfq-qc-counter").text(`${__("Showing {0} of {1}", [filtered.length, rows.length])}`);
 	}
 
 	setValue(field, value) { this.$body.find(`[data-value="${field}"]`).text(value); }
@@ -277,6 +587,51 @@ class RFQQuotationWorkbench {
 			.rfq-model-table th:nth-child(1) { width:85px; } .rfq-model-table th:nth-child(2) { width:205px; } .rfq-model-table th:nth-child(3) { width:140px; } .rfq-model-table th:nth-child(4), .rfq-model-table th:nth-child(5), .rfq-model-table th:nth-child(6) { width:80px; } .rfq-model-table th:nth-child(7), .rfq-model-table th:nth-child(8) { width:90px; } .rfq-model-table th:nth-child(9) { width:70px; }\
 			.rfq-model-name { font-weight:600; } .rfq-model-qty { font-weight:600; } .rfq-type-pill { background:var(--control-bg); border-radius:3px; color:var(--primary); display:inline-block; font-size:9px; font-weight:600; padding:2px 5px; } .rfq-status-badge { border-radius:3px; display:inline-block; font-size:9px; font-weight:600; padding:2px 6px; white-space:nowrap; } .rfq-status-badge.is-working { background:var(--green-100,rgba(34,197,94,.12)); color:var(--green-600,#16823b); } .rfq-status-badge.is-not-working { background:var(--red-100,rgba(239,68,68,.12)); color:var(--red-500,#d12d22); }\
 			.rfq-model-table tfoot td { background:var(--control-bg); border-bottom:0; border-top:2px solid var(--primary); white-space:nowrap; } .rfq-model-table tfoot small { color:var(--text-muted); font-size:8px; margin-left:3px; } .rfq-model-table tfoot .rfq-total-deduction strong { color:var(--red-500,#d12d22); } .rfq-model-empty { color:var(--text-muted) !important; padding:22px !important; text-align:center; }\
+			.rfq-qc-record-card { background:var(--card-bg); border:1px solid var(--border-color); border-radius:4px; margin-top:14px; overflow:hidden; }\
+			.rfq-qc-record-head { align-items:center; border-bottom:1px solid var(--border-color); display:flex; gap:12px; min-height:62px; padding:10px 16px; }\
+			.rfq-qc-record-head h3 { color:var(--heading-color); font-size:14px; font-weight:700; margin:0; } .rfq-qc-record-head p { color:var(--text-muted); font-size:9px; margin:3px 0 0; }\
+			.rfq-qc-counter { color:var(--text-muted); font-size:10px; margin-left:auto; }\
+			.rfq-qc-toolbar { align-items:center; display:flex; flex-wrap:wrap; gap:8px; padding:9px 16px; }\
+			.rfq-qc-search { background:var(--control-bg); border-color:var(--border-color); color:var(--text-color); font-size:10px; height:29px; width:210px; }\
+			.rfq-qc-filter { background:var(--card-bg); border:1px solid var(--border-color); border-radius:15px; color:var(--text-color); font-size:9px; padding:4px 11px; }\
+			.rfq-qc-filter.is-active { background:var(--primary); border-color:var(--primary); color:#fff; }\
+			.rfq-qc-table-scroll { overflow-x:auto; }\
+			.rfq-qc-table { border-collapse:collapse; min-width:2600px; table-layout:fixed; width:100%; }\
+			.rfq-qc-table th { background:var(--primary); color:#fff; font-size:9px; font-weight:700; letter-spacing:.5px; padding:9px 10px; text-align:center; text-transform:uppercase; white-space:nowrap; min-width:85px; }\
+			.rfq-qc-table th:nth-child(1) { width: 140px; min-width: 140px; text-align:left; }\
+			.rfq-qc-table th:nth-child(2) { width: 250px; min-width: 250px; text-align:left; }\
+			.rfq-qc-table th:nth-child(3) { width: 180px; min-width: 180px; text-align:left; }\
+			.rfq-qc-table th:nth-child(4) { width: 90px; min-width: 90px; text-align:left; }\
+			.rfq-qc-table th:nth-child(5) { width: 120px; min-width: 120px; text-align:left; }\
+			.rfq-qc-table th:nth-child(7) { width: 145px; min-width: 145px; }\
+			.rfq-qc-table th:nth-child(12) { width: 130px; min-width: 130px; }\
+			.rfq-qc-table th:nth-child(14) { width: 115px; min-width: 115px; }\
+			.rfq-qc-table th:nth-child(16) { width: 165px; min-width: 165px; }\
+			.rfq-qc-table th:nth-child(18) { width: 125px; min-width: 125px; }\
+			.rfq-qc-table th:nth-child(22) { width: 140px; min-width: 140px; }\
+			.rfq-qc-table th:nth-child(25) { width: 110px; min-width: 110px; text-align:right; }\
+			.rfq-qc-table td { border-bottom:1px solid var(--border-color); color:var(--text-color); font-size:10px; height:38px; padding:6px 10px; text-align:center; vertical-align:middle; white-space:nowrap; }\
+			.rfq-qc-table td:nth-child(1) { text-align:left; }\
+			.rfq-qc-table td:nth-child(2) { text-align:left; }\
+			.rfq-qc-table td:nth-child(3) { text-align:left; }\
+			.rfq-qc-table td:nth-child(4) { text-align:left; }\
+			.rfq-qc-table td:nth-child(5) { text-align:left; }\
+			.rfq-qc-table tbody tr:nth-child(even) td { background:var(--control-bg); }\
+			.rfq-qc-serial { font-weight:600; }\
+			.rfq-qc-name { color:var(--primary); font-weight:500; display:inline-block; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:middle; text-decoration:none; }\
+			.rfq-qc-name:hover { text-decoration:underline; }\
+			.rfq-qc-model { display:inline-block; max-width:170px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:middle; }\
+			.rfq-qc-deduction { font-weight:600; color:var(--red-500,#d12d22); text-align:right !important; }\
+			.rfq-grade-badge { border-radius:3px; display:inline-block; font-size:9px; font-weight:700; height:18px; line-height:18px; text-align:center; width:18px; }\
+			.rfq-grade-badge.grade-a { background:rgba(34,197,94,.15); color:#16a34a; }\
+			.rfq-grade-badge.grade-b { background:rgba(59,130,246,.15); color:#2563eb; }\
+			.rfq-grade-badge.grade-c { background:rgba(239,68,68,.15); color:#dc2626; }\
+			.rfq-grade-badge.grade-d { background:rgba(245,158,11,.15); color:#d97706; }\
+			.rfq-grade-badge.grade-dash { color:var(--text-muted); }\
+			.rfq-depth-pill { background:rgba(34,197,94,.12); border-radius:3px; color:#16a34a; display:inline-block; font-size:9px; font-weight:600; padding:2px 6px; }\
+			.rfq-depth-pill.is-spec { background:rgba(59,130,246,.12); color:#2563eb; }\
+			.rfq-qc-legend { align-items:center; background:var(--card-bg); border-top:1px solid var(--border-color); color:var(--text-muted); display:flex; flex-wrap:wrap; gap:20px; font-size:10px; padding:10px 16px; }\
+			.rfq-qc-legend > span { align-items:center; display:inline-flex; gap:6px; }\
 			@media (max-width:1200px) { .rfq-kpi-grid { grid-template-columns:repeat(4,1fr); } .rfq-kpi { border-bottom:1px solid var(--border-color); } .rfq-overview-head { flex-direction:column; } }\
 			@media (max-width:767px) { .rfq-workbench-topbar { align-items:flex-start; flex-wrap:wrap; } .rfq-top-actions { margin-left:0; width:100%; } .rfq-filter-panel { grid-template-columns:1fr; } .rfq-kpi-grid { grid-template-columns:repeat(2,1fr); } .rfq-overview-meta { flex-wrap:wrap; gap:14px; } }\
 		</style>").appendTo("head");

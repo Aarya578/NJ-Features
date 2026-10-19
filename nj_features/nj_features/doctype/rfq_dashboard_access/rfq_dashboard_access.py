@@ -164,6 +164,14 @@ def get_public_dashboard(token, rfq):
     )
 
     dashboard = get_supplier_rfq_dashboard(access.supplier, rfq)
+    dashboard["njpulse_url"] = (
+        frappe.db.get_value(
+            "NJ Settings",
+            {"parameter": "njpluse_url_for_qi"},
+            "value",
+        )
+        or ""
+    ).strip()
 
     if access.one_time_use:
         frappe.db.set_value(

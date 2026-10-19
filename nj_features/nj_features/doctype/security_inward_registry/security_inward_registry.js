@@ -214,20 +214,62 @@ frappe.ui.form.on('Security Inward Registry', {
 		}
 	},
 	tracking_id: function(frm) {
-		let tracking_id = frm.doc.tracking_id;
+		let tracking_id = (frm.doc.tracking_id || '').trim();
 	
-		if (!tracking_id || tracking_id.trim() === '') {
+		if (!tracking_id) {
 			return;
-		} else {
-			
-			let new_row = frm.add_child("customer_return_registry");
-			frappe.model.set_value(new_row.doctype, new_row.name, "tracking_id", tracking_id);
-			frappe.model.set_value(new_row.doctype, new_row.name, "warehouse", frm.doc.default_warehouse);
-			frm.set_value("tracking_id", '');
-			update_tracking_qty(frm);
-	
-			frm.refresh_field("customer_return_registry");
 		}
+
+		frm.set_value("tracking_id", '');
+
+		frappe.call({
+			method: "nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_customer_return_details",
+			args: { tracking_id: tracking_id },
+			freeze: true,
+			freeze_message: __("Fetching Customer Return details..."),
+			callback: function(r) {
+				if (r.message && r.message.length > 0) {
+					let existing_serials = (frm.doc.customer_return_registry || [])
+						.map(row => (row.serial_no || '').trim())
+						.filter(Boolean);
+
+					let duplicates = [];
+					r.message.forEach(item => {
+						if (item.serial_no && existing_serials.includes(item.serial_no.trim())) {
+							duplicates.push(item.serial_no.trim());
+						}
+					});
+
+					if (duplicates.length > 0) {
+						frappe.msgprint({
+							title: __('Duplicate Serial'),
+							message: __('Serial No <b>{0}</b> is already scanned / present in the inward registry.', [duplicates.join(', ')]),
+							indicator: 'red'
+						});
+						return;
+					}
+
+					r.message.forEach(item => {
+						let new_row = frm.add_child("customer_return_registry");
+						frappe.model.set_value(new_row.doctype, new_row.name, "tracking_id", tracking_id);
+						frappe.model.set_value(new_row.doctype, new_row.name, "sales_order", item.sales_order || '');
+						frappe.model.set_value(new_row.doctype, new_row.name, "item_code", item.item_code || '');
+						frappe.model.set_value(new_row.doctype, new_row.name, "qty", item.qty || 1);
+						frappe.model.set_value(new_row.doctype, new_row.name, "serial_no", item.serial_no || '');
+						frappe.model.set_value(new_row.doctype, new_row.name, "warehouse", frm.doc.default_warehouse);
+						frappe.model.set_value(new_row.doctype, new_row.name, "reference_doctype", item.reference_doctype || 'Delivery Note');
+						frappe.model.set_value(new_row.doctype, new_row.name, "reference_name", item.reference_name || '');
+						frappe.model.set_value(new_row.doctype, new_row.name, "data", frappe.datetime.nowdate());
+					});
+
+					update_tracking_qty(frm);
+					frm.refresh_field("customer_return_registry");
+				}
+			},
+			error: function() {
+				frm.set_value("tracking_id", '');
+			}
+		});
 	},
 
 	

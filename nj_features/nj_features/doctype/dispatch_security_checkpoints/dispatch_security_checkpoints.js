@@ -3,6 +3,8 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
         if (frm.doc.docstatus == 0) {
             frm.set_df_property('dispatch_security_child_table', 'cannot_add_rows', true);
             frm.set_df_property('dispatch_security_retutn_table', 'cannot_add_rows', true);
+            frm.set_df_property('asset_security_entries', 'cannot_add_rows', true);
+            frm.set_df_property('asset_security_entries', 'cannot_delete_rows', true);
         }
     },
     // after_save(frm) {
@@ -21,11 +23,23 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
     //     });
     // },
     refresh: function(frm) {
+        applyDispatchTypeLayout(frm);
         setupDispatchScannerOnly(frm, 'scan_serial_no');
         setupDispatchScannerOnly(frm, 'barcode');
+        configureAssetSecurityGrid(frm);
         $('.col-lg-2.layout-side-section').hide();
         if (frm.doc.docstatus == 0) {
             $('[data-fieldname="scan_serial_no"]').focus();
+        }
+    },
+
+    dispatch_type: function(frm) {
+        frm.set_value('barcode', '');
+        frm.set_value('scan_serial_no', '');
+        applyDispatchTypeLayout(frm);
+        configureAssetSecurityGrid(frm);
+        if (frm.doc.dispatch_type === 'Asset') {
+            window.setTimeout(() => $('[data-fieldname="barcode"]').focus(), 100);
         }
     },
 
@@ -129,7 +143,9 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
                         frappe.msgprint(__('Error occurred while scanning Serial No.', err));
                     }
                 });
-            }      
+            } else if (frm.doc.dispatch_type === 'Asset') {
+                processAssetSecurityScan(frm, frm.doc.scan_serial_no);
+            }
         }
     },
     purchase_reciept_name: function(frm) {
@@ -213,6 +229,147 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
         }
     }
 });
+
+function applyDispatchTypeLayout(frm) {
+    const isAsset = frm.doc.dispatch_type === 'Asset';
+    const usesBarcode = frm.doc.dispatch_type === 'Sales Order' || isAsset;
+    const existingDispatchFields = [
+        'delivery_partner_name',
+        'delivery_partner_no',
+        'vehicle_no',
+        'attach_image_nplp9',
+    ];
+
+    frm.toggle_display('barcode', usesBarcode);
+    frm.toggle_display('dispatch_security_child_table', !isAsset);
+    frm.toggle_display('dispatch_security_return_table', !isAsset);
+    frm.toggle_display('dispatch_security_stock_entry_table', !isAsset);
+    frm.toggle_display('asset_entries_section', isAsset);
+    frm.toggle_display('asset_security_entries', isAsset);
+
+    existingDispatchFields.forEach(function(fieldname) {
+        frm.toggle_display(fieldname, !isAsset);
+        frm.toggle_reqd(fieldname, !isAsset);
+    });
+}
+
+function configureAssetSecurityGrid(frm) {
+    const field = frm.get_field('asset_security_entries');
+    if (!field || !field.grid) return;
+
+    field.grid.cannot_add_rows = true;
+    field.grid.cannot_delete_rows = true;
+    field.grid.refresh();
+}
+
+function processAssetSecurityScan(frm, serialNo) {
+    frappe.call({
+        method: 'nj_features.nj_features.doctype.dispatch_security_checkpoints.dispatch_security_checkpoints.get_asset_security_scan_details',
+        args: { serial_no: serialNo },
+        freeze: true,
+        freeze_message: __('Checking asset gate status...'),
+        callback: function(r) {
+            clearDispatchScannerField(frm, 'scan_serial_no');
+            if (!r.message) return;
+
+            const details = r.message;
+            const draftRows = (frm.doc.asset_security_entries || [])
+                .filter(row => row.serial_no === details.serial_no);
+            const previous = draftRows.length
+                ? draftRows[draftRows.length - 1]
+                : {
+                    asset_action: details.previous_action,
+                    scan_time: details.previous_action_time,
+                    scanned_by: details.previous_scanned_by,
+                    parent: details.previous_document,
+                };
+            const expectedAction = previous.asset_action === 'Outward' ? 'Inward' : 'Outward';
+
+            const dialog = new frappe.ui.Dialog({
+                title: __('Confirm Asset Gate Action'),
+                fields: [
+                    { fieldtype: 'Data', fieldname: 'serial_no', label: __('Serial No'), default: details.serial_no, read_only: 1 },
+                    { fieldtype: 'Link', fieldname: 'item_code', label: __('Item Code'), options: 'Item', default: details.item_code, read_only: 1 },
+                    { fieldtype: 'Link', fieldname: 'employee', label: __('Employee'), options: 'Employee', default: details.employee, read_only: 1 },
+                    { fieldtype: 'Data', fieldname: 'employee_name', label: __('Employee Name'), default: details.employee_name, read_only: 1 },
+                    { fieldtype: 'Link', fieldname: 'warehouse', label: __('Warehouse'), options: 'Warehouse', default: details.warehouse, read_only: 1 },
+                    { fieldtype: 'Data', fieldname: 'warehouse_type', label: __('Warehouse Type'), default: details.warehouse_type, read_only: 1 },
+                    { fieldtype: 'Section Break' },
+                    {
+                        fieldtype: 'Data',
+                        fieldname: 'latest_status',
+                        label: __('Latest Gate Status'),
+                        default: previous.asset_action || __('No previous gate entry'),
+                        read_only: 1,
+                    },
+                    {
+                        fieldtype: 'Select',
+                        fieldname: 'asset_action',
+                        label: __('Asset Action'),
+                        options: '\nOutward\nInward',
+                        default: expectedAction,
+                        reqd: 1,
+                    },
+                ],
+                primary_action_label: __('Add Gate Entry'),
+                primary_action: function(values) {
+                    if (values.asset_action !== expectedAction) {
+                        showInvalidAssetAction(details.serial_no, values.asset_action, previous, expectedAction);
+                        return;
+                    }
+
+                    frm.add_child('asset_security_entries', {
+                        serial_no: details.serial_no,
+                        item_code: details.item_code,
+                        employee: details.employee,
+                        employee_name: details.employee_name,
+                        warehouse: details.warehouse,
+                        warehouse_type: details.warehouse_type,
+                        asset_action: values.asset_action,
+                        scan_time: frappe.datetime.now_datetime(),
+                        scanned_by: frappe.session.user,
+                        previous_action: previous.asset_action || '',
+                        previous_action_time: previous.scan_time || '',
+                    });
+                    frm.refresh_field('asset_security_entries');
+                    dialog.hide();
+                    $('[data-fieldname="barcode"]').focus();
+                },
+            });
+            dialog.show();
+        },
+        error: function() {
+            clearDispatchScannerField(frm, 'scan_serial_no');
+            $('[data-fieldname="barcode"]').focus();
+        },
+    });
+}
+
+function showInvalidAssetAction(serialNo, requestedAction, previous, expectedAction) {
+    if (!previous.asset_action && requestedAction === 'Inward') {
+        frappe.msgprint({
+            title: __('Inward Not Allowed'),
+            indicator: 'red',
+            message: __('Serial No {0} has no previous Outward gate entry. Record Outward before Inward.', [frappe.utils.escape_html(serialNo)]),
+        });
+        return;
+    }
+
+    frappe.msgprint({
+        title: __('Asset Action Not Allowed'),
+        indicator: 'red',
+        message: __(
+            'Serial No {0} is already {1}. The next permitted action is {2}.<br>Last recorded by {3} at {4}.',
+            [
+                frappe.utils.escape_html(serialNo),
+                frappe.utils.escape_html(previous.asset_action || ''),
+                expectedAction,
+                frappe.utils.escape_html(previous.scanned_by || __('Unknown user')),
+                frappe.utils.escape_html(previous.scan_time || __('Unknown time')),
+            ]
+        ),
+    });
+}
 
 const DISPATCH_SCANNER_MESSAGE = "Please use the scanner to scan barcode.";
 const DISPATCH_SCANNER_MIN_LENGTH = 3;

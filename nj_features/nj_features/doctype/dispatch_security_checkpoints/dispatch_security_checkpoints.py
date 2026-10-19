@@ -4,14 +4,90 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import add_days, nowdate, getdate
+from frappe.utils import add_days, getdate, now_datetime, nowdate
+
+
+EMPLOYEE_PERSONAL_WAREHOUSE_TYPE = "Employee Personal Warehouse"
+ASSET_ACTIONS = ("Outward", "Inward")
 
 class DispatchSecurityCheckpoints(Document):
-    pass
+    def validate(self):
+        if self.dispatch_type == "Asset":
+            self.validate_asset_security_entries()
+
+    def before_submit(self):
+        if self.dispatch_type == "Asset":
+            self.validate_asset_security_entries(lock_serials=True)
+
     def on_submit(self):
         self.update_send_email_DN()
         self.update_payment_recived()
         # self.update_send_email_SI()
+
+    def validate_asset_security_entries(self, lock_serials=False):
+        entries = self.get("asset_security_entries") or []
+        if not entries:
+            frappe.throw(_("Scan at least one Serial No before saving an Asset security checkpoint."))
+
+        serial_nos = list(dict.fromkeys(row.serial_no for row in entries if row.serial_no))
+        if lock_serials and serial_nos:
+            frappe.db.sql(
+                "SELECT name FROM `tabSerial No` WHERE name IN %(serial_nos)s FOR UPDATE",
+                {"serial_nos": tuple(serial_nos)},
+            )
+
+        latest_states = {
+            serial_no: get_latest_asset_gate_action(serial_no, exclude_document=self.name)
+            for serial_no in serial_nos
+        }
+
+        for row in entries:
+            if not row.serial_no:
+                frappe.throw(_("Serial No is required in Asset Security Entry row {0}.").format(row.idx))
+
+            serial_details = get_employee_asset_serial_details(row.serial_no)
+            previous = latest_states.get(row.serial_no)
+            expected_action = get_next_asset_action(previous.get("asset_action") if previous else None)
+
+            if row.asset_action not in ASSET_ACTIONS:
+                frappe.throw(
+                    _("Asset Action must be Outward or Inward for Serial No {0}.").format(
+                        frappe.bold(row.serial_no)
+                    )
+                )
+
+            if row.asset_action != expected_action:
+                throw_invalid_asset_action(row.serial_no, row.asset_action, previous, expected_action)
+
+            snapshot_fields = (
+                ("item_code", "Item Code"),
+                ("employee", "Employee"),
+                ("warehouse", "Warehouse"),
+                ("warehouse_type", "Warehouse Type"),
+            )
+            for fieldname, label in snapshot_fields:
+                if (row.get(fieldname) or "") != (serial_details.get(fieldname) or ""):
+                    frappe.throw(
+                        _("{0} mismatch for Serial No {1}. Expected {2}, but the scanned row contains {3}.").format(
+                            label,
+                            frappe.bold(row.serial_no),
+                            frappe.bold(serial_details.get(fieldname) or _("Not Available")),
+                            frappe.bold(row.get(fieldname) or _("Not Available")),
+                        )
+                    )
+
+            if row.is_new():
+                row.scanned_by = frappe.session.user
+                row.scan_time = row.scan_time or now_datetime()
+
+            row.previous_action = previous.get("asset_action") if previous else ""
+            row.previous_action_time = previous.get("scan_time") if previous else None
+            latest_states[row.serial_no] = {
+                "asset_action": row.asset_action,
+                "scan_time": row.scan_time,
+                "scanned_by": row.scanned_by,
+                "parent": self.name,
+            }
 
     def update_send_email_DN(self):
         try:
@@ -51,6 +127,141 @@ class DispatchSecurityCheckpoints(Document):
         except Exception as e:
             frappe.log_error(frappe.get_traceback(), "Error in update_payment_recived")
             frappe.throw(f"Error while updating Sales Order payment_received: {e}")
+
+
+def get_next_asset_action(previous_action):
+    return "Inward" if previous_action == "Outward" else "Outward"
+
+
+def get_employee_asset_serial_details(serial_no):
+    serial_no = (serial_no or "").strip()
+    if not serial_no or not frappe.db.exists("Serial No", serial_no):
+        frappe.throw(_("Serial No {0} does not exist.").format(frappe.bold(serial_no or _("Not provided"))))
+
+    serial_details = frappe.db.get_value(
+        "Serial No",
+        serial_no,
+        ["name", "item_code", "warehouse", "employee"],
+        as_dict=True,
+    )
+
+    if not serial_details.warehouse:
+        frappe.throw(
+            _("Serial No {0} is not available in any warehouse and cannot be used for an Asset gate entry.").format(
+                frappe.bold(serial_no)
+            )
+        )
+
+    warehouse_details = frappe.db.get_value(
+        "Warehouse",
+        serial_details.warehouse,
+        ["warehouse_type", "warehouse_owner"],
+        as_dict=True,
+    ) or frappe._dict()
+    warehouse_type = warehouse_details.warehouse_type
+    if warehouse_type != EMPLOYEE_PERSONAL_WAREHOUSE_TYPE:
+        frappe.throw(
+            _(
+                "Serial No {0} is currently in warehouse {1}. Asset gate movement is allowed only when the warehouse type is {2}."
+            ).format(
+                frappe.bold(serial_no),
+                frappe.bold(serial_details.warehouse),
+                frappe.bold(EMPLOYEE_PERSONAL_WAREHOUSE_TYPE),
+            ),
+            title=_("Asset Movement Not Allowed"),
+        )
+
+    employee = serial_details.employee
+    if not employee and warehouse_details.warehouse_owner:
+        employee = frappe.db.get_value(
+            "Employee",
+            {"user_id": warehouse_details.warehouse_owner, "status": "Active"},
+            "name",
+        )
+        if not employee:
+            employee = frappe.db.get_value(
+                "Employee",
+                {"prefered_email": warehouse_details.warehouse_owner, "status": "Active"},
+                "name",
+            )
+
+    employee_name = frappe.db.get_value("Employee", employee, "employee_name") if employee else None
+    return frappe._dict(
+        serial_no=serial_details.name,
+        item_code=serial_details.item_code,
+        employee=employee,
+        employee_name=employee_name,
+        warehouse=serial_details.warehouse,
+        warehouse_type=warehouse_type,
+    )
+
+
+def get_latest_asset_gate_action(serial_no, exclude_document=None):
+    conditions = ["parent.docstatus = 1", "entry.serial_no = %(serial_no)s"]
+    values = {"serial_no": serial_no}
+    if exclude_document:
+        conditions.append("parent.name != %(exclude_document)s")
+        values["exclude_document"] = exclude_document
+
+    result = frappe.db.sql(
+        f"""
+        SELECT
+            entry.asset_action,
+            entry.scan_time,
+            entry.scanned_by,
+            parent.name AS parent
+        FROM `tabDispatch Security Asset Entry` entry
+        INNER JOIN `tabDispatch Security Checkpoints` parent
+            ON parent.name = entry.parent
+            AND entry.parenttype = 'Dispatch Security Checkpoints'
+            AND entry.parentfield = 'asset_security_entries'
+        WHERE {' AND '.join(conditions)}
+        ORDER BY entry.scan_time DESC, parent.creation DESC, entry.idx DESC
+        LIMIT 1
+        """,
+        values,
+        as_dict=True,
+    )
+    return result[0] if result else None
+
+
+def throw_invalid_asset_action(serial_no, requested_action, previous, expected_action):
+    if not previous and requested_action == "Inward":
+        frappe.throw(
+            _("Serial No {0} has no previous Outward gate entry. Record Outward before Inward.").format(
+                frappe.bold(serial_no)
+            ),
+            title=_("Inward Not Allowed"),
+        )
+
+    frappe.throw(
+        _(
+            "Serial No {0} is already {1}. The next permitted action is {2}. "
+            "Last recorded by {3} at {4} in {5}."
+        ).format(
+            frappe.bold(serial_no),
+            frappe.bold(previous.get("asset_action") if previous else requested_action),
+            frappe.bold(expected_action),
+            frappe.bold(previous.get("scanned_by") or _("Unknown user")) if previous else _("Unknown user"),
+            frappe.bold(previous.get("scan_time") or _("Unknown time")) if previous else _("Unknown time"),
+            frappe.bold(previous.get("parent") or _("Unknown document")) if previous else _("Unknown document"),
+        ),
+        title=_("Asset Action Not Allowed"),
+    )
+
+
+@frappe.whitelist()
+def get_asset_security_scan_details(serial_no):
+    details = get_employee_asset_serial_details(serial_no)
+    previous = get_latest_asset_gate_action(details.serial_no)
+    details.update({
+        "previous_action": previous.get("asset_action") if previous else None,
+        "previous_action_time": previous.get("scan_time") if previous else None,
+        "previous_scanned_by": previous.get("scanned_by") if previous else None,
+        "previous_document": previous.get("parent") if previous else None,
+        "next_allowed_action": get_next_asset_action(previous.get("asset_action") if previous else None),
+    })
+    return details
 
 @frappe.whitelist()
 def scan_serial_no_data_for_sales(serial_no):

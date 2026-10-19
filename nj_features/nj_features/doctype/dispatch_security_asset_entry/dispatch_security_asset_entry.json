@@ -1,0 +1,122 @@
+{
+ "actions": [],
+ "creation": "2026-10-17 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "serial_no",
+  "item_code",
+  "employee",
+  "employee_name",
+  "warehouse",
+  "warehouse_type",
+  "asset_action",
+  "scan_time",
+  "scanned_by",
+  "previous_action",
+  "previous_action_time"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "serial_no",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Serial No",
+   "options": "Serial No",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Code",
+   "options": "Item",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Employee",
+   "options": "Employee",
+   "read_only": 1
+  },
+  {
+   "fieldname": "employee_name",
+   "fieldtype": "Data",
+   "label": "Employee Name",
+   "read_only": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Warehouse",
+   "options": "Warehouse",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "warehouse_type",
+   "fieldtype": "Data",
+   "label": "Warehouse Type",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "asset_action",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Asset Action",
+   "options": "Outward\nInward",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "scan_time",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Scan Time",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "scanned_by",
+   "fieldtype": "Link",
+   "label": "Scanned By",
+   "options": "User",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "previous_action",
+   "fieldtype": "Data",
+   "label": "Previous Action",
+   "read_only": 1
+  },
+  {
+   "fieldname": "previous_action_time",
+   "fieldtype": "Datetime",
+   "label": "Previous Action Time",
+   "read_only": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-17 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Dispatch Security Asset Entry",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

@@ -24,6 +24,8 @@
   "dispatch_security_return_table",
   "section_break_flwp0",
   "dispatch_security_stock_entry_table",
+  "asset_entries_section",
+  "asset_security_entries",
   "amended_from"
  ],
  "fields": [
@@ -67,7 +69,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Dispatch Type",
-   "options": "\nSales Order\nPurchase Return\nTransfer",
+   "options": "\nSales Order\nPurchase Return\nTransfer\nAsset",
    "reqd": 1
   },
   {
@@ -89,24 +91,24 @@
    "fieldname": "delivery_partner_name",
    "fieldtype": "Data",
    "label": "Delivery Partner Name",
-   "reqd": 1
+   "mandatory_depends_on": "eval:doc.dispatch_type!='Asset'"
   },
   {
    "fieldname": "delivery_partner_no",
    "fieldtype": "Data",
    "label": "Delivery Partner No",
-   "reqd": 1
+   "mandatory_depends_on": "eval:doc.dispatch_type!='Asset'"
   },
   {
    "fieldname": "vehicle_no",
    "fieldtype": "Data",
    "label": "Vehicle No",
-   "reqd": 1
+   "mandatory_depends_on": "eval:doc.dispatch_type!='Asset'"
   },
   {
    "fieldname": "attach_image_nplp9",
    "fieldtype": "Attach Image",
-   "reqd": 1
+   "mandatory_depends_on": "eval:doc.dispatch_type!='Asset'"
   },
   {
    "fieldname": "section_break_flwp0",
@@ -120,7 +122,6 @@
    "read_only": 1
   },
   {
-   "depends_on": "eval:doc.dispatch_type=='Sales Order'",
    "fieldname": "barcode",
    "fieldtype": "Data",
    "label": "NJ Barcode",
@@ -137,6 +138,17 @@
    "fieldname": "stock_entry_name",
    "fieldtype": "Data",
    "label": "Stock Entry Name"
+  },
+  {
+   "fieldname": "asset_entries_section",
+   "fieldtype": "Section Break",
+   "label": "Asset Gate Entries"
+  },
+  {
+   "fieldname": "asset_security_entries",
+   "fieldtype": "Table",
+   "label": "Asset Security Entries",
+   "options": "Dispatch Security Asset Entry"
   }
  ],
  "is_submittable": 1,

@@ -378,15 +378,34 @@ def _create_or_update_zoho_sales_order(doc):
     if getattr(doc, "delivery_status", None):
         so_payload_data["ERP_Delivery_Status"] = str(doc.delivery_status)
 
+    # Approval status from ERPNext Sales Order (approve check field)
+    if getattr(doc, "approve", None):
+        user = (
+            frappe.session.user
+            if getattr(frappe, "session", None) and getattr(frappe.session, "user", None) and frappe.session.user != "Guest"
+            else getattr(doc, "modified_by", "Administrator")
+        )
+        user_fullname = frappe.db.get_value("User", user, "full_name") or user
+        so_payload_data["Status"] = "Approved"
+        so_payload_data["Approved_By"] = str(user_fullname)
+        so_payload_data["Approved_On"] = str(frappe.utils.nowdate())
+
     zoho_so_id = getattr(doc, "zoho_so_id", None)
     if zoho_so_id:
         # Match existing subform row ids so Zoho updates the rows properly
         try:
-            curr_so = zoho_get(f"Sales_Orders/{zoho_so_id}", params={"fields": "Ordered_Items"})
-            curr_items = (curr_so.get("data") or [{}])[0].get("Ordered_Items") or []
+            curr_so = zoho_get(f"Sales_Orders/{zoho_so_id}", params={"fields": "Ordered_Items,Approved_On,Approved_By"})
+            curr_data = (curr_so.get("data") or [{}])[0]
+            curr_items = curr_data.get("Ordered_Items") or []
             for idx, item in enumerate(ordered_items):
                 if idx < len(curr_items) and "id" in curr_items[idx]:
                     item["id"] = curr_items[idx]["id"]
+
+            # Preserve original approval date/user if already set
+            if curr_data.get("Approved_On") and "Approved_On" in so_payload_data:
+                so_payload_data["Approved_On"] = curr_data["Approved_On"]
+            if curr_data.get("Approved_By") and "Approved_By" in so_payload_data:
+                so_payload_data["Approved_By"] = curr_data["Approved_By"]
         except Exception:
             pass
 
@@ -421,6 +440,14 @@ def sync_sales_order_to_zoho(sales_order_name):
     """Whitelisted endpoint to manually or programmically trigger Zoho SO creation/update."""
     doc = frappe.get_doc("Sales Order", sales_order_name)
     return _create_or_update_zoho_sales_order(doc)
+
+
+def on_sales_order_update_after_submit(doc, method=None):
+    """Updates Zoho CRM Sales Order when an allow-on-submit field (such as approve) changes."""
+    if not _enabled():
+        return
+
+    _create_or_update_zoho_sales_order(doc)
 
 
 def on_sales_order_submit(doc, method=None):

@@ -105,6 +105,9 @@ def search_for_serial_or_batch_or_barcode_no(search_value, raise_exp=True, enfor
         
         return {"serial_no": serial_no_data.get("serial_no"), "item_code": serial_no_data.item_code, "warehouse": serial_no_data.warehouse, "scan": 0}
 
+    if search_value and isinstance(search_value, str) and search_value.startswith("EXT-"):
+        return {"serial_no": search_value, "scan": 0}
+
     return {"scan": 1}
 
 

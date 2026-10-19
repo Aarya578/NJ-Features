@@ -22,6 +22,8 @@
   "vehicle_no",
   "delivery_partner_name",
   "delivery_partner_no",
+  "user_accepted_name",
+  "accepted_dept",
   "section_break_7olev",
   "ste_number",
   "po_number",
@@ -224,12 +226,25 @@
    "fieldname": "reference_po_number",
    "fieldtype": "Data",
    "label": "Reference Po Number"
+  },
+  {
+   "fieldname": "user_accepted_name",
+   "fieldtype": "Data",
+   "label": "User Accepted Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "accepted_dept",
+   "fieldtype": "Link",
+   "label": "Accepted Dept",
+   "options": "Department",
+   "read_only": 1
   }
  ],
  "hide_toolbar": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-12-31 21:50:51.331018",
+ "modified": "2026-10-17 14:14:51.244687",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Security Inward Registry",

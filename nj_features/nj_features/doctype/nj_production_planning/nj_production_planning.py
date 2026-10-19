@@ -5177,6 +5177,8 @@ def _get_laptop_adaptor_item_key_from_code(item_code):
 
 
 def _get_laptop_adaptor_item_skip_reason(item_code, item_doc=None):
+    
+    
     if not item_code:
         return "item code not found"
 

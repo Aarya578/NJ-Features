@@ -1,6 +1,7 @@
 # Copyright (c) 2024, NewJaisa - IT Team and contributors
 # For license information, please see license.txt
 
+import re
 import json
 import frappe
 import traceback
@@ -10,16 +11,82 @@ from frappe.utils import now_datetime, date_diff
 from nj_lib.utils.common_utils import get_active_emp
 
 class SecurityInwardRegistry(Document):
+    def validate(self):
+        self.validate_customer_return_duplicates()
+
+    def validate_customer_return_duplicates(self):
+        if self.registry_type == 'Customer Return' and self.get('customer_return_registry'):
+            seen_serials = set()
+            for row in self.customer_return_registry:
+                if row.serial_no:
+                    serial = str(row.serial_no).strip()
+                    if serial in seen_serials:
+                        frappe.throw(_(f"Duplicate Serial No '{serial}' found in Customer Return table."))
+                    seen_serials.add(serial)
+
     def on_submit(self):
         try:
+            self.validate_customer_return_duplicates()
             self.update_transfer_qty(state='submit')
             self.get_total_qty()
+            self.update_user_accepted_details()
 
         except Exception as e:
 
             traceback_info = traceback.format_exc()
             frappe.throw(f"Error on submit: {str(e)}\n{traceback_info}") 
             frappe.db.rollback()
+
+    def update_user_accepted_details(self):
+        try:
+            
+            user = frappe.session.user
+
+            if self.registry_type == 'Purchase':
+                self.user_accepted_name = user
+                self.db_set("user_accepted_name", user)
+
+            elif self.registry_type == 'Accept Registry':
+                user_dept = self.get_user_department(user)
+
+                self.user_accepted_name = user
+                self.accepted_dept = user_dept
+                self.db_set("user_accepted_name", user)
+                self.db_set("accepted_dept", user_dept)
+
+                if self.stock_registry_no:
+                    frappe.db.set_value(
+                        "Security Inward Registry",
+                        self.stock_registry_no,
+                        {
+                            "user_accepted_name": user,
+                            "accepted_dept": user_dept
+                        }
+                    )
+            frappe.db.commit()
+
+        except Exception as e:
+            traceback_info = traceback.format_exc()
+            frappe.log_error(message=f"Error in update_user_accepted_details: {str(e)}\n{traceback_info}", title="Security Inward Registry")
+            frappe.throw(f"Error updating accepted user details: {str(e)}")
+
+    def get_user_department(self, user=None):
+        try:
+            if not user:
+                user = frappe.session.user
+
+            emp_data = get_active_emp(user, fields=['department'], ignore=True)
+            if isinstance(emp_data, list):
+                emp_data = emp_data[0] if emp_data else {}
+            if emp_data and emp_data.get('department'):
+                return emp_data.get('department')
+
+            dept = frappe.db.get_value("Employee", {"user_id": user, "status": "Active"}, "department")
+            if not dept:
+                dept = frappe.db.get_value("Employee", {"user_id": user}, "department")
+            return dept
+        except Exception:
+            return frappe.db.get_value("Employee", {"user_id": user or frappe.session.user}, "department")
 
     def on_cancel(self):
         try:
@@ -643,3 +710,148 @@ def get_registry_in_warehouse(po_number=None):
         traceback_info = traceback.format_exc()
         frappe.throw(f"Error on submit: {str(e)}\n{traceback_info}")
         return traceback_info
+
+@frappe.whitelist()
+def get_customer_return_details(tracking_id):
+    if not tracking_id or not str(tracking_id).strip():
+        frappe.throw(_("Please enter a valid Tracking ID."))
+
+    tracking_id = str(tracking_id).strip()
+
+    # 1. Search in Delivery Note:
+    # Only submitted (docstatus == 1), skip return (is_return == 0), skip draft and cancelled
+    dns = frappe.db.get_all(
+        "Delivery Note",
+        filters={
+            "tracking_id": tracking_id,
+            "docstatus": 1,
+            "is_return": 0
+        },
+        fields=["name"],
+        order_by="creation desc"
+    )
+
+    if dns:
+        dn_name = dns[0].name
+
+        items = frappe.db.get_all(
+            "Delivery Note Item",
+            filters={"parent": dn_name},
+            fields=["name", "item_code", "qty", "against_sales_order", "serial_no"]
+        )
+
+        packed_items = frappe.db.get_all(
+            "Packed Item",
+            filters={"parent": dn_name},
+            fields=["name", "parent_item", "item_code", "qty", "serial_no", "parent_detail_docname"]
+        )
+
+        results = []
+        item_by_name = {it.name: it for it in items}
+        item_by_code = {it.item_code: it for it in items}
+        first_so = next((it.against_sales_order for it in items if it.against_sales_order), None)
+
+        packed_serials_found = False
+        for pi in packed_items:
+            pi_serials = [s.strip() for s in re.split(r"[\r\n,]+", pi.serial_no or "") if s.strip()]
+            if pi_serials:
+                packed_serials_found = True
+                parent_dni = item_by_name.get(pi.parent_detail_docname) or item_by_code.get(pi.parent_item)
+                so = parent_dni.against_sales_order if parent_dni and parent_dni.against_sales_order else first_so
+                for s in pi_serials:
+                    results.append({
+                        "tracking_id": tracking_id,
+                        "sales_order": so,
+                        "item_code": pi.item_code,
+                        "qty": 1,
+                        "serial_no": s,
+                        "reference_doctype": "Delivery Note",
+                        "reference_name": dn_name
+                    })
+
+        item_serials_found = False
+        for item in items:
+            item_serials = [s.strip() for s in re.split(r"[\r\n,]+", item.serial_no or "") if s.strip()]
+            if item_serials:
+                item_serials_found = True
+                for s in item_serials:
+                    results.append({
+                        "tracking_id": tracking_id,
+                        "sales_order": item.against_sales_order,
+                        "item_code": item.item_code,
+                        "qty": 1,
+                        "serial_no": s,
+                        "reference_doctype": "Delivery Note",
+                        "reference_name": dn_name
+                    })
+
+        # If neither packed_items nor items had serials, fallback to items
+        if not packed_serials_found and not item_serials_found:
+            for item in items:
+                results.append({
+                    "tracking_id": tracking_id,
+                    "sales_order": item.against_sales_order,
+                    "item_code": item.item_code,
+                    "qty": abs(item.qty) if item.qty else 1,
+                    "serial_no": None,
+                    "reference_doctype": "Delivery Note",
+                    "reference_name": dn_name
+                })
+
+        _validate_no_prior_submitted_sir(results)
+        return results
+
+    # 2. Search in Bold Desk History (reverse_awb)
+    # Fetch details directly from Bold Desk History (not from DN)
+    bdh_list = frappe.db.get_all(
+        "Bold Desk History",
+        filters={"reverse_awb": tracking_id},
+        fields=["name", "ticket_id", "serial_no", "sales_order", "product_description", "product_item_code", "replacement_serial"]
+    )
+
+    if bdh_list:
+        results = []
+        for bdh in bdh_list:
+            so = bdh.sales_order
+            item_code = (bdh.product_description or bdh.product_item_code or "").strip()
+            serials_str = (bdh.serial_no or bdh.replacement_serial or "").strip()
+            serials = [s.strip() for s in re.split(r"[\r\n,]+", serials_str) if s.strip()]
+
+            if serials:
+                for s in serials:
+                    results.append({
+                        "tracking_id": tracking_id,
+                        "sales_order": so,
+                        "item_code": item_code,
+                        "qty": 1,
+                        "serial_no": s,
+                        "reference_doctype": "Bold Desk History",
+                        "reference_name": bdh.name
+                    })
+            else:
+                results.append({
+                    "tracking_id": tracking_id,
+                    "sales_order": so,
+                    "item_code": item_code,
+                    "qty": 1,
+                    "serial_no": None,
+                    "reference_doctype": "Bold Desk History",
+                    "reference_name": bdh.name
+                })
+
+        _validate_no_prior_submitted_sir(results)
+        return results
+
+    # 3. Not found in either
+    frappe.throw(_(f"Tracking ID '{tracking_id}' not found in Delivery Note or Bold Desk History."))
+
+def _validate_no_prior_submitted_sir(items):
+    for res in items:
+        if res.get("serial_no"):
+            existing = frappe.db.sql("""
+                SELECT parent
+                FROM `tabCustomer Return for Security Inward Registry`
+                WHERE serial_no = %s AND docstatus = 1
+            """, (res["serial_no"],), as_dict=True)
+            if existing:
+                frappe.throw(_(f"Serial No '{res['serial_no']}' is already inwarded in submitted Security Inward Registry {existing[0].parent}."))

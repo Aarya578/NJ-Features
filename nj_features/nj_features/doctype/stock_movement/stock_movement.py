@@ -884,6 +884,24 @@ def validate_serial_no_and_department(
         error_messages.append(f"Serial No <b>{serial_no}</b> does not exist.")
         return False
 
+    if serial_doc.get('grade_a_item_code') and not department_doc.get('allow_grade_a_items'):
+        allowed_departments = frappe.get_all(
+            'Department',
+            filters={'allow_grade_a_items': 1},
+            pluck='name',
+            order_by='name asc',
+        )
+        allowed_department_names = (
+            ', '.join(f'<b>{allowed_department}</b>' for allowed_department in allowed_departments)
+            or '<b>No department is configured</b>'
+        )
+        error_messages.append(
+            f"Serial No <b>{serial_no}</b> is marked as a Grade A item and cannot be "
+            f"transferred to target department <b>{department}</b>. "
+            f"Allowed target department(s): {allowed_department_names}."
+        )
+        return False
+
     if s_warehouse and t_warehouse and s_warehouse != t_warehouse and department != s_department:
         from nj_features.overrides.stock_entry import get_department_restriction_violation
 

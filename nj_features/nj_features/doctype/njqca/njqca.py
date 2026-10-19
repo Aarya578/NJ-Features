@@ -2743,6 +2743,7 @@ def get_existing_flutter_njqca_qi(doc):
         "base_url": base_url
     }
 
+
 @frappe.whitelist()
 def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, qi_type=None):
     njqca_qi_trace("after_save_njqca_start", docname, {

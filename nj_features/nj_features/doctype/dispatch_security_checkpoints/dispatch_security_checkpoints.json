@@ -17,12 +17,17 @@
   "column_break_t5sng",
   "dispatch_type",
   "vehicle_no",
+  "dc_action",
+  "dc_entry",
   "attach_image_nplp9",
   "section_break_t4y06",
   "dispatch_security_child_table",
   "section_break_aryok",
   "dispatch_security_return_table",
   "section_break_flwp0",
+  "serial_no",
+  "dsc_purchase_return_details",
+  "section_break_8d35x",
   "dispatch_security_stock_entry_table",
   "asset_entries_section",
   "asset_security_entries",
@@ -149,11 +154,45 @@
    "fieldtype": "Table",
    "label": "Asset Security Entries",
    "options": "Dispatch Security Asset Entry"
+  },
+  {
+   "depends_on": "eval:doc.dispatch_type=='Transfer'",
+   "fieldname": "dc_entry",
+   "fieldtype": "Select",
+   "label": "DC Entry",
+   "mandatory_depends_on": "eval:doc.dispatch_type=='Transfer'",
+   "options": "\nEmployee Personal Warehouse\nExternal Warehouse"
+  },
+  {
+   "default": "Outward",
+   "fieldname": "dc_action",
+   "fieldtype": "Data",
+   "label": "DC Action",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.dispatch_type=='Purchase Return'",
+   "fieldname": "dsc_purchase_return_details",
+   "fieldtype": "Table",
+   "label": "DSC Purchase Return Details",
+   "options": "DSC Purchase Return Details"
+  },
+  {
+   "fieldname": "section_break_8d35x",
+   "fieldtype": "Section Break"
+  },
+  {
+   "depends_on": "eval:doc.dispatch_type=='Purchase Return'",
+   "fieldname": "serial_no",
+   "fieldtype": "Data",
+   "label": "Serial No",
+   "options": "Barcode"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-09-25 11:17:42.597863",
+ "modified": "2026-10-26 13:00:10.584281",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Dispatch Security Checkpoints",

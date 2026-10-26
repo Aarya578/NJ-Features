@@ -884,6 +884,61 @@ def validate_serial_no_and_department(
         error_messages.append(f"Serial No <b>{serial_no}</b> does not exist.")
         return False
 
+    source_warehouse_type = frappe.db.get_value('Warehouse', s_warehouse, 'warehouse_type') if s_warehouse else None
+    if source_warehouse_type in ('Employee Personal Warehouse', 'External Warehouse'):
+        outward_checkpoints = frappe.db.sql(
+            """
+            SELECT checkpoint.name, checkpoint.creation, detail.serial_no
+            FROM `tabDispatch Security Stock Entry Table` detail
+            INNER JOIN `tabDispatch Security Checkpoints` checkpoint
+                ON checkpoint.name = detail.parent
+            WHERE checkpoint.docstatus = 1
+                AND checkpoint.dispatch_type = 'Transfer'
+                AND checkpoint.dc_action = 'Outward'
+                AND detail.serial_no LIKE %s
+            ORDER BY checkpoint.creation DESC, checkpoint.name DESC
+            """,
+            (f'%{serial_no}%',),
+            as_dict=True,
+        )
+        latest_outward = next(
+            (
+                checkpoint for checkpoint in outward_checkpoints
+                if serial_no in [value.strip() for value in (checkpoint.serial_no or '').replace('\n', ',').split(',')]
+            ),
+            None,
+        )
+        if latest_outward:
+            inward_registries = frappe.db.sql(
+                """
+                SELECT sir.name, detail.serial_no
+                FROM `tabSecurity Inward Registry Transfer Child` detail
+                INNER JOIN `tabSecurity Inward Registry` sir
+                    ON sir.name = detail.parent
+                WHERE sir.docstatus = 1
+                    AND sir.registry_type = 'Transfer'
+                    AND sir.dc_action = 'Inward'
+                    AND sir.creation > %s
+                    AND detail.serial_no LIKE %s
+                ORDER BY sir.creation DESC
+                """,
+                (latest_outward.creation, f'%{serial_no}%'),
+                as_dict=True,
+            )
+            has_later_inward = any(
+                serial_no in [value.strip() for value in (registry.serial_no or '').replace('\n', ',').split(',')]
+                for registry in inward_registries
+            )
+            if not has_later_inward:
+                error_messages.append(
+                    f"Serial No <b>{frappe.utils.escape_html(serial_no)}</b> has an Outward Transfer "
+                    f"in submitted Dispatch Security Checkpoint "
+                    f"<b>{frappe.utils.escape_html(latest_outward.name)}</b>. "
+                    "Submit a Transfer Security Inward Registry with DC Action Inward "
+                    "for this serial number before moving it."
+                )
+                return False
+
     if serial_doc.get('grade_a_item_code') and not department_doc.get('allow_grade_a_items'):
         allowed_departments = frappe.get_all(
             'Department',

@@ -26,6 +26,7 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
         applyDispatchTypeLayout(frm);
         setupDispatchScannerOnly(frm, 'scan_serial_no');
         setupDispatchScannerOnly(frm, 'barcode');
+        setupDispatchScannerOnly(frm, 'serial_no');
         configureAssetSecurityGrid(frm);
         $('.col-lg-2.layout-side-section').hide();
         if (frm.doc.docstatus == 0) {
@@ -40,6 +41,8 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
         configureAssetSecurityGrid(frm);
         if (frm.doc.dispatch_type === 'Asset') {
             window.setTimeout(() => $('[data-fieldname="barcode"]').focus(), 100);
+        } else if (frm.doc.dispatch_type === 'Purchase Return') {
+            window.setTimeout(() => $('[data-fieldname="serial_no"]').focus(), 100);
         }
     },
 
@@ -167,6 +170,16 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
                         
                         frm.add_child("dispatch_security_return_table", dispatch_security_return_table);
                         frm.refresh_field("dispatch_security_return_table");
+                        (r.message.purchase_return_details || []).forEach(item => {
+                            frm.add_child("dsc_purchase_return_details", {
+                                serial_no: item.serial_no || '',
+                                item_code: item.item_code,
+                                qty: item.qty,
+                                item_group: item.item_group,
+                                purchase_order: item.purchase_order,
+                            });
+                        });
+                        frm.refresh_field("dsc_purchase_return_details");
                     } else {
                         frm.set_value('purchase_reciept_name', '');
                         frm.refresh_field('purchase_reciept_name');
@@ -178,6 +191,32 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
                 }
             });
         }
+    },
+    serial_no: function(frm) {
+        if (frm.doc.dispatch_type !== 'Purchase Return' || !frm.doc.serial_no) return;
+        setupDispatchScannerOnly(frm, 'serial_no');
+        if (!isDispatchValueFromScanner(frm, 'serial_no')) {
+            clearDispatchScannerField(frm, 'serial_no');
+            showDispatchScannerMessage(frm, 'serial_no');
+            return;
+        }
+        if (isDispatchDuplicateScan(frm, 'serial_no')) return;
+
+        const scannedSerial = frm.doc.serial_no.trim();
+        const matchingRows = (frm.doc.dsc_purchase_return_details || [])
+            .filter(row => (row.serial_no || '').trim() === scannedSerial);
+        if (!matchingRows.length) {
+            frappe.msgprint(__('Serial No {0} is not in DSC Purchase Return Details.', [frappe.utils.escape_html(scannedSerial)]));
+        } else if (matchingRows.every(row => row.is_sn_scanned)) {
+            frappe.show_alert({message: __('Serial No {0} was already scanned.', [scannedSerial]), indicator: 'orange'});
+        } else {
+            const row = matchingRows.find(row => !row.is_sn_scanned);
+            frappe.model.set_value(row.doctype, row.name, 'is_sn_scanned', 1);
+            frm.refresh_field('dsc_purchase_return_details');
+            frappe.show_alert({message: __('Serial No {0} scanned.', [scannedSerial]), indicator: 'green'});
+        }
+        clearDispatchScannerField(frm, 'serial_no');
+        window.setTimeout(() => $('[data-fieldname="serial_no"]').focus(), 100);
     },
     stock_entry_name: function(frm) {
         if (frm.doc.stock_entry_name) {
@@ -204,7 +243,7 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
                                     frappe.model.set_value(new_row.doctype, new_row.name, "target_warehouse", item.t_warehouse);
                                     frappe.model.set_value(new_row.doctype, new_row.name, "source_warehouse", item.s_warehouse);
                                     frappe.model.set_value(new_row.doctype, new_row.name, "serial_no_quantity", item.qty);
-                                    frappe.model.set_value(new_row.doctype, new_row.name, "serial_no", item.serial_no.replace('\n', ', '));
+                                    frappe.model.set_value(new_row.doctype, new_row.name, "serial_no", (item.serial_no || '').replace(/\r?\n/g, ', '));
                                 }
                             });
                             frm.refresh_field("dispatch_security_stock_entry_table");
@@ -246,6 +285,7 @@ function applyDispatchTypeLayout(frm) {
     frm.toggle_display('dispatch_security_stock_entry_table', !isAsset);
     frm.toggle_display('asset_entries_section', isAsset);
     frm.toggle_display('asset_security_entries', isAsset);
+    frm.toggle_display('serial_no', frm.doc.dispatch_type === 'Purchase Return');
 
     existingDispatchFields.forEach(function(fieldname) {
         frm.toggle_display(fieldname, !isAsset);

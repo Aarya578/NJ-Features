@@ -11,6 +11,7 @@
   "date",
   "default_warehouse",
   "total_qty",
+  "dc_action",
   "column_break_fbmgw",
   "stock_registry_no",
   "reference_po_number",
@@ -138,7 +139,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "depends_on": "eval: doc.registry_type == 'Customer Return'",
+   "depends_on": "eval: doc.registry_type == 'Customer Return' || (doc.registry_type == 'Accept Registry' && doc.customer_return_registry && doc.customer_return_registry.length > 0)",
    "fieldname": "customer_return_registry",
    "fieldtype": "Table",
    "options": "Customer Return for Security Inward Registry"
@@ -206,7 +207,7 @@
    "options": "Security Inward Registry Purchase Child"
   },
   {
-   "depends_on": "eval: doc.registry_type == 'Accept Registry'",
+   "depends_on": "eval: doc.registry_type == 'Accept Registry' && (!doc.customer_return_registry || doc.customer_return_registry.length == 0)",
    "fieldname": "purchase_inward_registry_child",
    "fieldtype": "Table",
    "options": "Security Inward Registry Child"
@@ -216,13 +217,13 @@
    "fieldtype": "Section Break"
   },
   {
-   "depends_on": "eval: doc.registry_type == 'Accept Registry' && doc.registry_type !== ''",
+   "depends_on": "eval: doc.registry_type == 'Accept Registry' && (!doc.customer_return_registry || doc.customer_return_registry.length == 0)",
    "fieldname": "sir_inwarded_qty_table",
    "fieldtype": "Table",
    "options": "SIR Inwarded Quantity"
   },
   {
-   "depends_on": "eval: doc.registry_type == \"Accept Registry\" || doc.registry_type == \"Purchase\"",
+   "depends_on": "eval: doc.registry_type == 'Purchase' || (doc.registry_type == 'Accept Registry' && (!doc.customer_return_registry || doc.customer_return_registry.length == 0))",
    "fieldname": "reference_po_number",
    "fieldtype": "Data",
    "label": "Reference Po Number"
@@ -239,12 +240,20 @@
    "label": "Accepted Dept",
    "options": "Department",
    "read_only": 1
+  },
+  {
+   "default": "Inward",
+   "fieldname": "dc_action",
+   "fieldtype": "Data",
+   "label": "DC Action",
+   "read_only": 1,
+   "reqd": 1
   }
  ],
  "hide_toolbar": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-10-17 14:14:51.244687",
+ "modified": "2026-10-26 11:39:03.466117",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Security Inward Registry",

@@ -1,0 +1,63 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-10-28 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "task_description",
+  "assigned_to",
+  "status",
+  "estimated_hours",
+  "actual_hours"
+ ],
+ "fields": [
+  {
+   "fieldname": "task_description",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Task Description",
+   "reqd": 1
+  },
+  {
+   "fieldname": "assigned_to",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Assigned To",
+   "options": "User"
+  },
+  {
+   "default": "Pending",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Pending\nIn Progress\nCompleted"
+  },
+  {
+   "default": "0.0",
+   "fieldname": "estimated_hours",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Estimated Hours"
+  },
+  {
+   "default": "0.0",
+   "fieldname": "actual_hours",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Actual Hours"
+  }
+ ],
+ "istable": 1,
+ "modified": "2026-10-28 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "IT Service Management",
+ "name": "IT Service Request Task",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1
+}

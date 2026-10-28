@@ -1,0 +1,76 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-10-28 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "default_sla_hours",
+  "urgent_sla_hours",
+  "high_sla_hours",
+  "medium_sla_hours",
+  "low_sla_hours",
+  "allow_self_assignment"
+ ],
+ "fields": [
+  {
+   "default": "48",
+   "fieldname": "default_sla_hours",
+   "fieldtype": "Int",
+   "label": "Default SLA (Hours)"
+  },
+  {
+   "default": "4",
+   "fieldname": "urgent_sla_hours",
+   "fieldtype": "Int",
+   "label": "Urgent SLA (Hours)"
+  },
+  {
+   "default": "24",
+   "fieldname": "high_sla_hours",
+   "fieldtype": "Int",
+   "label": "High SLA (Hours)"
+  },
+  {
+   "default": "48",
+   "fieldname": "medium_sla_hours",
+   "fieldtype": "Int",
+   "label": "Medium SLA (Hours)"
+  },
+  {
+   "default": "72",
+   "fieldname": "low_sla_hours",
+   "fieldtype": "Int",
+   "label": "Low SLA (Hours)"
+  },
+  {
+   "default": "1",
+   "fieldname": "allow_self_assignment",
+   "fieldtype": "Check",
+   "label": "Allow Self Assignment"
+  }
+ ],
+ "issingle": 1,
+ "modified": "2026-10-28 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "IT Service Management",
+ "name": "IT Service Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1
+}

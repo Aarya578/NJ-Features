@@ -15,6 +15,7 @@ def process_njqca_data():
     data = json.loads(data_json)
     njqca_doc = frappe.get_doc('NJQCA', data['njqca_name'])
     part_mapping_data = {}
+    create_qi_after_save = False
     part_item_code_update_child_data = njqca_doc.as_dict().njqca_item_component
 
     if 'email' in data and data['email'] is not None:
@@ -74,7 +75,7 @@ def process_njqca_data():
                                 child_data_for_part_item_code.update({
                                     "part_item_code": part_item_code_filter,
                                 })
-            after_save_njqca(data['njqca_name'])
+            create_qi_after_save = True
 
         elif data['power_on'] == 'No':
             njqca_doc.power_on = data['power_on']
@@ -102,6 +103,11 @@ def process_njqca_data():
 
     model_list = get_model(njqca_doc.get('manufacturer_model'))
     njqca_doc.save()
+    if create_qi_after_save:
+        after_save_njqca(data['njqca_name'])
+        # The QI flow updates qi_name and may submit NJQCA. Do not keep using
+        # the draft document loaded before those changes.
+        njqca_doc.reload()
     njqca_parent_data = {}
     njqca_child_data = []
     njqca_result_parameter = []
@@ -131,8 +137,8 @@ def process_njqca_data():
 
     if 'submit_status' in data and data['submit_status'] is not None:
         if data['manual_repack_item_code'] is not None and data['manual_repack_item_code'] != '':
-            njqca_doc.docstatus = '1'
-            njqca_doc.submit()
+            if njqca_doc.docstatus == 0:
+                njqca_doc.submit()
         else:
             frappe.throw('Please fill the Manual Repack Item Code. If there is no option to fill Please Contact NPD Team')
     

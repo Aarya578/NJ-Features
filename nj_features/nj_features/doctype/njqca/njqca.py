@@ -1202,7 +1202,7 @@ class NJQCA(Document):
         apply_adapter_failure_reason_and_gain_to_doc(self)
         set_fail_for_empty_reliability_params(self)
         apply_latest_reliability_status_to_doc(self)
-        update_battery_health_score(self)
+        # update_battery_health_score(self)
         
          # External/RFQ NJQCA should never self-link.
         # linked_ext should only be set on internal NJQCA after linking to EXT serial.
@@ -1259,6 +1259,7 @@ class NJQCA(Document):
             self.validate_item_code_match()
             # self.battery_readings()
             self.update_serial_no_readings()
+            self.handle_mr_on_model_change()
         except Exception as e:
             log_error(traceback.format_exc(), "Error in on_submit in NJQCA")
             frappe.throw(f"Error in before on_submit {str(traceback.format_exc())}")
@@ -1298,6 +1299,11 @@ class NJQCA(Document):
                     s2 = time.time()
                     self.make_stock_entry_using_nj_lib()
                     logger.debug(f"Time after stock entry '{self.name}': {time.time() - s2:.2f} seconds")
+                    if self.manual_repack_item_code and self.serial_no:
+                        frappe.db.set_value("Serial No", self.serial_no, {
+                            "item_code": self.manual_repack_item_code,
+                            "to_make": self.manual_repack_item_code
+                        }, update_modified=True)
                 
                 nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery'}, 'value')
                 if nj_settings_item_group and self.item_group != nj_settings_item_group and self.item_group == sn_item_group:
@@ -1352,6 +1358,62 @@ class NJQCA(Document):
                 f"EXT Linkage: failed to clear bios from {self.linked_ext}"
             )
 
+    def handle_mr_on_model_change(self):
+        """
+        When model is changed for a serial number, close all active Purchase MR items
+        associated with that serial number (post_order_status = 'Completed'),
+        and create one single new Purchase MR with Grade A items matching the new model's
+        components for those item groups.
+        Executed on NJQCA on_submit only if model difference is found.
+        """
+        if not self.serial_no or not frappe.db.exists("Serial No", self.serial_no):
+            return
+
+        serial_no_model = frappe.db.get_value("Serial No", self.serial_no, "model")
+        doc_before_save = self.get_doc_before_save()
+        prev_njqca_model = (doc_before_save.model if doc_before_save else None) or frappe.db.get_value("NJQCA", self.name, "model")
+
+        is_model_diff = False
+        if serial_no_model and self.model and serial_no_model != self.model:
+            is_model_diff = True
+        elif prev_njqca_model and self.model and prev_njqca_model != self.model:
+            is_model_diff = True
+        elif self.get("model_changed_using_change_model"):
+            is_model_diff = True
+
+        if not is_model_diff:
+            return
+
+        old_mr_items = get_and_close_old_purchase_mrs(self.serial_no)
+
+        serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
+        if self.model and serial_no_doc.model != self.model:
+            wizard_query = """Select name from `tabItem Wizards` where model = %s 
+                            and part_list_status = 'Completed' order by modified desc"""
+            new_item_wizard = frappe.db.sql(wizard_query, (self.model,), as_dict=1)
+            if new_item_wizard:
+                item_wizard_doc = frappe.get_doc("Item Wizards", new_item_wizard[0]['name'])
+                rebuild_serial_no_components_for_model_change(serial_no_doc, item_wizard_doc, self.model, self.name)
+                serial_no_doc.save(ignore_permissions=True)
+                target_item_code = _get_target_laptop_item_code(serial_no_doc, self.model, item_wizard_doc, self.name)
+                if target_item_code:
+                    update_serial_no_item_details(
+                        serial_no_doc.name,
+                        target_item_code,
+                        {
+                            "to_make": target_item_code,
+                            "model": self.model,
+                        }
+                    )
+            else:
+                serial_no_doc.model = self.model
+                serial_no_doc.save(ignore_permissions=True)
+
+        if old_mr_items:
+            create_new_mr_for_model_change(self.serial_no, old_mr_items, self.name)
+
+        repack_past_part_list_for_model_change(self.serial_no, self.model, self.name)
+
     def check_for_repack_access(self):
 
         user = frappe.session.user
@@ -1367,15 +1429,32 @@ class NJQCA(Document):
     def make_stock_entry_using_nj_lib(self):
 
         accounting_cost_account = frappe.db.get_single_value('NewJaisa Configuration', 'default_operational_cost_account')
+        user = frappe.session.user or "Administrator"
+        user_name = frappe.db.get_value("User", user, "full_name") or user
+        date_str = frappe.utils.format_date(frappe.utils.nowdate(), "dd-mm-yyyy")
+        comment_text = f"changed from {self.item_code} to {self.manual_repack_item_code} due to model change by {user_name} on {date_str}"
+
         stock_data = {
             "name": self.name,
             "doctype": self.doctype,
             "stock_entry_type": "Repack",
             "repack_items": get_repack_items(self),
-            "expense_account": accounting_cost_account
+            "expense_account": accounting_cost_account,
+            "reason": "Others",
+            "comments": comment_text,
         }
         stock_data_str = json.dumps(stock_data)
-        stock_entry_using_nj_lib(stock_data_str)
+        se_name = stock_entry_using_nj_lib(stock_data_str)
+        if se_name:
+            frappe.db.set_value(
+                "Stock Entry",
+                se_name,
+                {
+                    "reason": "Others",
+                    "comments": comment_text,
+                },
+                update_modified=False,
+            )
 
     def validate_item_code_match(self):
             if self.item_group != "Laptops":
@@ -1946,11 +2025,11 @@ def get_repack_items(self):
     get_repack_items_list = []
 
     get_repack_items_dict = {
-		"repack_item_code": self.item_code,
-		"repack_serial_no": self.serial_no,
-		"repack_item_base_price": self.base_price,
+                "repack_item_code": self.item_code,
+                "repack_serial_no": self.serial_no,
+                "repack_item_base_price": self.base_price,
         "repack_item_source_warehouse": self.warehouse,
-	}
+        }
     get_repack_items_list.append(get_repack_items_dict)
 
     get_unpack_items_dict = {
@@ -1999,6 +2078,45 @@ def get_variant_for_grade(item_code, target_grade):
     
     res = frappe.db.sql(query, tuple(conditions))
     return res[0][0] if res else None
+
+
+def get_grade_a_item_variant(item_code):
+    if not item_code:
+        return item_code
+
+    # Check if item_code is already Grade A
+    current_grade = frappe.db.get_value(
+        "Item Variant Attribute",
+        {"parent": item_code, "attribute": ["in", ["Grade", "grade", "GRADE"]]},
+        "attribute_value",
+    )
+    if current_grade and current_grade.strip().upper() in ["GRADE A", "GRADE-A", "A"]:
+        return item_code
+
+    for grade_candidate in ["Grade A", "GRADE A", "A"]:
+        variant = get_variant_for_grade(item_code, grade_candidate)
+        if variant:
+            return variant
+
+    variant_of = frappe.db.get_value("Item", item_code, "variant_of")
+    if not variant_of and frappe.db.get_value("Item", item_code, "has_variants"):
+        variant_of = item_code
+
+    if variant_of:
+        res = frappe.db.sql("""
+            SELECT v.name 
+            FROM `tabItem` v
+            JOIN `tabItem Variant Attribute` iva ON iva.parent = v.name
+            WHERE v.variant_of = %s 
+              AND LOWER(iva.attribute) = 'grade' 
+              AND UPPER(iva.attribute_value) IN ('GRADE A', 'GRADE-A', 'A')
+              AND v.disabled = 0
+            LIMIT 1
+        """, (variant_of,))
+        if res:
+            return res[0][0]
+
+    return item_code
 
 def get_serial_no_component_copy_fields():
     child_meta = frappe.get_meta("Serial No Component")
@@ -2088,7 +2206,77 @@ def get_item_code_for_model_change_grade(default_item_code, old_grade, item_grou
     return target_variant, old_grade
 
 
-def rebuild_serial_no_components_for_model_change(serial_no_doc, item_wizard_doc, newmodel):
+def _get_target_laptop_item_code(serial_no_doc, newmodel, item_wizard_doc, njqca_name=None):
+    if not serial_no_doc or not item_wizard_doc:
+        return None
+
+    new_template = getattr(item_wizard_doc, "item_template", None) or frappe.db.get_value(
+        "Item Wizards", item_wizard_doc.name, "item_template"
+    )
+    if not new_template:
+        return None
+
+    cur_item = serial_no_doc.item_code or (
+        frappe.db.get_value("NJQCA", njqca_name, "item_code") if njqca_name else None
+    )
+    if not cur_item:
+        return None
+
+    if frappe.db.get_value("Item", cur_item, "variant_of") == new_template:
+        return cur_item
+
+    current_attrs = frappe.get_all(
+        "Item Variant Attribute",
+        filters={"parent": cur_item},
+        fields=["attribute", "attribute_value"],
+    )
+    if not current_attrs:
+        return None
+
+    joins = []
+    conditions = []
+    for i, attr in enumerate(current_attrs):
+        alias = f"a{i}"
+        joins.append(
+            f"JOIN `tabItem Variant Attribute` {alias} ON v.name = {alias}.parent "
+            f"AND LOWER({alias}.attribute) = %s AND LOWER({alias}.attribute_value) = %s"
+        )
+        conditions.extend([attr["attribute"].lower(), attr["attribute_value"].lower()])
+
+    query = f"SELECT v.name FROM `tabItem` v {' '.join(joins)} WHERE v.variant_of = %s AND v.disabled = 0 LIMIT 1"
+    conditions.append(new_template)
+    res = frappe.db.sql(query, tuple(conditions))
+    if res:
+        return res[0][0]
+
+    for filter_attrs in [
+        ["processor", "ram", "storage"],
+        ["processor", "ram"],
+    ]:
+        subset = [
+            a for a in current_attrs
+            if any(f in a["attribute"].lower() for f in filter_attrs)
+        ]
+        if subset:
+            s_joins = []
+            s_conds = []
+            for i, attr in enumerate(subset):
+                alias = f"s{i}"
+                s_joins.append(
+                    f"JOIN `tabItem Variant Attribute` {alias} ON v.name = {alias}.parent "
+                    f"AND LOWER({alias}.attribute) = %s AND LOWER({alias}.attribute_value) = %s"
+                )
+                s_conds.extend([attr["attribute"].lower(), attr["attribute_value"].lower()])
+            s_query = f"SELECT v.name FROM `tabItem` v {' '.join(s_joins)} WHERE v.variant_of = %s AND v.disabled = 0 LIMIT 1"
+            s_conds.append(new_template)
+            s_res = frappe.db.sql(s_query, tuple(s_conds))
+            if s_res:
+                return s_res[0][0]
+
+    return None
+
+
+def rebuild_serial_no_components_for_model_change(serial_no_doc, item_wizard_doc, newmodel, njqca_name=None):
     """
     Model-change Part List rebuild.
 
@@ -2206,8 +2394,512 @@ def apply_previous_grades_to_components(serial_no_doc, previous_grades):
                 else:
                     frappe.throw(f"When changing the model, we don't have a variant for Grade <b>{old_grade}</b> for Item <b>{row.item}</b> (Item Group: <b>{row.item_group}</b>). Please contact NPD Team.")
 
+def get_and_close_old_purchase_mrs(serial_no):
+    old_mr_items = frappe.db.sql("""
+        SELECT c.name, c.item_code, c.item_group, c.parent
+        FROM `tabMaterial Request Item` c
+        JOIN `tabMaterial Request` p ON p.name = c.parent
+        WHERE c.serial_no = %s
+          AND p.docstatus = 1
+          AND p.material_request_type = 'Purchase'
+          AND IFNULL(c.post_order_status, '') != 'Completed'
+    """, (serial_no,), as_dict=True)
+
+    if old_mr_items:
+        frappe.db.sql("""
+            UPDATE `tabMaterial Request Item` c
+            JOIN `tabMaterial Request` p ON p.name = c.parent
+            SET c.post_order_status = 'Completed'
+            WHERE c.serial_no = %s
+              AND p.docstatus = 1
+              AND p.material_request_type = 'Purchase'
+              AND IFNULL(c.post_order_status, '') != 'Completed'
+        """, (serial_no,))
+
+    return old_mr_items
+
+
+def create_new_mr_for_model_change(serial_no, old_mr_items, njqca_name=None):
+    if not old_mr_items:
+        return None
+
+    serial_no_doc = frappe.get_doc("Serial No", serial_no)
+
+    distinct_item_groups = []
+    seen_groups = set()
+    for row in old_mr_items:
+        ig = row.item_group or frappe.db.get_value("Item", row.item_code, "item_group")
+        if ig and ig not in seen_groups:
+            seen_groups.add(ig)
+            distinct_item_groups.append(ig)
+
+    comp_map = {}
+    for comp in serial_no_doc.get("serial_no_component") or []:
+        if comp.item_group and comp.item and comp.item_group not in comp_map:
+            comp_map[comp.item_group] = comp.item
+
+    items_to_create = []
+    for group in distinct_item_groups:
+        if group not in comp_map:
+            continue
+
+        comp_item_code = comp_map[group]
+        grade_a_item = get_grade_a_item_variant(comp_item_code) or comp_item_code
+        items_to_create.append({
+            "item_code": grade_a_item,
+            "item_group": group,
+        })
+
+    if not items_to_create:
+        return None
+
+    company = (
+        frappe.defaults.get_user_default("company")
+        or frappe.db.get_single_value("Global Defaults", "default_company")
+        or "National Traders"
+    )
+    schedule_date = frappe.utils.add_days(frappe.utils.nowdate(), 3)
+    default_wh = frappe.db.get_single_value("Stock Settings", "default_warehouse") or "Stores - NJ"
+
+    new_mr = frappe.new_doc("Material Request")
+    new_mr.material_request_type = "Purchase"
+    new_mr.naming_series = "MREQ-.YYYY.-.MM.-"
+    new_mr.company = company
+    new_mr.schedule_date = schedule_date
+    new_mr.mr_create_reference = njqca_name or serial_no
+    new_mr.post_order_status = ""
+
+    for item_info in items_to_create:
+        icode = item_info["item_code"]
+        igroup = item_info.get("item_group")
+        fru_no, iuom = frappe.db.get_value("Item", icode, ["fru_number", "stock_uom"]) or (None, None)
+        fru_no = fru_no if fru_no else "NA"
+        iuom = iuom or "Nos"
+        iwh = (
+            frappe.db.get_value("Item Default", {"parent": icode, "company": company}, "default_warehouse")
+            or frappe.db.get_value("Item", icode, "default_warehouse")
+            or default_wh
+        )
+        new_mr.append("items", {
+            "item_code": icode,
+            "qty": 1.0,
+            "schedule_date": schedule_date,
+            "serial_no": serial_no,
+            "uom": iuom,
+            "stock_uom": iuom,
+            "conversion_factor": 1,
+            "item_group": igroup,
+            "warehouse": iwh,
+            "fru_number": fru_no,
+        })
+
+    new_mr.insert(ignore_permissions=True)
+    new_mr.submit()
+    frappe.msgprint(
+        f"Old MR items completed and new Material Request <b>{new_mr.name}</b> submitted with {len(items_to_create)} item(s) for Serial No <b>{serial_no}</b>."
+    )
+    return new_mr.name
+
+
+def repack_past_part_list_for_model_change(serial_no, newmodel, njqca_name=None):
+    """
+    When model is changed for a serial number in NJQCA:
+    1. Check parent Serial No's Past Part List (`tabPast Part List`).
+    2. For each row with a Part Serial No (`component_serial_no`), look for an item
+       for the new model in the same item group and with the row's existing grade.
+       If there is no match or no model-specific replacement (e.g. generic Laptop Adaptor),
+       skip that row.
+       If target item is already same as current item, skip that row.
+    3. Put all matching parts into ONE Repack Stock Entry:
+       - Row 1: Parent laptop Serial No IN (repack_item_code, source warehouse)
+       - Middle rows: Repacked parts OUT (unpack_item_code, target warehouse)
+       - Last row: Parent laptop Serial No OUT (unpack_item_code, target warehouse)
+    4. After Repack submits, update matching Past Part List rows to their new item codes.
+       Grades remain unchanged.
+    """
+    if not serial_no or not newmodel:
+        return None
+
+    parent_item = frappe.db.get_value("Serial No", serial_no, "item_code")
+    if not parent_item:
+        return None
+
+    parent_warehouse = frappe.db.get_value("Serial No", serial_no, "warehouse")
+    if not parent_warehouse:
+        sle = frappe.db.sql("""
+            SELECT warehouse
+            FROM `tabStock Ledger Entry`
+            WHERE serial_no = %s
+              AND is_cancelled = 0
+              AND qty_after_transaction > 0
+            ORDER BY posting_date DESC, posting_time DESC
+            LIMIT 1
+        """, (serial_no,), as_list=True)
+        parent_warehouse = sle[0][0] if sle else None
+
+    if not parent_warehouse:
+        parent_warehouse = (
+            frappe.db.get_single_value("Stock Settings", "default_warehouse")
+            or "Stores - NJ"
+        )
+
+    wizard_query = """
+        SELECT name FROM `tabItem Wizards`
+        WHERE model = %s AND part_list_status = 'Completed'
+        ORDER BY modified DESC LIMIT 1
+    """
+    wiz_res = frappe.db.sql(wizard_query, (newmodel,), as_dict=True)
+    if not wiz_res:
+        return None
+    item_wizard_name = wiz_res[0]["name"]
+
+    comp_data = frappe.db.sql("""
+        SELECT component_type, default_item_code
+        FROM `tabComponent`
+        WHERE parent = %s
+    """, (item_wizard_name,), as_dict=True)
+    comp_map = {
+        c["component_type"]: c["default_item_code"]
+        for c in comp_data
+        if c.get("component_type") and c.get("default_item_code")
+    }
+
+    bag_data = frappe.db.sql("""
+        SELECT item_group, item
+        FROM `tabBag List`
+        WHERE parent = %s AND item IS NOT NULL AND item != ''
+    """, (item_wizard_name,), as_dict=True)
+    for b in bag_data:
+        grp = (b.get("item_group") or "").strip()
+        itm = (b.get("item") or "").strip()
+        if grp and itm and grp not in comp_map:
+            comp_map[grp] = itm
+
+    def get_comp_default_item(group):
+        if not group:
+            return None
+        g_str = str(group).strip()
+        if g_str in comp_map:
+            return comp_map[g_str]
+        for k, v in comp_map.items():
+            if k.lower() == g_str.lower():
+                return v
+        g_clean = "".join(g_str.lower().split())
+        for k, v in comp_map.items():
+            k_clean = "".join(k.lower().split())
+            if g_clean == k_clean:
+                return v
+        for k, v in comp_map.items():
+            k_clean = "".join(k.lower().split())
+            if ("display" in g_clean and "display" in k_clean) or ("adaptor" in g_clean and "adaptor" in k_clean):
+                return v
+        return None
+
+    past_parts = frappe.db.sql("""
+        SELECT name, item, item_group, component_serial_no, grade
+        FROM `tabPast Part List`
+        WHERE parent = %s
+          AND component_serial_no IS NOT NULL
+          AND component_serial_no != ''
+        ORDER BY idx ASC
+    """, (serial_no,), as_dict=True)
+
+    from nj_p1_features.nj_p1_features.doctype.machine_part_changes.machine_part_changes import get_part_ledger_entry
+
+    unk_grade = get_unknown_grade()
+    items_to_repack = []
+    repack_items_list = []
+    seen_serials = set()
+
+    for row in (past_parts or []):
+        comp_serial = (row.get("component_serial_no") or "").strip()
+        if not comp_serial or comp_serial in seen_serials:
+            continue
+
+        sn_details = frappe.db.get_value(
+            "Serial No",
+            comp_serial,
+            ["warehouse", "status", "item_code"],
+            as_dict=True,
+        )
+        if not sn_details:
+            continue
+
+        sn_status = (sn_details.get("status") or "").strip()
+        # Skip if serial no is Delivered, Cancelled, Scrapped, or anything inactive
+        if sn_status.lower() == "delivered" or sn_status in ["Delivered", "Cancelled", "Scrapped"]:
+            continue
+
+        comp_wh = (sn_details.get("warehouse") or "").strip()
+        # Skip if serial no is not currently in any warehouse
+        if not comp_wh:
+            continue
+
+        # Strictly use Serial No current item_code and warehouse (never use Past Part List item)
+        current_item = (sn_details.get("item_code") or "").strip()
+        if not current_item:
+            continue
+
+        item_group = (row.get("item_group") or "").strip()
+        if not item_group:
+            item_group = frappe.db.get_value("Item", current_item, "item_group") or ""
+
+        # Determine actual grade strictly from the Serial No's current item variant attribute
+        sn_item_grade = frappe.db.get_value(
+            "Item Variant Attribute",
+            {"parent": current_item, "attribute": ["in", ["Grade", "grade", "GRADE"]]},
+            "attribute_value",
+        )
+        existing_grade = (sn_item_grade or row.get("grade") or unk_grade).strip()
+
+        default_item = get_comp_default_item(item_group)
+        if not default_item:
+            continue
+
+        target_item = None
+        if is_unknown_grade(existing_grade):
+            target_item = default_item
+        else:
+            target_item = get_variant_for_grade(default_item, existing_grade)
+
+        if not target_item or target_item == current_item:
+            continue
+
+        comp_val = get_part_ledger_entry(current_item, comp_serial) or 0
+        if not comp_val:
+            comp_val = get_part_ledger_entry(target_item, comp_serial) or 0
+        if not comp_val:
+            comp_val = (
+                frappe.db.get_value("Serial No", comp_serial, "purchase_rate")
+                or frappe.db.get_value("Item", current_item, "valuation_rate")
+                or frappe.db.get_value("Item", target_item, "valuation_rate")
+                or 1.0
+            )
+
+        repack_items_list.append({
+            "repack_item_code": current_item,
+            "repack_serial_no": comp_serial,
+            "repack_item_source_warehouse": comp_wh,
+            "repack_item_base_price": comp_val,
+            "unpack_item_code": target_item,
+            "unpack_serial_no": comp_serial,
+            "unpack_item_target_warehouse": comp_wh,
+            "unpack_item_base_price": comp_val,
+            "apply_grade_valuation": is_grade_conversion(current_item, target_item),
+        })
+
+        items_to_repack.append({
+            "past_part_row_name": row.get("name"),
+            "component_serial_no": comp_serial,
+            "current_item": current_item,
+            "target_item": target_item,
+            "warehouse": comp_wh,
+            "grade": existing_grade,
+            "item_group": item_group,
+        })
+        seen_serials.add(comp_serial)
+
+    stock_entry_resp = None
+    if repack_items_list:
+        company = (
+            frappe.defaults.get_user_default("company")
+            or frappe.db.get_single_value("Global Defaults", "default_company")
+            or "National Traders"
+        )
+
+        accounting_cost_account = (
+            frappe.db.get_single_value("NewJaisa Configuration", "default_operational_cost_account")
+            or frappe.db.get_value("Company", company, "default_expense_account")
+            or "Stock Adjustment - NT"
+        )
+
+        user = frappe.session.user or "Administrator"
+        user_name = frappe.db.get_value("User", user, "full_name") or user
+        date_str = frappe.utils.format_date(frappe.utils.nowdate(), "dd-mm-yyyy")
+
+        comment_lines = []
+        for item_info in items_to_repack:
+            comment_lines.append(
+                f"changed from {item_info['current_item']} to {item_info['target_item']} due to model change by {user_name} on {date_str}"
+            )
+        repack_comments = "\n".join(comment_lines)
+
+        stock_data = {
+            "name": njqca_name or serial_no,
+            "doctype": "NJQCA" if njqca_name else "Serial No",
+            "stock_entry_type": "Repack",
+            "expense_account": accounting_cost_account,
+            "parent_serial_no": serial_no,
+            "repack_items": repack_items_list,
+            "reason": "Others",
+            "comments": repack_comments,
+        }
+
+        stock_entry_resp = stock_entry_using_nj_lib(json.dumps(stock_data))
+
+        if stock_entry_resp and repack_comments:
+            frappe.db.set_value(
+                "Stock Entry",
+                stock_entry_resp,
+                {
+                    "reason": "Others",
+                    "comments": repack_comments,
+                },
+                update_modified=False
+            )
+
+        for item_info in items_to_repack:
+            if item_info.get("past_part_row_name"):
+                frappe.db.set_value(
+                    "Past Part List",
+                    item_info["past_part_row_name"],
+                    {
+                        "item": item_info["target_item"],
+                        "grade": item_info["grade"],
+                    },
+                    update_modified=True
+                )
+            if item_info.get("component_serial_no"):
+                update_serial_no_item_details(
+                    item_info["component_serial_no"],
+                    item_info["target_item"]
+                )
+                frappe.db.sql("""
+                    UPDATE `tabSerial No Component`
+                    SET item = %s, grade = %s
+                    WHERE parent = %s AND component_serial_no = %s
+                """, (item_info["target_item"], item_info["grade"], serial_no, item_info["component_serial_no"]))
+
+                try:
+                    c = frappe.new_doc("Comment")
+                    c.comment_type = "Comment"
+                    c.reference_doctype = "Serial No"
+                    c.reference_name = item_info["component_serial_no"]
+                    c.content = f"changed from {item_info['current_item']} to {item_info['target_item']} due to model change by {user_name} on {date_str}"
+                    c.insert(ignore_permissions=True)
+                except Exception:
+                    pass
+
+        if serial_no and repack_comments:
+            try:
+                c = frappe.new_doc("Comment")
+                c.comment_type = "Comment"
+                c.reference_doctype = "Serial No"
+                c.reference_name = serial_no
+                c.content = f"Repack Stock Entry {stock_entry_resp or ''}:\n" + repack_comments
+                c.insert(ignore_permissions=True)
+            except Exception:
+                pass
+
+        frappe.msgprint(
+            f"Repack Stock Entry <b>{stock_entry_resp or ''}</b> created for {len(repack_items_list)} component(s) from Past Part List."
+        )
+
+    # Always ensure all remaining Past Part List rows (including non-serialized or skipped) are updated to new model items
+    all_past_parts = frappe.db.sql("""
+        SELECT name, item, item_group, component_serial_no, grade
+        FROM `tabPast Part List`
+        WHERE parent = %s
+        ORDER BY idx ASC
+    """, (serial_no,), as_dict=True)
+
+    for row in (all_past_parts or []):
+        comp_serial = (row.get("component_serial_no") or "").strip()
+        if comp_serial and comp_serial in seen_serials:
+            continue
+
+        row_grp = (row.get("item_group") or "").strip()
+        def_item = get_comp_default_item(row_grp)
+        if not def_item:
+            continue
+        row_grade = (row.get("grade") or unk_grade).strip()
+        if is_unknown_grade(row_grade):
+            target_row_item = def_item
+        else:
+            target_row_item = get_variant_for_grade(def_item, row_grade) or def_item
+
+        if target_row_item and target_row_item != row.get("item"):
+            frappe.db.set_value(
+                "Past Part List",
+                row["name"],
+                {"item": target_row_item},
+                update_modified=True
+            )
+
+    return stock_entry_resp
+
+
+def update_serial_no_item_details(serial_no, item_code, extra_fields=None):
+    if not serial_no or not item_code:
+        return
+    item_info = frappe.db.get_value(
+        "Item",
+        item_code,
+        ["item_name", "description", "item_group", "brand"],
+        as_dict=True,
+    ) or {}
+    update_vals = {
+        "item_code": item_code,
+        "item_name": item_info.get("item_name") or item_code,
+        "description": item_info.get("description") or item_code,
+    }
+    if item_info.get("item_group"):
+        update_vals["item_group"] = item_info.get("item_group")
+    if item_info.get("brand"):
+        update_vals["brand"] = item_info.get("brand")
+    if extra_fields and isinstance(extra_fields, dict):
+        update_vals.update(extra_fields)
+
+    frappe.db.set_value("Serial No", serial_no, update_vals, update_modified=False)
+
+
+def _execute_model_change_for_serial_no(serial_no_doc, item_wizard_doc, newmodel, njqca_name, is_diff, old_mr_items):
+    rebuild_serial_no_components_for_model_change(
+        serial_no_doc,
+        item_wizard_doc,
+        newmodel,
+        njqca_name
+    )
+    serial_no_doc.save(ignore_permissions=True)
+
+    target_item_code = _get_target_laptop_item_code(serial_no_doc, newmodel, item_wizard_doc, njqca_name)
+    if target_item_code:
+        update_serial_no_item_details(
+            serial_no_doc.name,
+            target_item_code,
+            {
+                "to_make": target_item_code,
+                "model": newmodel,
+            }
+        )
+
+    if njqca_name:
+        update_njqca = {"model": newmodel}
+        if target_item_code:
+            update_njqca["item_code"] = target_item_code
+            update_njqca["manual_repack_item_code"] = target_item_code
+            update_njqca["repack_item_code"] = target_item_code
+        new_tmpl = getattr(item_wizard_doc, "item_template", None) or frappe.db.get_value(
+            "Item Wizards", item_wizard_doc.name, "item_template"
+        )
+        if new_tmpl:
+            update_njqca["item_template"] = new_tmpl
+        frappe.db.set_value("NJQCA", njqca_name, update_njqca, update_modified=False)
+
+    if is_diff and old_mr_items:
+        create_new_mr_for_model_change(serial_no_doc.name, old_mr_items, njqca_name)
+    if is_diff:
+        repack_past_part_list_for_model_change(serial_no_doc.name, newmodel, njqca_name)
+
+    return {
+        "status": "success",
+        "target_item_code": target_item_code,
+        "model": newmodel,
+    }
+
+
 @frappe.whitelist()
-def model_change_for_serial_no(newmodel, serial_no):
+def model_change_for_serial_no(newmodel, serial_no, njqca_name=None):
     user = frappe.session.user
     role_profile = frappe.db.get_value('Employee', {'user_id': user, 'status': 'Active'}, 'role_profile')
     
@@ -2223,6 +2915,15 @@ def model_change_for_serial_no(newmodel, serial_no):
         frappe.msgprint(f'Item Wizard is not there for Model <b>{newmodel}</b>. Please Contact NPD Team')
         return { "status": "failed" }
 
+    serial_no_doc = frappe.get_doc('Serial No', serial_no)
+    current_serial_model = serial_no_doc.model
+
+    is_diff = bool(current_serial_model and newmodel and current_serial_model != newmodel)
+
+    old_mr_items = []
+    if is_diff:
+        old_mr_items = get_and_close_old_purchase_mrs(serial_no)
+
     qi_exists = """select name from `tabNJ Quality Inspection` where barcode = %s"""
     kitting_exists = """select name from `tabKitting` where serial_no = %s"""
     mpc_exists = """select name from `tabMachine Part Changes` where serial_no = %s"""
@@ -2233,8 +2934,6 @@ def model_change_for_serial_no(newmodel, serial_no):
     mpc_exists_data = frappe.db.sql(mpc_exists,serial_no,as_dict=1)
     mr_exists_data = frappe.db.sql(mr_exists,serial_no,as_dict=1)
 
-    serial_no_doc = frappe.get_doc('Serial No', serial_no)
-
     if qi_exists_data == [] and kitting_exists_data == [] and mpc_exists_data == [] and mr_exists_data == []:
         if new_item_wizard:
             item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
@@ -2242,13 +2941,14 @@ def model_change_for_serial_no(newmodel, serial_no):
                 return { "status": "failed" }
 
             if newmodel:
-                rebuild_serial_no_components_for_model_change(
+                return _execute_model_change_for_serial_no(
                     serial_no_doc,
                     item_wizard_doc,
-                    newmodel
+                    newmodel,
+                    njqca_name,
+                    is_diff,
+                    old_mr_items,
                 )
-                serial_no_doc.save(ignore_permissions=True)
-                return { "status": "success" }
         else:
             frappe.msgprint(f'Item Wizard is not there for Model <b>{newmodel}</b>. Please Contact NPD Team')
             return { "status": "failed" }
@@ -2287,14 +2987,14 @@ def model_change_for_serial_no(newmodel, serial_no):
                 if not not_matched_item_groups:
                     item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
 
-                    rebuild_serial_no_components_for_model_change(
+                    return _execute_model_change_for_serial_no(
                         serial_no_doc,
                         item_wizard_doc,
-                        newmodel
+                        newmodel,
+                        njqca_name,
+                        is_diff,
+                        old_mr_items,
                     )
-
-                    serial_no_doc.save(ignore_permissions=True)
-                    return { "status": "success" }
                 
                 else:
                     mr_data_query ="""select distinct(item_group) from `tabMaterial Request Item` where serial_no = %s AND post_order_status !='Completed' AND docstatus = 1"""
@@ -2305,25 +3005,21 @@ def model_change_for_serial_no(newmodel, serial_no):
 
                     if past_part_list_data or mr_item_group_data:
                         for group in past_part_list_data:
-                            if group['item_group'] in not_matched_item_groups:
-                                frappe.msgprint(f'Item Group <b>{group["item_group"]}</b> is in Past Part List.Cannot change Model and Part List. Please contact <b>NPD</b> Team.')
-                                return { "status": "failed" }
+                            pass
 
                         for group in mr_item_group_data:
-                            if group['item_group'] in not_matched_item_groups:
-                                frappe.msgprint(f'Item Group <b>{group["item_group"]}</b> MR is Raised.Cannot change Model and Part List. Please contact <b>NPD</b> Team.')
-                                return { "status": "failed" }
+                            pass
                     
                     item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
 
-                    rebuild_serial_no_components_for_model_change(
+                    return _execute_model_change_for_serial_no(
                         serial_no_doc,
                         item_wizard_doc,
-                        newmodel
+                        newmodel,
+                        njqca_name,
+                        is_diff,
+                        old_mr_items,
                     )
-
-                    serial_no_doc.save(ignore_permissions=True)
-                    return { "status": "success" }
 
             else:
                 frappe.msgprint(f'Item Wizard is not there for Model <b>{Serial_no_model}</b>. Please Contact NPD Team')
@@ -4417,7 +5113,7 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
                         )
                         AND parameter <> 'Battery_Discharging_Start_Time'
                         AND parent = %(parent_name)s
-				        and value REGEXP '^[0-9]+$'
+                                        and value REGEXP '^[0-9]+$'
                         ORDER BY idx
                     ),
                     TimeParsed AS (
@@ -6749,9 +7445,9 @@ def create_serial_no_based_on_rfq(serial_info):
 def validate_model(model, manufacturer_model, components=None):
     try:
         if manufacturer_model and model:
-            model_override = check_manufacturer_model_exceptions(manufacturer_model, components)
-            if model_override and model_override == model:
-                return "1"
+            # model_override = check_manufacturer_model_exceptions(manufacturer_model, components)
+            # if model_override and model_override == model:
+            #     return "1"
 
             mapped_models = _get_models_for_manufacturer_model(manufacturer_model)
             if any(row.get('model') == model for row in mapped_models):

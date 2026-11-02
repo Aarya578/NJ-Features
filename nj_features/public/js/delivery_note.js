@@ -8,8 +8,10 @@ frappe.ui.form.on('Delivery Note', {
     //     }
     // },
     onload: function(frm) {   
-        handleScannerInput(frm, 'scan_barcode');
-        handleScannerInput(frm, 'scan_barcodes');
+        if (typeof handleScannerInput === 'function') {
+            handleScannerInput(frm, 'scan_barcode');
+            handleScannerInput(frm, 'scan_barcodes');
+        }
         // update_gst_tax_type_from_nj_settings(frm);
         // Run only if items exist and linked Sales Order is present
         
@@ -48,11 +50,6 @@ frappe.ui.form.on('Delivery Note', {
         //         frm.set_value("shipping_address_name", so_doc.shipping_address_name);
         //     }
         // });
-        let items = frm.doc.items.map(row => ({
-            idx: row.idx,
-            item_group: row.item_group
-        }));
-
         // frappe.call({
         //     method: "nj_features.overrides.delivery_note.get_item_group_cost_centers",
         //     args: { items: items },
@@ -74,8 +71,10 @@ frappe.ui.form.on('Delivery Note', {
     },
 
     refresh: function(frm) {
-        handleScannerInput(frm, 'scan_barcode');
-        handleScannerInput(frm, 'scan_barcodes');
+        if (typeof handleScannerInput === 'function') {
+            handleScannerInput(frm, 'scan_barcode');
+            handleScannerInput(frm, 'scan_barcodes');
+        }
         if (frm.doc.docstatus === 0) {
             frm.add_custom_button(__('View'), function() {
                 fetchAndDisplayLinks(frm, 'nj_features.overrides.delivery_note.get_link_1', 'Video');
@@ -291,7 +290,7 @@ frappe.ui.form.on('Delivery Note', {
                 if (r.message) {
                     console.log("inside the function============");
 
-                    const { weight, height, length, breadth } = r.message;
+                    const { weight, height, length, breadth, cod_amount } = r.message;
                     console.log("inside the function============");
 
 
@@ -378,7 +377,7 @@ frappe.ui.form.on('Delivery Note', {
     },
     scan_barcodes: function (cur_frm) {
         handleScannerInput(cur_frm, 'scan_barcodes');
-        cur_frm.set_value('scan_barcodes', cur_frm.doc.scan_barcodes.trim());
+        cur_frm.set_value('scan_barcodes', (cur_frm.doc.scan_barcodes || '').trim());
         if (cur_frm.doc.scan_barcodes) {
             
             frappe.call({
@@ -387,7 +386,8 @@ frappe.ui.form.on('Delivery Note', {
                 callback: function(r) {
                     const data = r && r.message;
                     
-                    if (r.message.scan === 1) {
+                    if (!data) return;
+                    if (data.scan === 1) {
                         if(cur_frm.doc.transfer_status == "Stock Accept") {
                             cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], true);
                         } else if (cur_frm.doc.transfer_status == "Racking") {
@@ -416,7 +416,7 @@ frappe.ui.form.on('Delivery Note', {
     scan_barcode: function (cur_frm) {
         handleScannerInput(cur_frm, 'scan_barcode');
 
-        cur_frm.set_value('scan_barcode', cur_frm.doc.scan_barcode.trim());
+        cur_frm.set_value('scan_barcode', (cur_frm.doc.scan_barcode || '').trim());
         if (cur_frm.doc.scan_barcode) {
             
             frappe.call({
@@ -425,7 +425,8 @@ frappe.ui.form.on('Delivery Note', {
                 callback: function(r) {
                     const data = r && r.message;
                     
-                    if (r.message.scan === 1) {
+                    if (!data) return;
+                    if (data.scan === 1) {
                         if(cur_frm.doc.transfer_status == "Stock Accept") {
                             cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], true);
                         } else if (cur_frm.doc.transfer_status == "Racking") {

@@ -11,9 +11,6 @@ from nj_features.nj_features.doctype.njqca.njqca import (
     rebuild_serial_no_components_for_model_change,
     update_serial_no_item_details,
     get_grade_a_item_variant,
-    get_variant_for_grade,
-    get_unknown_grade,
-    is_unknown_grade,
 )
 
 
@@ -156,10 +153,9 @@ class ModelChange(Document):
 
         repack_items_list = []
         comment_lines = []
-        components_to_update = []
         laptops_data = []
 
-        # ─── 1. COLLECT REPACK ITEMS FOR LAPTOPS & COMPONENTS ────────────
+        # ─── 1. COLLECT REPACK ITEMS FOR LAPTOPS ─────────────────────────
         for row in self.current_sn_model:
             sn = (row.serial_no or "").strip()
             if not sn:
@@ -226,119 +222,6 @@ class ModelChange(Document):
                 "old_model": row.model,
             })
 
-            # Check Past Part List components for this laptop
-            comp_map = {}
-            for c in item_wizard_doc.get("component") or []:
-                if int(c.get("mandatory") or 0) == 1:
-                    ctype = (c.get("component_type") or "").strip()
-                    dcode = c.get("default_item_code")
-                    if ctype and dcode and ctype not in comp_map:
-                        comp_map[ctype] = dcode
-
-            def get_comp_default(group):
-                if not group:
-                    return None
-                g_str = str(group).strip()
-                if g_str in comp_map:
-                    return comp_map[g_str]
-                for k, v in comp_map.items():
-                    if k.lower() == g_str.lower():
-                        return v
-                return None
-
-            past_parts = frappe.db.sql(
-                """
-                SELECT name, item, item_group, component_serial_no, grade
-                FROM `tabPast Part List`
-                WHERE parent = %s AND component_serial_no IS NOT NULL AND component_serial_no != ''
-                ORDER BY idx ASC
-                """,
-                (sn,),
-                as_dict=True,
-            )
-
-            unk_grade = get_unknown_grade()
-
-            for part_row in past_parts or []:
-                comp_serial = (part_row.get("component_serial_no") or "").strip()
-                if not comp_serial:
-                    continue
-
-                comp_sn_details = frappe.db.get_value(
-                    "Serial No",
-                    comp_serial,
-                    ["warehouse", "status", "item_code"],
-                    as_dict=True,
-                )
-                if not comp_sn_details:
-                    continue
-
-                if comp_sn_details.get("status") in ["Delivered", "Cancelled", "Scrapped"]:
-                    continue
-
-                comp_wh = (comp_sn_details.get("warehouse") or "").strip()
-                if not comp_wh:
-                    continue
-
-                comp_current_item = (comp_sn_details.get("item_code") or "").strip()
-                if not comp_current_item:
-                    continue
-
-                part_group = (part_row.get("item_group") or "").strip()
-                if not part_group:
-                    part_group = frappe.db.get_value("Item", comp_current_item, "item_group") or ""
-
-                sn_item_grade = frappe.db.get_value(
-                    "Item Variant Attribute",
-                    {"parent": comp_current_item, "attribute": ["in", ["Grade", "grade", "GRADE"]]},
-                    "attribute_value",
-                )
-                existing_grade = (sn_item_grade or part_row.get("grade") or unk_grade).strip()
-
-                def_part_item = get_comp_default(part_group)
-                if not def_part_item:
-                    continue
-
-                if is_unknown_grade(existing_grade):
-                    target_comp_item = def_part_item
-                else:
-                    target_comp_item = get_variant_for_grade(def_part_item, existing_grade)
-
-                # Only repack if part item code is different
-                if not target_comp_item or target_comp_item == comp_current_item:
-                    continue
-
-                comp_val = (
-                    frappe.db.get_value("Serial No", comp_serial, "purchase_rate")
-                    or frappe.db.get_value("Item", comp_current_item, "valuation_rate")
-                    or frappe.db.get_value("Item", target_comp_item, "valuation_rate")
-                    or 1.0
-                )
-
-                repack_items_list.append({
-                    "repack_item_code": comp_current_item,
-                    "repack_serial_no": comp_serial,
-                    "repack_item_source_warehouse": comp_wh,
-                    "repack_item_base_price": comp_val,
-                    "unpack_item_code": target_comp_item,
-                    "unpack_serial_no": comp_serial,
-                    "unpack_item_target_warehouse": comp_wh,
-                    "unpack_item_base_price": comp_val,
-                })
-
-                comment_lines.append(
-                    f"changed from {comp_current_item} to {target_comp_item} due to model change by {user_name} on {date_str}"
-                )
-
-                components_to_update.append({
-                    "parent_serial_no": sn,
-                    "past_part_row_name": part_row.get("name"),
-                    "component_serial_no": comp_serial,
-                    "current_item": comp_current_item,
-                    "target_item": target_comp_item,
-                    "grade": existing_grade,
-                })
-
         # ─── 2. CREATE COMBINED REPACK STOCK ENTRY ───────────────────────
         repack_comments = "\n".join(comment_lines)
         stock_data = {
@@ -363,7 +246,7 @@ class ModelChange(Document):
                 update_modified=False,
             )
 
-        # ─── 3. UPDATE SERIAL NO DOCS & PART LISTS ───────────────────────
+        # ─── 3. UPDATE SERIAL NO DOCS & REBUILD COMPONENTS ───────────────
         for lap in laptops_data:
             sn = lap["serial_no"]
             target_item_code = lap["target_item_code"]
@@ -392,38 +275,6 @@ class ModelChange(Document):
                 c.insert(ignore_permissions=True)
             except Exception:
                 pass
-
-        # Update repacked components
-        for comp in components_to_update:
-            if comp.get("past_part_row_name"):
-                frappe.db.set_value(
-                    "Past Part List",
-                    comp["past_part_row_name"],
-                    {
-                        "item": comp["target_item"],
-                        "grade": comp["grade"],
-                    },
-                    update_modified=True,
-                )
-            if comp.get("component_serial_no"):
-                update_serial_no_item_details(comp["component_serial_no"], comp["target_item"])
-                frappe.db.sql(
-                    """
-                    UPDATE `tabSerial No Component`
-                    SET item = %s, grade = %s
-                    WHERE parent = %s AND component_serial_no = %s
-                    """,
-                    (comp["target_item"], comp["grade"], comp["parent_serial_no"], comp["component_serial_no"]),
-                )
-                try:
-                    c = frappe.new_doc("Comment")
-                    c.comment_type = "Comment"
-                    c.reference_doctype = "Serial No"
-                    c.reference_name = comp["component_serial_no"]
-                    c.content = f"changed from {comp['current_item']} to {comp['target_item']} due to model change by {user_name} on {date_str}"
-                    c.insert(ignore_permissions=True)
-                except Exception:
-                    pass
 
         # ─── 4. CLOSE OLD MR & RAISE NEW MR FOR EACH SERIAL NO ───────────
         schedule_date = frappe.utils.add_days(frappe.utils.nowdate(), 3)

@@ -20,12 +20,6 @@
   "return_reason",
   "shiprocketcourier_name_block_list",
   "shiprocket_courier_names",
-  "delhivery_settings_section",
-  "delhivery_api_token",
-  "delhivery_serviceability_url",
-  "delhivery_order_url",
-  "delhivery_label_url",
-  "delhivery_product_type",
   "critical_log_settings_section",
   "surface_auth",
   "air_auth",
@@ -58,7 +52,9 @@
   "bold_desk_settings_section",
   "enabled",
   "bolddesk_domain",
-  "bold_desk_key"
+  "bold_desk_key",
+  "section_break_hhj1b",
+  "product_sufficiency_plan"
  ],
  "fields": [
   {
@@ -87,11 +83,6 @@
    "fieldtype": "Table",
    "label": "Shiprocket Courier Names",
    "options": "Shiprocket Courier Names"
-  },
-  {
-   "fieldname": "delhivery_settings_section",
-   "fieldtype": "Section Break",
-   "label": "Delhivery Settings"
   },
   {
    "fieldname": "delhivery_api_token",
@@ -299,27 +290,32 @@
   {
    "fieldname": "delhivery_api_token",
    "fieldtype": "Password",
-   "label": "Delhivery Api Token"
+   "label": "API Token",
+   "reqd": 1
   },
   {
+   "default": "https://track.delhivery.com/api/dc/fetch/serviceability/pincode",
    "fieldname": "delhivery_serviceability_url",
    "fieldtype": "Data",
-   "label": "Delhivery Serviceability Url"
+   "label": "Serviceability URL"
   },
   {
+   "default": "https://staging-express.delhivery.com/api/cmu/create.json",
    "fieldname": "delhivery_order_url",
    "fieldtype": "Data",
-   "label": "Delhivery Order Url"
+   "label": "Order URL"
   },
   {
+   "default": "https://track.delhivery.com/api/p/packing_slip",
    "fieldname": "delhivery_label_url",
    "fieldtype": "Data",
-   "label": "Delhivery Label Url"
+   "label": "Label URL"
   },
   {
+   "default": "Heavy",
    "fieldname": "delhivery_product_type",
    "fieldtype": "Data",
-   "label": "Delhivery Product Type"
+   "label": "Product Type"
   },
   {
    "fieldname": "bold_desk_settings_section",
@@ -344,11 +340,21 @@
    "fieldtype": "Password",
    "label": "BoldDesk API Key",
    "reqd": 1
+  },
+  {
+   "fieldname": "section_break_hhj1b",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "product_sufficiency_plan",
+   "fieldtype": "Table",
+   "label": "Product Sufficiency Plan",
+   "options": "Product Sufficiency Plan"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-08-18 14:51:29.117308",
+ "modified": "2026-11-03 11:46:57.902317",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Logistics Settings",

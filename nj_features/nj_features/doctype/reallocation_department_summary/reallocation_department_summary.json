@@ -1,0 +1,159 @@
+{
+ "actions": [],
+ "creation": "2026-10-28 08:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "department",
+  "sla_days",
+  "workload",
+  "required_capacity",
+  "column_break_b",
+  "headcount_before",
+  "capacity_before",
+  "backlog_days_before",
+  "load_vs_sla_before",
+  "column_break_a",
+  "headcount_after",
+  "capacity_after",
+  "backlog_days_after",
+  "load_vs_sla_after",
+  "gap_after",
+  "locked_reason"
+ ],
+ "fields": [
+  {
+   "fieldname": "department",
+   "fieldtype": "Link",
+   "label": "Department",
+   "options": "Department",
+   "columns": 2,
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "sla_days",
+   "fieldtype": "Float",
+   "label": "SLA Days",
+   "columns": 1,
+   "precision": "1",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "workload",
+   "fieldtype": "Float",
+   "label": "Backlog (weighted)",
+   "columns": 1,
+   "precision": "1",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "required_capacity",
+   "fieldtype": "Float",
+   "label": "Required / Day",
+   "precision": "1",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_b",
+   "fieldtype": "Column Break",
+   "label": "Before"
+  },
+  {
+   "fieldname": "headcount_before",
+   "fieldtype": "Int",
+   "label": "People Before",
+   "columns": 1,
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "capacity_before",
+   "fieldtype": "Float",
+   "label": "Capacity Before",
+   "precision": "1",
+   "read_only": 1
+  },
+  {
+   "fieldname": "backlog_days_before",
+   "fieldtype": "Float",
+   "label": "Backlog Days Before",
+   "columns": 1,
+   "precision": "2",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "load_vs_sla_before",
+   "fieldtype": "Percent",
+   "label": "Load vs SLA Before",
+   "columns": 1,
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_a",
+   "fieldtype": "Column Break",
+   "label": "After"
+  },
+  {
+   "fieldname": "headcount_after",
+   "fieldtype": "Int",
+   "label": "People After",
+   "columns": 1,
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "capacity_after",
+   "fieldtype": "Float",
+   "label": "Capacity After",
+   "precision": "1",
+   "read_only": 1
+  },
+  {
+   "fieldname": "backlog_days_after",
+   "fieldtype": "Float",
+   "label": "Backlog Days After",
+   "columns": 1,
+   "precision": "2",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "load_vs_sla_after",
+   "fieldtype": "Percent",
+   "label": "Load vs SLA After",
+   "columns": 1,
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "gap_after",
+   "fieldtype": "Float",
+   "label": "Gap After / Day",
+   "precision": "1",
+   "read_only": 1
+  },
+  {
+   "fieldname": "locked_reason",
+   "fieldtype": "Data",
+   "label": "Locked Reason",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-28 08:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Reallocation Department Summary",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 0,
+ "istable": 1,
+ "editable_grid": 0
+}

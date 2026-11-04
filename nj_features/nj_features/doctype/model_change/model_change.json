@@ -1,0 +1,113 @@
+{
+ "actions": [],
+ "autoname": "format:{model}.#####",
+ "creation": "2026-11-02 15:07:06.596492",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "serial_no",
+  "column_break_rpihx",
+  "add",
+  "column_break_cwack",
+  "model",
+  "section_break_t2vbc",
+  "current_sn_model",
+  "section_break_zluuu",
+  "updated_sn_model",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "serial_no",
+   "fieldtype": "Link",
+   "label": "Serial No",
+   "options": "Serial No"
+  },
+  {
+   "fieldname": "add",
+   "fieldtype": "Button",
+   "label": "Add"
+  },
+  {
+   "fieldname": "model",
+   "fieldtype": "Link",
+   "label": "Model",
+   "options": "Models"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Model Change",
+   "print_hide": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_t2vbc",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "current_sn_model",
+   "fieldtype": "Table",
+   "label": "Current SN Model",
+   "options": "Current SN Model"
+  },
+  {
+   "fieldname": "section_break_zluuu",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "updated_sn_model",
+   "fieldtype": "Table",
+   "label": "Updated SN Model",
+   "options": "Updated SN Model"
+  },
+  {
+   "fieldname": "column_break_rpihx",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_cwack",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-11-02 16:49:24.767020",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Model Change",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "NPD Manager",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

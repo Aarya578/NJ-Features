@@ -14,6 +14,30 @@ logger = frappe.logger('Shopifys', allow_site=True, file_count=1)
 DEPARTMENT_SLA_HOLIDAY_LIST = "Holiday List 2026"
 
 
+def update_serial_and_bag_list_timestamps(serial_no, timestamp):
+    """Set the timestamp on a Serial No and its existing Bag List serials."""
+    frappe.db.set_value('Serial No', serial_no, 'stock_enty_date_and_time', timestamp)
+
+    bag_serials = frappe.get_all(
+        'Bag List',
+        filters={
+            'parent': serial_no,
+            'parenttype': 'Serial No',
+            'parentfield': 'bag_list',
+        },
+        pluck='serial_no',
+    )
+    bag_serials = {value.strip() for value in bag_serials if value and value.strip()}
+    if not bag_serials:
+        return
+
+    existing_serials = frappe.get_all(
+        'Serial No', filters={'name': ['in', list(bag_serials)]}, pluck='name'
+    )
+    for bag_serial_no in existing_serials:
+        frappe.db.set_value('Serial No', bag_serial_no, 'stock_enty_date_and_time', timestamp)
+
+
 def _split_department_names(departments):
     if not departments:
         return []
@@ -79,7 +103,7 @@ class StockMovement(Document):
     def on_submit(self):
         try:
             # self.deparement_qty_check()
-            check_warehouse_qty(self.name)
+            # check_warehouse_qty(self.name)
             self.time_stamp_update()
             if self.get("make_supplier_return"):
                 self.validate_supplier_return()
@@ -138,7 +162,7 @@ class StockMovement(Document):
             for serial_no in item.serial_no.split('\n'):
                 serial_no = serial_no.strip()
                 if serial_no:
-                    frappe.db.set_value('Serial No', serial_no, 'stock_enty_date_and_time', current_time)
+                    update_serial_and_bag_list_timestamps(serial_no, current_time)
 
     def validate_supplier_return(self):
         """
@@ -884,6 +908,61 @@ def validate_serial_no_and_department(
         error_messages.append(f"Serial No <b>{serial_no}</b> does not exist.")
         return False
 
+    source_warehouse_type = frappe.db.get_value('Warehouse', s_warehouse, 'warehouse_type') if s_warehouse else None
+    if source_warehouse_type in ('Employee Personal Warehouse', 'External Warehouse'):
+        outward_checkpoints = frappe.db.sql(
+            """
+            SELECT checkpoint.name, checkpoint.creation, detail.serial_no
+            FROM `tabDispatch Security Stock Entry Table` detail
+            INNER JOIN `tabDispatch Security Checkpoints` checkpoint
+                ON checkpoint.name = detail.parent
+            WHERE checkpoint.docstatus = 1
+                AND checkpoint.dispatch_type = 'Transfer'
+                AND checkpoint.dc_action = 'Outward'
+                AND detail.serial_no LIKE %s
+            ORDER BY checkpoint.creation DESC, checkpoint.name DESC
+            """,
+            (f'%{serial_no}%',),
+            as_dict=True,
+        )
+        latest_outward = next(
+            (
+                checkpoint for checkpoint in outward_checkpoints
+                if serial_no in [value.strip() for value in (checkpoint.serial_no or '').replace('\n', ',').split(',')]
+            ),
+            None,
+        )
+        if latest_outward:
+            inward_registries = frappe.db.sql(
+                """
+                SELECT sir.name, detail.serial_no
+                FROM `tabSecurity Inward Registry Transfer Child` detail
+                INNER JOIN `tabSecurity Inward Registry` sir
+                    ON sir.name = detail.parent
+                WHERE sir.docstatus = 1
+                    AND sir.registry_type = 'Transfer'
+                    AND sir.dc_action = 'Inward'
+                    AND sir.creation > %s
+                    AND detail.serial_no LIKE %s
+                ORDER BY sir.creation DESC
+                """,
+                (latest_outward.creation, f'%{serial_no}%'),
+                as_dict=True,
+            )
+            has_later_inward = any(
+                serial_no in [value.strip() for value in (registry.serial_no or '').replace('\n', ',').split(',')]
+                for registry in inward_registries
+            )
+            if not has_later_inward:
+                error_messages.append(
+                    f"Serial No <b>{frappe.utils.escape_html(serial_no)}</b> has an Outward Transfer "
+                    f"in submitted Dispatch Security Checkpoint "
+                    f"<b>{frappe.utils.escape_html(latest_outward.name)}</b>. "
+                    "Submit a Transfer Security Inward Registry with DC Action Inward "
+                    "for this serial number before moving it."
+                )
+                return False
+
     if serial_doc.get('grade_a_item_code') and not department_doc.get('allow_grade_a_items'):
         allowed_departments = frappe.get_all(
             'Department',
@@ -972,7 +1051,7 @@ def validate_serial_no_and_department(
         and s_warehouse != t_warehouse
         and department != s_department
     ):
-        frappe.db.set_value('Serial No', serial_no, 'stock_enty_date_and_time', now_datetime())
+        update_serial_and_bag_list_timestamps(serial_no, now_datetime())
 
     core_item_groups = get_warehouse_and_department_sla_core_item_groups()
     row_item_group = serial_doc.get("item_group") or (

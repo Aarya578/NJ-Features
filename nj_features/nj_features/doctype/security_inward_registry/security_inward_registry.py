@@ -15,7 +15,7 @@ class SecurityInwardRegistry(Document):
         self.validate_customer_return_duplicates()
 
     def validate_customer_return_duplicates(self):
-        if self.registry_type == 'Customer Return' and self.get('customer_return_registry'):
+        if self.registry_type in ('Customer Return', 'Accept Registry') and self.get('customer_return_registry'):
             seen_serials = set()
             for row in self.customer_return_registry:
                 if row.serial_no:
@@ -186,23 +186,26 @@ class SecurityInwardRegistry(Document):
         try:
             total_qty = 0
 
-            if self.transfer_registry and len(self.transfer_registry)>0:
-                for item in self.transfer_registry:
-                    total_qty += int(item.actual_qty)
+            if self.get('transfer_registry'):
+                for item in self.get('transfer_registry'):
+                    total_qty += int(item.actual_qty or item.qty or 0)
             
-            if self.purchase_inward_registry_purchase_child and len(self.purchase_inward_registry_purchase_child)>0:
-                for item in self.purchase_inward_registry_purchase_child:
-                    total_qty += int(item.actual_qty)
+            if self.get('purchase_inward_registry_purchase_child'):
+                for item in self.get('purchase_inward_registry_purchase_child'):
+                    total_qty += int(item.actual_qty or item.qty or 0)
             
-            if self.customer_return_registry and len(self.customer_return_registry)>0:
-                for item in self.customer_return_registry:
-                    total_qty += int(item.actual_qty)
+            if self.get('customer_return_registry'):
+                for item in self.get('customer_return_registry'):
+                    total_qty += int(item.actual_qty or item.qty or 0)
             
-            if self.purchase_inward_registry_child and len(self.purchase_inward_registry_child)>0:
-                for item in self.purchase_inward_registry_child:
-                    total_qty += int(item.actual_qty)
+            if self.get('purchase_inward_registry_child'):
+                for item in self.get('purchase_inward_registry_child'):
+                    total_qty += int(item.actual_qty or item.qty or 0)
 
-            self.db_set("total_qty", total_qty)
+            if not self.is_new():
+                self.db_set("total_qty", total_qty)
+            else:
+                self.total_qty = total_qty
 
             return total_qty
         
@@ -584,93 +587,179 @@ def get_registry_qty(frm):
         frm = json.loads(frm)
 
     valid_table_name = get_child_table(frm)
+    if not valid_table_name:
+        return None
 
-    if(frm.get('registry_type') == 'Accept Registry'):
-        if valid_table_name:
-            query = """
-                SELECT item_group, warehouse, item_code, SUM(actual_qty) AS qty 
-                FROM `{}` 
-                WHERE parent = %s AND docstatus = 1 
-                GROUP BY item_code
-            """.format(valid_table_name)
+    dt_name = valid_table_name[3:] if valid_table_name.startswith('tab') else valid_table_name
+    table_columns = frappe.db.get_table_columns(dt_name)
 
-            out = frappe.db.sql(query, (frm.get('name'),), as_dict=True)
+    has_item_code = 'item_code' in table_columns
+    has_item_group = 'item_group' in table_columns
+    has_actual_qty = 'actual_qty' in table_columns
+    has_qty = 'qty' in table_columns
 
-            if out:
-                return out
+    if has_actual_qty and has_qty:
+        qty_col = "COALESCE(child.actual_qty, child.qty, 0)"
+    elif has_actual_qty:
+        qty_col = "COALESCE(child.actual_qty, 0)"
+    elif has_qty:
+        qty_col = "COALESCE(child.qty, 0)"
     else:
-        if valid_table_name:
-            query = """
-                SELECT item_group, warehouse, SUM(actual_qty) AS qty 
-                FROM `{}` 
-                WHERE parent = %s AND docstatus = 1 
-                GROUP BY item_group
-            """.format(valid_table_name)
+        qty_col = "0"
 
-            out = frappe.db.sql(query, (frm.get('name'),), as_dict=True)
+    if frm.get('registry_type') == 'Accept Registry':
+        item_group_expr = "child.item_group" if has_item_group else "item.item_group"
+        if has_item_group and has_item_code:
+            item_group_expr = "COALESCE(child.item_group, item.item_group)"
 
-            if out:
-                return out
+        from_clause = f"`{valid_table_name}` child"
+        if has_item_code:
+            from_clause += " LEFT JOIN `tabItem` item ON item.name = child.item_code"
+            item_code_expr = "child.item_code"
+        else:
+            item_code_expr = "'' AS item_code"
+
+        query = f"""
+            SELECT 
+                {item_group_expr} AS item_group, 
+                child.warehouse, 
+                {item_code_expr}, 
+                SUM({qty_col}) AS qty 
+            FROM {from_clause}
+            WHERE child.parent = %s AND child.docstatus = 1 
+            GROUP BY child.warehouse, {item_code_expr}
+        """
+        out = frappe.db.sql(query, (frm.get('name'),), as_dict=True)
+        if out:
+            return out
+    else:
+        if has_item_group and has_item_code:
+            item_group_expr = "COALESCE(child.item_group, item.item_group)"
+            from_clause = f"`{valid_table_name}` child LEFT JOIN `tabItem` item ON item.name = child.item_code"
+        elif has_item_group:
+            item_group_expr = "child.item_group"
+            from_clause = f"`{valid_table_name}` child"
+        elif has_item_code:
+            item_group_expr = "item.item_group"
+            from_clause = f"`{valid_table_name}` child LEFT JOIN `tabItem` item ON item.name = child.item_code"
+        else:
+            item_group_expr = "''"
+            from_clause = f"`{valid_table_name}` child"
+
+        query = f"""
+            SELECT 
+                {item_group_expr} AS item_group, 
+                child.warehouse, 
+                SUM({qty_col}) AS qty 
+            FROM {from_clause}
+            WHERE child.parent = %s AND child.docstatus = 1 
+            GROUP BY {item_group_expr}, child.warehouse
+        """
+        out = frappe.db.sql(query, (frm.get('name'),), as_dict=True)
+        if out:
+            return out
 
     return None
 
 @frappe.whitelist()
 def get_stock_registry(stock_registry_no):
     try:
-        get_po_number = frappe.db.get_value('Security Inward Registry', stock_registry_no, 'po_number')
-        stock_details = frappe.db.sql("""
-            SELECT  
-                poi.item_group, 
-                poi.item_code, 
-                poi.qty,
-                poi.idx,
-                sir.name AS reference_name, 
-                sir.po_number AS po_number
-            FROM `tabSecurity Inward Registry` sir
-            INNER JOIN `tabPurchase Order Item` poi ON sir.po_number = poi.parent
-            INNER JOIN `tabPurchase Order` po ON po.name = poi.parent
-            WHERE sir.name = %s
-        """, (stock_registry_no,), as_dict=True)
-
-        for row in stock_details:
-            po_qty = frappe.db.get_value(
-                'Purchase Order Item',
-                {'parent': row.po_number, 'item_code': row.item_code, 'item_group': row.item_group, 'idx': row.idx},
-                ['qty']
-            )
-
-            total_received_qty = frappe.db.sql("""
-                SELECT SUM(pri.qty) 
-                FROM 
-                    `tabPurchase Receipt Item` pri
-                INNER JOIN 
-                    `tabPurchase Receipt` pr ON pri.parent = pr.name
-                WHERE 
-                    pri.purchase_order = %s 
-                    AND pri.item_code = %s AND pri.idx = %s 
-                    AND pr.docstatus = 1
-            """, (row.po_number, row.item_code, row.idx))[0][0] or 0 
-
-            available_qty = float(po_qty) - float(total_received_qty)
-
-            row['available_qty'] = available_qty
-
-        dash_board_data = frappe.db.sql("""
-                                        SELECT * from `tabSecurity Inward Registry Purchase Child`
-                                        WHERE parent = %s
-                                    """, (stock_registry_no,), as_dict=True)
-        
-        if not stock_details:
+        source_registry = frappe.db.get_value(
+            'Security Inward Registry',
+            stock_registry_no,
+            ['name', 'registry_type', 'po_number', 'docstatus'],
+            as_dict=True
+        )
+        if not source_registry:
             frappe.throw(f"No records found for Stock Registry {stock_registry_no}")
 
-        for row in stock_details:
-            parent_item_group = frappe.db.get_value('Item Group', row['item_group'], 'parent_item_group')
-            if parent_item_group != 'Products':
-                row['reference_item_group'] = 'Others'
-            else:
-                row['reference_item_group'] = row['item_group']
-        
-        return stock_details, dash_board_data, get_po_number
+        if source_registry.docstatus == 2:
+            frappe.throw(f"Stock Registry {stock_registry_no} is cancelled.")
+
+        if source_registry.registry_type == 'Customer Return':
+            customer_return_rows = frappe.db.get_all(
+                'Customer Return for Security Inward Registry',
+                filters={'parent': stock_registry_no},
+                fields=[
+                    'data', 'tracking_id', 'serial_no', 'qty', 'item_code',
+                    'warehouse', 'actual_qty', 'reference_name', 'reference_parent',
+                    'reference_doctype', 'sales_order', 'item_group'
+                ],
+                order_by='idx asc'
+            )
+            if not customer_return_rows:
+                frappe.throw(f"No records found for Stock Registry {stock_registry_no}")
+
+            return {
+                "registry_type": "Customer Return",
+                "customer_return_data": customer_return_rows,
+                "stock_registry_no": stock_registry_no,
+            }
+
+        elif source_registry.registry_type == 'Purchase':
+            get_po_number = source_registry.po_number
+            stock_details = frappe.db.sql("""
+                SELECT  
+                    poi.item_group, 
+                    poi.item_code, 
+                    poi.qty, 
+                    poi.idx,
+                    sir.name AS reference_name, 
+                    sir.po_number AS po_number
+                FROM `tabSecurity Inward Registry` sir
+                INNER JOIN `tabPurchase Order Item` poi ON sir.po_number = poi.parent
+                INNER JOIN `tabPurchase Order` po ON po.name = poi.parent
+                WHERE sir.name = %s
+            """, (stock_registry_no,), as_dict=True)
+
+            for row in stock_details:
+                po_qty = frappe.db.get_value(
+                    'Purchase Order Item',
+                    {'parent': row.po_number, 'item_code': row.item_code, 'item_group': row.item_group, 'idx': row.idx},
+                    ['qty']
+                )
+
+                total_received_qty = frappe.db.sql("""
+                    SELECT SUM(pri.qty) 
+                    FROM 
+                        `tabPurchase Receipt Item` pri
+                    INNER JOIN 
+                        `tabPurchase Receipt` pr ON pri.parent = pr.name
+                    WHERE 
+                        pri.purchase_order = %s 
+                        AND pri.item_code = %s AND pri.idx = %s 
+                        AND pr.docstatus = 1
+                """, (row.po_number, row.item_code, row.idx))[0][0] or 0 
+
+                available_qty = float(po_qty or 0) - float(total_received_qty or 0)
+                row['available_qty'] = available_qty
+
+            dash_board_data = frappe.db.sql("""
+                SELECT * from `tabSecurity Inward Registry Purchase Child`
+                WHERE parent = %s
+            """, (stock_registry_no,), as_dict=True)
+
+            if not stock_details:
+                frappe.throw(f"No records found for Stock Registry {stock_registry_no}")
+
+            for row in stock_details:
+                parent_item_group = frappe.db.get_value('Item Group', row['item_group'], 'parent_item_group')
+                if parent_item_group != 'Products':
+                    row['reference_item_group'] = 'Others'
+                else:
+                    row['reference_item_group'] = row['item_group']
+
+            return {
+                "registry_type": "Purchase",
+                "stock_details": stock_details,
+                "dash_board_data": dash_board_data,
+                "po_number": get_po_number,
+                0: stock_details,
+                1: dash_board_data,
+                2: get_po_number,
+            }
+        else:
+            frappe.throw(f"Registry Type '{source_registry.registry_type}' is not supported for Accept Registry.")
 
     except Exception as e:
         frappe.throw(f"Error fetching stock registry details: {str(e)}")

@@ -602,8 +602,9 @@
             return Promise.resolve(isScannerAccessActive());
         }
 
-        loadPromise = frappe.db
-            .get_value("NJ Settings", { parameter: SETTING_PARAMETER }, "value")
+        loadPromise = Promise.resolve(
+            frappe.db.get_value("NJ Settings", { parameter: SETTING_PARAMETER }, "value")
+        )
             .then(function (r) {
                 const val = (r && r.message && r.message.value !== undefined)
                     ? r.message.value

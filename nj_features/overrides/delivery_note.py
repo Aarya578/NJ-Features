@@ -71,6 +71,9 @@ class CustomDeliveryNote(DeliveryNote):
         super().validate()
         self.validate_is_service_serials()
 
+    def before_submit(self):
+        self.sir_return_dn_validation()
+
     def limits_crossed_error(self, args, item, qty_or_amount):
         return custome_limits_crossed_error(self, args, item, qty_or_amount)
 
@@ -495,6 +498,128 @@ class CustomDeliveryNote(DeliveryNote):
             serial_doc.delivery_time = None
             serial_doc.set_status()
             serial_doc.db_update()
+
+    def sir_return_dn_validation(self):
+        print(f"[SIR DN validation] DN={self.name}, is_return={self.is_return}")
+        if not self.is_return:
+            print("[SIR DN validation] Skipped: this is not a return Delivery Note")
+            return
+
+        aging_value = frappe.db.get_value(
+            "NJ Settings",
+            {"module": "NJ Features", "doc_type": "Security Inward Registry", "parameter": "sir_aging_days"},
+            "value",
+        )
+        print(f"[SIR DN validation] NJ Settings sir_aging_days={aging_value!r}")
+        try:
+            aging_days = int(aging_value)
+            if aging_days < 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            print("[SIR DN validation] Blocked: invalid or missing aging setting")
+            frappe.throw(_("Set sir_aging_days to a non-negative whole number in NJ Settings."))
+
+        serial_nos = {
+            serial_no
+            for table in ("items", "packed_items")
+            for row in self.get(table) or []
+            for serial_no in self.get_serial_list(row.get("serial_no"))
+        }
+        print(f"[SIR DN validation] DN serial numbers={sorted(serial_nos)}")
+        if not serial_nos:
+            print("[SIR DN validation] Skipped: no serial numbers on the DN")
+            return
+
+        accepted = frappe.db.sql(
+            """
+            SELECT sir.name, DATE(sir.creation) AS accepted_date, cr.serial_no
+            FROM `tabSecurity Inward Registry` sir
+            INNER JOIN `tabSecurity Inward Registry` linked_sir
+                ON linked_sir.name = sir.stock_registry_no
+                AND linked_sir.registry_type = 'Customer Return'
+                AND linked_sir.docstatus = 1
+            INNER JOIN `tabCustomer Return for Security Inward Registry` cr
+                ON cr.parent = sir.name
+            WHERE sir.registry_type = 'Accept Registry'
+                AND sir.docstatus = 1
+                AND cr.serial_no IS NOT NULL
+                AND cr.serial_no != ''
+            ORDER BY sir.creation, sir.name
+            """,
+            as_dict=True,
+        )
+        today = getdate(nowdate())
+        accepted_by_serial = {}
+        for row in accepted:
+            serial_no = row.serial_no.strip()
+            if serial_no:
+                accepted_by_serial[serial_no] = row
+        print(
+            f"[SIR DN validation] Today={today}, accepted SIR rows={len(accepted)}, "
+            f"unique accepted serials={len(accepted_by_serial)}"
+        )
+        for serial_no in sorted(serial_nos & accepted_by_serial.keys()):
+            sir = accepted_by_serial[serial_no]
+            print(
+                f"[SIR DN validation] DN serial={serial_no}, SIR={sir.name}, "
+                f"accepted={sir.accepted_date}, age={(today - getdate(sir.accepted_date)).days} days"
+            )
+
+        missing = sorted(serial_nos - accepted_by_serial.keys())
+        if missing:
+            print(f"[SIR DN validation] Blocked: no accepted SIR for {missing}")
+            frappe.throw(
+                _("These serial numbers have no submitted Accept Registry SIR: {0}").format(
+                    ", ".join(frappe.utils.escape_html(serial_no) for serial_no in missing)
+                )
+            )
+
+        returned = set()
+        if accepted_by_serial:
+            returned_rows = frappe.db.sql(
+                """
+                SELECT dni.serial_no
+                FROM `tabDelivery Note Item` dni
+                INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
+                WHERE dn.docstatus = 1 AND dn.is_return = 1
+                UNION ALL
+                SELECT pi.serial_no
+                FROM `tabPacked Item` pi
+                INNER JOIN `tabDelivery Note` dn ON dn.name = pi.parent
+                WHERE dn.docstatus = 1 AND dn.is_return = 1
+                """,
+                as_dict=True,
+            )
+            for row in returned_rows:
+                returned.update(self.get_serial_list(row.serial_no))
+        print(f"[SIR DN validation] Previously returned serials={len(returned)}")
+
+        overdue = [
+            row for serial_no, row in accepted_by_serial.items()
+            if serial_no not in returned
+            and (today - getdate(row.accepted_date)).days > aging_days
+        ]
+        other_overdue = [row for row in overdue if row.serial_no.strip() not in serial_nos]
+        print(
+            f"[SIR DN validation] Outstanding overdue={len(overdue)}, "
+            f"overdue outside this DN={[(row.serial_no, row.name) for row in other_overdue]}"
+        )
+        if other_overdue:
+            print("[SIR DN validation] Blocked: other overdue serials must be returned first")
+            details = "<br>".join(
+                _("{0} — SIR {1} ({2} days)").format(
+                    frappe.utils.escape_html(row.serial_no),
+                    frappe.utils.escape_html(row.name),
+                    (today - getdate(row.accepted_date)).days,
+                )
+                for row in other_overdue
+            )
+            frappe.throw(
+                _("Return these overdue serial numbers first (limit: {0} days):<br>{1}").format(
+                    aging_days, details
+                )
+            )
+        print("[SIR DN validation] Allowed: no other outstanding overdue serials")
 
     def _process_customer_details(self):
         

@@ -236,28 +236,28 @@ frappe.ui.form.on("NJQCA", {
         $inputArea.css("position", "relative");
 
         let fogOverlay = $(`
-					<div class="fog-overlay" style="
-						position: absolute;
-						top: 0; left: 0;
-						width: 100%; height: 100%;
-						background: rgba(255, 255, 255, 0.3);
-						z-index: 5;
-						border-radius: 4px;
-						pointer-events: none;">
-					</div>
-				`);
+                                        <div class="fog-overlay" style="
+                                                position: absolute;
+                                                top: 0; left: 0;
+                                                width: 100%; height: 100%;
+                                                background: rgba(255, 255, 255, 0.3);
+                                                z-index: 5;
+                                                border-radius: 4px;
+                                                pointer-events: none;">
+                                        </div>
+                                `);
         $inputArea.append(fogOverlay);
 
         let lockIcon = $(`
-					<i class="fa fa-lock" style="
-						position: absolute;
-						right: 10px; top: 50%;
-						transform: translateY(-50%);
-						font-size: 16px;
-						color: #fff;
-						z-index: 6;">
-					</i>
-				`);
+                                        <i class="fa fa-lock" style="
+                                                position: absolute;
+                                                right: 10px; top: 50%;
+                                                transform: translateY(-50%);
+                                                font-size: 16px;
+                                                color: #fff;
+                                                z-index: 6;">
+                                        </i>
+                                `);
         $inputArea.append(lockIcon);
       }
     }
@@ -1544,15 +1544,30 @@ frappe.ui.form.on("NJQCA", {
                   args: {
                     newmodel: frm.doc.model,
                     serial_no: frm.doc.serial_no,
+                    njqca_name: frm.doc.name,
                   },
+                  freeze: true,
+                  freeze_message: `<div style="text-align: center;">
+                                      <i class="fa fa-spinner fa-spin" style="font-size: 24px;"></i> 
+                                      <br>Updating Model and Part List... Please Wait
+                                   </div>`,
                   callback: function (r) {
-                    if (r.message.status === "success") {
+                    if (r.message && r.message.status === "success") {
+                      if (r.message.target_item_code) {
+                        frm.set_value("item_code", r.message.target_item_code);
+                        frm.set_value("manual_repack_item_code", r.message.target_item_code);
+                        frm.set_value("repack_item_code", r.message.target_item_code);
+                      }
+                      if (r.message.model) {
+                        frm.set_value("model", r.message.model);
+                      }
                       var base_url = frappe.urllib.get_base_url();
                       var serial_no_link = `${base_url}/app/serial-no/${cur_frm.doc.serial_no}`;
                       frappe.msgprint(
                         `Part List and Model is updated for Serial No : <strong><a href='${serial_no_link}'>${cur_frm.doc.serial_no}</a></strong> has been submitted successfully.`,
                       );
-                    } else if (r.message.status === "failed") {
+                      frm.reload_doc();
+                    } else if (r.message && r.message.status === "failed") {
                       $(".primary-action").hide();
                       frm.set_value("model", "");
                     }
@@ -2455,7 +2470,7 @@ function processItemTemplate(frm) {
                 newRow.name,
                 "processor_type",
                 row.attr_data["Processor Type"] ||
-                  row.attr_data["Processor Type1"],
+                row.attr_data["Processor Type1"],
               );
               frappe.model.set_value(
                 newRow.doctype,
@@ -2845,10 +2860,10 @@ njqca.get_manufacturer_models = function (
 
       const preferredValue =
         selected_manufacturer_model &&
-        options.includes(selected_manufacturer_model)
+          options.includes(selected_manufacturer_model)
           ? selected_manufacturer_model
           : frm.doc.manufacturer_model &&
-              options.includes(frm.doc.manufacturer_model)
+            options.includes(frm.doc.manufacturer_model)
             ? frm.doc.manufacturer_model
             : null;
 
@@ -3532,7 +3547,7 @@ function check_and_handle_ext_linkage(frm) {
           });
         },
         // NO — do nothing, proceed normally
-        function () {},
+        function () { },
       );
     },
   });
@@ -4163,15 +4178,15 @@ function show_checkbutton_for_field(frm, fieldname) {
 
     $checkButtonCell.append(
       `<button class='btn btn-primary btn-xs check-button'
-				style='
-					padding: 2px 10px;
-					font-size: 12px;
-					line-height: 1.5;
-					border-radius: 3px;
-					background-color: #589ffc;
-					border: none;
-					width: auto;
-					min-width: 50px;'>Check</button>`,
+                                style='
+                                        padding: 2px 10px;
+                                        font-size: 12px;
+                                        line-height: 1.5;
+                                        border-radius: 3px;
+                                        background-color: #589ffc;
+                                        border: none;
+                                        width: auto;
+                                        min-width: 50px;'>Check</button>`,
     );
 
     $checkButtonCell.find(".check-button").click(function () {

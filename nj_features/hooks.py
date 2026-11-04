@@ -90,7 +90,7 @@ doc_events = {
     "Purchase Order": {
         "before_save": "nj_features.overrides.purchase_order.restore_manual_conversion_on_po",
         "validate": "nj_features.overrides.purchase_order.validate_mandatory_links",
-        "before_submit": "nj_features.overrides.purchase_order.npd_core_item_group_validataion",
+        #"before_submit": "nj_features.overrides.purchase_order.npd_core_item_group_validataion",
         "on_submit": [
             "nj_features.overrides.purchase_order.validate_warranty_on_submit",
             "nj_features.overrides.purchase_order.create_pr_on_submit",

@@ -2,9 +2,10 @@
 # For license information, please see license.txt
 
 import frappe
+import re
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import add_days, getdate, now_datetime, nowdate
+from frappe.utils import add_days, flt, getdate, now_datetime, nowdate
 
 
 EMPLOYEE_PERSONAL_WAREHOUSE_TYPE = "Employee Personal Warehouse"
@@ -14,10 +15,153 @@ class DispatchSecurityCheckpoints(Document):
     def validate(self):
         if self.dispatch_type == "Asset":
             self.validate_asset_security_entries()
+        elif self.dispatch_type == "Transfer":
+            self.validate_transfer_security_entries()
 
     def before_submit(self):
         if self.dispatch_type == "Asset":
             self.validate_asset_security_entries(lock_serials=True)
+        elif self.dispatch_type == "Transfer":
+            if not self.dc_entry:
+                frappe.throw(_("Select the DC Type before submitting."))
+            self.validate_transfer_security_entries()
+        elif self.dispatch_type == "Purchase Return":
+            unscanned = [
+                row.serial_no.strip()
+                for row in self.get("dsc_purchase_return_details") or []
+                if row.serial_no and row.serial_no.strip() and not row.is_sn_scanned
+            ]
+            if unscanned:
+                frappe.throw(
+                    _("Please scan these serial numbers before submitting: {0}").format(
+                        ", ".join(frappe.utils.escape_html(serial_no) for serial_no in unscanned)
+                    )
+                )
+
+    def validate_transfer_security_entries(self):
+        entries = self.get("dispatch_security_stock_entry_table") or []
+        if not entries:
+            frappe.throw(_("Scan a Material Transfer Stock Entry before saving."))
+
+        stock_entry_names = {row.stock_entry_name for row in entries if row.stock_entry_name}
+        if len(stock_entry_names) != 1 or any(not row.stock_entry_name for row in entries):
+            frappe.throw(_("All Transfer rows must belong to one scanned Stock Entry."))
+        stock_entry_name = next(iter(stock_entry_names))
+        stock_entry = frappe.db.get_value(
+            "Stock Entry", stock_entry_name, ["stock_entry_type", "docstatus"], as_dict=True
+        )
+        if not stock_entry or stock_entry.stock_entry_type != "Material Transfer" or stock_entry.docstatus != 1:
+            frappe.throw(
+                _("Stock Entry {0} must be a submitted Material Transfer.").format(
+                    frappe.bold(stock_entry_name)
+                )
+            )
+
+        scanned_serials = set()
+        non_serialized_quantities = {}
+        for row in entries:
+            serials = split_transfer_serials(row.serial_no)
+            target_warehouse_type = frappe.db.get_value(
+                "Warehouse", row.target_warehouse, "warehouse_type"
+            ) if row.target_warehouse else None
+            if not serials:
+                if not row.item_code or not row.target_warehouse:
+                    frappe.throw(_("Item Code and Target Warehouse are required in Transfer row {0}.").format(row.idx))
+                if frappe.db.get_value("Item", row.item_code, "has_serial_no"):
+                    frappe.throw(_("Serial No is required for serialized Item {0} in Transfer row {1}.").format(
+                        frappe.bold(row.item_code), row.idx
+                    ))
+                if self.dc_entry and target_warehouse_type != self.dc_entry:
+                    frappe.throw(
+                        _("Item {0} is in a {1} warehouse ({2}). You cannot select DC Type {3} for this item.").format(
+                            frappe.bold(row.item_code),
+                            frappe.bold(target_warehouse_type or _("unspecified type")),
+                            frappe.bold(row.target_warehouse),
+                            frappe.bold(self.dc_entry),
+                        )
+                    )
+                quantity = flt(row.serial_no_quantity)
+                if quantity <= 0:
+                    frappe.throw(_("Quantity must be greater than zero for Item {0} in Transfer row {1}.").format(
+                        frappe.bold(row.item_code), row.idx
+                    ))
+                key = (row.item_code, row.target_warehouse)
+                non_serialized_quantities[key] = non_serialized_quantities.get(key, 0) + quantity
+                continue
+            for serial_no in serials:
+                if serial_no in scanned_serials:
+                    frappe.throw(_("Serial No {0} appears more than once in the Transfer table.").format(frappe.bold(serial_no)))
+                scanned_serials.add(serial_no)
+                warehouse = frappe.db.get_value("Serial No", serial_no, "warehouse")
+                if warehouse != row.target_warehouse:
+                    frappe.throw(
+                        _("Serial No {0} is in warehouse {1}, but Transfer row {2} has target warehouse {3}.").format(
+                            frappe.bold(serial_no),
+                            frappe.bold(warehouse or _("None")),
+                            row.idx,
+                            frappe.bold(row.target_warehouse or _("None")),
+                        )
+                    )
+                if self.dc_entry and target_warehouse_type != self.dc_entry:
+                    frappe.throw(
+                        _("Serial No {0} is in a {1} warehouse ({2}). You cannot select DC Type {3} for this serial number.").format(
+                            frappe.bold(serial_no),
+                            frappe.bold(target_warehouse_type or _("unspecified type")),
+                            frappe.bold(row.target_warehouse),
+                            frappe.bold(self.dc_entry),
+                        )
+                    )
+
+        for (item_code, target_warehouse), required_qty in non_serialized_quantities.items():
+            available_qty = flt(frappe.db.get_value(
+                "Bin", {"item_code": item_code, "warehouse": target_warehouse}, "actual_qty"
+            ))
+            if available_qty < required_qty:
+                frappe.throw(
+                    _("Insufficient stock for Item {0} in Warehouse {1}. Required: {2}; available: {3}.").format(
+                        frappe.bold(item_code),
+                        frappe.bold(target_warehouse),
+                        required_qty,
+                        available_qty,
+                    )
+                )
+            latest_entry = frappe.db.sql(
+                """
+                SELECT entry.name
+                FROM `tabStock Entry` entry
+                INNER JOIN `tabStock Entry Detail` detail ON detail.parent = entry.name
+                WHERE entry.docstatus = 1
+                    AND entry.stock_entry_type = 'Material Transfer'
+                    AND detail.item_code = %s
+                    AND detail.t_warehouse = %s
+                ORDER BY entry.posting_date DESC, entry.posting_time DESC,
+                    entry.creation DESC, entry.name DESC
+                LIMIT 1
+                """,
+                (item_code, target_warehouse),
+                as_dict=True,
+            )
+            if not latest_entry or latest_entry[0].name != stock_entry_name:
+                frappe.throw(
+                    _("Please scan the latest Material Transfer Stock Entry for Item {0} in Warehouse {1}. Latest: {2}; scanned: {3}.").format(
+                        frappe.bold(item_code),
+                        frappe.bold(target_warehouse),
+                        frappe.bold(latest_entry[0].name if latest_entry else _("Not found")),
+                        frappe.bold(stock_entry_name),
+                    )
+                )
+
+        latest_entries = get_latest_material_transfers(scanned_serials)
+        for serial_no in sorted(scanned_serials):
+            latest_entry = latest_entries.get(serial_no)
+            if latest_entry != stock_entry_name:
+                frappe.throw(
+                    _("Please scan the latest Material Transfer Stock Entry for Serial No {0}. Latest: {1}; scanned: {2}.").format(
+                        frappe.bold(serial_no),
+                        frappe.bold(latest_entry or _("Not found")),
+                        frappe.bold(stock_entry_name),
+                    )
+                )
 
     def on_submit(self):
         self.update_send_email_DN()
@@ -133,6 +277,36 @@ def get_next_asset_action(previous_action):
     return "Inward" if previous_action == "Outward" else "Outward"
 
 
+def split_transfer_serials(value):
+    return [serial.strip() for serial in re.split(r"[\r\n,]+", value or "") if serial.strip()]
+
+
+def get_latest_material_transfers(serial_nos):
+    if not serial_nos:
+        return {}
+    conditions = " OR ".join("detail.serial_no LIKE %s" for _ in serial_nos)
+    candidates = frappe.db.sql(
+        f"""
+        SELECT entry.name, detail.serial_no
+        FROM `tabStock Entry` entry
+        INNER JOIN `tabStock Entry Detail` detail ON detail.parent = entry.name
+        WHERE entry.docstatus = 1
+            AND entry.stock_entry_type = 'Material Transfer'
+            AND ({conditions})
+        ORDER BY entry.posting_date DESC, entry.posting_time DESC,
+            entry.creation DESC, entry.name DESC
+        """,
+        tuple(f"%{serial_no}%" for serial_no in serial_nos),
+        as_dict=True,
+    )
+    latest = {}
+    for candidate in candidates:
+        for serial_no in split_transfer_serials(candidate.serial_no):
+            if serial_no in serial_nos and serial_no not in latest:
+                latest[serial_no] = candidate.name
+    return latest
+
+
 def get_employee_asset_serial_details(serial_no):
     serial_no = (serial_no or "").strip()
     if not serial_no or not frappe.db.exists("Serial No", serial_no):
@@ -185,7 +359,45 @@ def get_employee_asset_serial_details(serial_no):
                 "name",
             )
 
-    employee_name = frappe.db.get_value("Employee", employee, "employee_name") if employee else None
+    if not employee:
+        frappe.throw(
+            _("No active Employee found linked to Warehouse {0} or Serial No {1}.").format(
+                frappe.bold(serial_details.warehouse),
+                frappe.bold(serial_no),
+            ),
+            title=_("Employee Not Found"),
+        )
+
+    employee_details = frappe.db.get_value(
+        "Employee",
+        employee,
+        ["name", "employee_name", "serial_no"],
+        as_dict=True,
+    ) or frappe._dict()
+
+    employee_name = employee_details.employee_name
+    employee_serial_no = (employee_details.serial_no or "").strip()
+
+    if not employee_serial_no:
+        frappe.throw(
+            _("No Serial No is assigned to Employee {0}.").format(
+                frappe.bold(employee),
+            ),
+            title=_("Serial No Not Assigned"),
+        )
+
+    if employee_serial_no != serial_no:
+        frappe.throw(
+            _(
+                "This Serial No {0} does not belong to Employee {1}. The available Serial No is {2}."
+            ).format(
+                frappe.bold(serial_no),
+                frappe.bold(employee),
+                frappe.bold(employee_serial_no),
+            ),
+            title=_("Serial No Mismatch"),
+        )
+
     return frappe._dict(
         serial_no=serial_details.name,
         item_code=serial_details.item_code,
@@ -525,12 +737,40 @@ def scan_serial_no_data_for_return(pr_name):
         if not return_data[0].get('PR_Total') or return_data[0].get('PR_Total') >= 0 and return_data[0].get('PI_Total') != return_data[0].get('PR_Total'):
             frappe.msgprint(_("Please check the total amount of PR or PI found for<b>{}</b>").format(pr_name))
             return None
+
+        purchase_return_details = []
+        receipt_items = frappe.get_all(
+            "Purchase Receipt Item",
+            filters={"parent": pr_name},
+            fields=["item_code", "item_group", "purchase_order", "qty", "serial_no"],
+            order_by="idx asc",
+        )
+        for item in receipt_items:
+            serial_nos = split_transfer_serials(item.serial_no)
+            if serial_nos:
+                for serial_no in serial_nos:
+                    purchase_return_details.append({
+                        "serial_no": serial_no,
+                        "item_code": item.item_code,
+                        "qty": 1,
+                        "item_group": item.item_group,
+                        "purchase_order": item.purchase_order,
+                    })
+            else:
+                purchase_return_details.append({
+                    "serial_no": "",
+                    "item_code": item.item_code,
+                    "qty": abs(item.qty or 0),
+                    "item_group": item.item_group,
+                    "purchase_order": item.purchase_order,
+                })
         
         return {
             'purchase_receipt': return_data[0].get('PR'),
             'purchase_invoice': return_data[0].get('PI'),
             'pr_status': return_data[0].get('PR_Status'),
-            'pi_status': return_data[0].get('PI_Status')
+            'pi_status': return_data[0].get('PI_Status'),
+            'purchase_return_details': purchase_return_details,
         }
     
     except Exception as e:
@@ -538,10 +778,19 @@ def scan_serial_no_data_for_return(pr_name):
 
 @frappe.whitelist()
 def get_item_code_details_for_transfer(ste_number):
-    ste_number = ste_number.strip()
+    ste_number = (ste_number or "").strip()
     if not frappe.db.exists('Stock Entry', ste_number):
         frappe.throw(f"Stock Entry : {ste_number} doesn't exist")
-        return None
+
+    stock_entry = frappe.db.get_value(
+        "Stock Entry", ste_number, ["stock_entry_type", "docstatus"], as_dict=True
+    )
+    if stock_entry.stock_entry_type != "Material Transfer" or stock_entry.docstatus != 1:
+        frappe.throw(
+            _("Only a submitted Material Transfer Stock Entry can be scanned. {0} is not one.").format(
+                frappe.bold(ste_number)
+            )
+        )
 
     material_transfer_details = frappe.db.get_all("Stock Entry Detail",
         filters={'parent': ste_number},

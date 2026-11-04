@@ -1,0 +1,225 @@
+{
+ "actions": [],
+ "creation": "2026-10-28 08:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "reallocation",
+  "employee",
+  "employee_name",
+  "present",
+  "ramp_level",
+  "parent_department",
+  "column_break_c",
+  "current_department",
+  "current_role",
+  "current_capacity",
+  "current_dept_backlog_days",
+  "current_dept_sla",
+  "column_break_r",
+  "recommended_department",
+  "recommended_role",
+  "recommended_capacity",
+  "recommended_dept_backlog_days",
+  "recommended_dept_sla",
+  "move_type",
+  "changed",
+  "is_override"
+ ],
+ "fields": [
+  {
+   "fieldname": "reallocation",
+   "fieldtype": "Link",
+   "label": "Reallocation",
+   "options": "Resource Reallocation",
+   "reqd": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "label": "Employee",
+   "options": "Employee",
+   "read_only": 1
+  },
+  {
+   "fieldname": "employee_name",
+   "fieldtype": "Data",
+   "label": "Employee Name",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "present",
+   "fieldtype": "Check",
+   "label": "Present",
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "ramp_level",
+   "fieldtype": "Data",
+   "label": "Ramp Level",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "parent_department",
+   "fieldtype": "Link",
+   "label": "Parent (Permanent) Dept",
+   "options": "Department",
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_c",
+   "fieldtype": "Column Break",
+   "label": "Current"
+  },
+  {
+   "fieldname": "current_department",
+   "fieldtype": "Link",
+   "label": "Current Dept",
+   "options": "Department",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "current_role",
+   "fieldtype": "Link",
+   "label": "Current Role",
+   "options": "Role Profile",
+   "read_only": 1
+  },
+  {
+   "fieldname": "current_capacity",
+   "fieldtype": "Float",
+   "label": "Current Target / Day",
+   "precision": "1",
+   "read_only": 1
+  },
+  {
+   "fieldname": "current_dept_backlog_days",
+   "fieldtype": "Float",
+   "label": "Current Dept Backlog Days (before)",
+   "precision": "2",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "current_dept_sla",
+   "fieldtype": "Float",
+   "label": "Current Dept SLA",
+   "precision": "1",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_r",
+   "fieldtype": "Column Break",
+   "label": "Recommended"
+  },
+  {
+   "fieldname": "recommended_department",
+   "fieldtype": "Link",
+   "label": "Recommended Dept",
+   "options": "Department",
+   "description": "Change this to override. Figures for every line recompute on save.",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "recommended_role",
+   "fieldtype": "Link",
+   "label": "Recommended Role",
+   "options": "Role Profile",
+   "read_only": 1
+  },
+  {
+   "fieldname": "recommended_capacity",
+   "fieldtype": "Float",
+   "label": "Recommended Capacity",
+   "precision": "1",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "recommended_dept_backlog_days",
+   "fieldtype": "Float",
+   "label": "Dept Backlog Days (after)",
+   "precision": "2",
+   "in_list_view": 0,
+   "read_only": 1
+  },
+  {
+   "fieldname": "recommended_dept_sla",
+   "fieldtype": "Float",
+   "label": "Recommended Dept SLA",
+   "precision": "1",
+   "read_only": 1
+  },
+  {
+   "fieldname": "move_type",
+   "fieldtype": "Select",
+   "label": "Move Type",
+   "options": "Stay\nReturn to parent dept\nTrained move\nUntrained move\nFill from Inward\nManual override\nAbsent",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "changed",
+   "fieldtype": "Check",
+   "label": "Moving",
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "is_override",
+   "fieldtype": "Check",
+   "label": "Manual Override",
+   "in_standard_filter": 1,
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-28 08:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Resource Reallocation Line",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "recommended_department",
+ "sort_order": "ASC",
+ "track_changes": 0,
+ "autoname": "hash",
+ "title_field": "employee_name",
+ "in_create": 1
+}
